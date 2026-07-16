@@ -182,11 +182,11 @@ async function fetchNytList(
  */
 export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
   if (!hasNytApiKey()) {
-    return {
-      books: [],
-      error:
-        "NYT Books API key is not configured. Add NYT_BOOKS_API_KEY to .env.local.",
-    };
+    // Optional source — Browse/search still work; bestsellers section stays hidden.
+    console.warn(
+      "NYT Books API key is not configured. Set NYT_BOOKS_API_KEY in .env.local (local) or your host’s env vars (e.g. Netlify). Get a free key at https://developer.nytimes.com/"
+    );
+    return { books: [] };
   }
 
   try {
