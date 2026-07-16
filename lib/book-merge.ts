@@ -91,10 +91,10 @@ export function mergeFieldsPreferringHardcover(
   // Hardcover categories first so tag finalizer can prefer them exclusively.
   const genreEvidence = [
     ...(hardcover
-      ? [{ source: hardcover.source as const, categories: hardcover.genres }]
+      ? [{ source: hardcover.source, categories: hardcover.genres }]
       : []),
-    { source: a.source as const, categories: a.genres },
-    { source: b.source as const, categories: b.genres },
+    { source: a.source, categories: a.genres },
+    { source: b.source, categories: b.genres },
   ];
 
   return {
