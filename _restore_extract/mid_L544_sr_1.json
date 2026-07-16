@@ -1,0 +1,5 @@
+{
+  "path": "C:\\Users\\autum\\Projects\\LorePath\\lib\\rating-categories.ts",
+  "old": "  {\n    key: \"sexual_content\",\n    label: \"Sexual Content\",\n    description:\n      \"How much explicit intimacy you're comfortable with in the stories you read.\",\n    type: \"max\",\n    hintLow: \"1 · Most closed\",\n    hintHigh: \"5 · Sexually explicit\",\n    levelLabels: {\n      0: \"None\",\n      1: \"Most closed\",\n      5: \"Sexually explicit\",\n    },\n  },",
+  "new": "  {\n    key: \"sexual_content\",\n    label: \"Sexual Content\",\n    description:\n      \"How much explicit intimacy you're comfortable with in the stories you read.\",\n    type: \"max\",\n    hintLow: \"0 · None\",\n    hintHigh: \"5 · Sexually explicit\",\n    levelLabels: {\n      0: \"None\",\n      1: \"Most closed\",\n      5: \"Sexually explicit\",\n    },\n  },"
+}

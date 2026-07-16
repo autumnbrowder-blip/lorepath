@@ -1,0 +1,5 @@
+{
+  "path": "C:\\Users\\autum\\Projects\\LorePath\\lib\\rating-categories.ts",
+  "old": "  {\n    key: \"pacing\",\n    label: \"Pacing\",\n    description: \"How fast or slow you like the story to move.\",\n    type: \"preferred\",\n    hintLow: \"Slow & lingering\",\n    hintHigh: \"Swift & plotty\",\n  },\n];\n",
+  "new": "  {\n    key: \"pacing\",\n    label: \"Pacing\",\n    description: \"How fast or slow you like the story to move.\",\n    type: \"preferred\",\n    hintLow: \"Slow & lingering\",\n    hintHigh: \"Rushed\",\n    levelLabels: {\n      5: \"Rushed\",\n    },\n  },\n];\n"
+}

@@ -1,0 +1,717 @@
+{
+  "assetsNamed": [
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\amphiptere.jpg",
+      "size": 1724373,
+      "md5": "288320dee7dc0bf9371dea4683d32c0f",
+      "mtime": "2026-07-15T20:29:59.826Z",
+      "ctime": "2026-07-15T20:14:54.445Z",
+      "creature": "amphiptere",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\gorgon.jpg",
+      "size": 1931348,
+      "md5": "b0a53fa04f3661e66f6d45a7935d94f0",
+      "mtime": "2026-07-15T21:29:27.437Z",
+      "ctime": "2026-07-15T20:14:48.395Z",
+      "creature": "gorgon",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\griffin.jpg",
+      "size": 1908842,
+      "md5": "c9f06010f283080bacc3a7ff64586b92",
+      "mtime": "2026-07-15T21:10:01.370Z",
+      "ctime": "2026-07-15T19:43:11.196Z",
+      "creature": "griffin",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\phoenix.jpg",
+      "size": 2058824,
+      "md5": "dab69b561a9d935fc9720a6696c67d6c",
+      "mtime": "2026-07-15T21:10:07.717Z",
+      "ctime": "2026-07-15T19:43:16.772Z",
+      "creature": "phoenix",
+      "sameAsLive": true
+    }
+  ],
+  "candidatesDifferent": [],
+  "candidatesSame": [
+    {
+      "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\amphiptere.jpg",
+      "size": 1724373,
+      "md5": "288320dee7dc0bf9371dea4683d32c0f",
+      "mtime": "2026-07-15T20:29:59.826Z",
+      "ctime": "2026-07-15T20:17:22.821Z",
+      "creature": "amphiptere",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\gorgon.jpg",
+      "size": 1931348,
+      "md5": "b0a53fa04f3661e66f6d45a7935d94f0",
+      "mtime": "2026-07-15T21:29:27.437Z",
+      "ctime": "2026-07-15T20:17:22.827Z",
+      "creature": "gorgon",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\griffin.jpg",
+      "size": 1908842,
+      "md5": "c9f06010f283080bacc3a7ff64586b92",
+      "mtime": "2026-07-15T21:10:01.370Z",
+      "ctime": "2026-07-15T19:45:55.898Z",
+      "creature": "griffin",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\phoenix.jpg",
+      "size": 2058824,
+      "md5": "dab69b561a9d935fc9720a6696c67d6c",
+      "mtime": "2026-07-15T21:10:07.717Z",
+      "ctime": "2026-07-15T19:45:55.891Z",
+      "creature": "phoenix",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\amphiptere.jpg",
+      "size": 1724373,
+      "md5": "288320dee7dc0bf9371dea4683d32c0f",
+      "mtime": "2026-07-15T20:29:59.826Z",
+      "ctime": "2026-07-15T20:14:54.445Z",
+      "creature": "amphiptere",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\gorgon.jpg",
+      "size": 1931348,
+      "md5": "b0a53fa04f3661e66f6d45a7935d94f0",
+      "mtime": "2026-07-15T21:29:27.437Z",
+      "ctime": "2026-07-15T20:14:48.395Z",
+      "creature": "gorgon",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\griffin.jpg",
+      "size": 1908842,
+      "md5": "c9f06010f283080bacc3a7ff64586b92",
+      "mtime": "2026-07-15T21:10:01.370Z",
+      "ctime": "2026-07-15T19:43:11.196Z",
+      "creature": "griffin",
+      "sameAsLive": true
+    },
+    {
+      "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\phoenix.jpg",
+      "size": 2058824,
+      "md5": "dab69b561a9d935fc9720a6696c67d6c",
+      "mtime": "2026-07-15T21:10:07.717Z",
+      "ctime": "2026-07-15T19:43:16.772Z",
+      "creature": "phoenix",
+      "sameAsLive": true
+    }
+  ],
+  "locations": {
+    "public_avatars": {
+      "exists": true,
+      "files": [
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\amphiptere.jpg",
+          "size": 1724373,
+          "md5": "288320dee7dc0bf9371dea4683d32c0f",
+          "mtime": "2026-07-15T20:29:59.826Z",
+          "ctime": "2026-07-15T20:17:22.821Z",
+          "creature": "amphiptere",
+          "sameAsLive": true
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\gorgon.jpg",
+          "size": 1931348,
+          "md5": "b0a53fa04f3661e66f6d45a7935d94f0",
+          "mtime": "2026-07-15T21:29:27.437Z",
+          "ctime": "2026-07-15T20:17:22.827Z",
+          "creature": "gorgon",
+          "sameAsLive": true
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\griffin.jpg",
+          "size": 1908842,
+          "md5": "c9f06010f283080bacc3a7ff64586b92",
+          "mtime": "2026-07-15T21:10:01.370Z",
+          "ctime": "2026-07-15T19:45:55.898Z",
+          "creature": "griffin",
+          "sameAsLive": true
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\public\\avatars\\phoenix.jpg",
+          "size": 2058824,
+          "md5": "dab69b561a9d935fc9720a6696c67d6c",
+          "mtime": "2026-07-15T21:10:07.717Z",
+          "ctime": "2026-07-15T19:45:55.891Z",
+          "creature": "phoenix",
+          "sameAsLive": true
+        }
+      ]
+    },
+    "prior_recovery": {
+      "exists": true,
+      "files": [
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\castle.png",
+          "size": 2055094,
+          "md5": "caad9e57b9a93014832dc9ee95691ba6",
+          "mtime": "2026-07-15T19:24:08.231Z",
+          "ctime": "2026-07-15T21:06:12.699Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\cockatrice.jpg",
+          "size": 2213299,
+          "md5": "14b5fd41e8450b23d64ec0db89874394",
+          "mtime": "2026-07-15T20:15:45.505Z",
+          "ctime": "2026-07-15T21:05:38.560Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\dragon.png",
+          "size": 2078499,
+          "md5": "0ed25e71f3e0b19bff59c0c7085853e4",
+          "mtime": "2026-07-15T19:22:54.838Z",
+          "ctime": "2026-07-15T21:06:12.694Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\elf.png",
+          "size": 1717480,
+          "md5": "16c91289674adedc63a530c48c451538",
+          "mtime": "2026-07-15T19:20:54.777Z",
+          "ctime": "2026-07-15T21:06:12.658Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\fairy.png",
+          "size": 1807408,
+          "md5": "2d7f7971056fb4ab11f75d06ddde0f40",
+          "mtime": "2026-07-15T19:24:09.288Z",
+          "ctime": "2026-07-15T21:06:12.673Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\grave.png",
+          "size": 1954118,
+          "md5": "7157423f128b88197eb40ccaa9796a9a",
+          "mtime": "2026-07-15T19:25:19.036Z",
+          "ctime": "2026-07-15T21:06:12.701Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\154525_161352.webp",
+          "size": 161352,
+          "md5": "e3ff6f34404049515f888e0255a9af80",
+          "mtime": "2026-07-15T19:45:25.838Z",
+          "ctime": "2026-07-15T21:06:12.877Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\154528_83524.webp",
+          "size": 83524,
+          "md5": "55b014f04eb8d8b826d04c16f54ff2ac",
+          "mtime": "2026-07-15T19:45:28.478Z",
+          "ctime": "2026-07-15T21:06:12.832Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\154537_56972.webp",
+          "size": 56972,
+          "md5": "53b01b4b1a6aba7fa60fe361142baeef",
+          "mtime": "2026-07-15T19:45:37.958Z",
+          "ctime": "2026-07-15T21:06:12.861Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\154638_106028.webp",
+          "size": 106028,
+          "md5": "eceb64cbcc52cf2feb0c39a3b0c986e8",
+          "mtime": "2026-07-15T19:46:38.173Z",
+          "ctime": "2026-07-15T21:06:12.867Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\154942_208718.webp",
+          "size": 208718,
+          "md5": "168d9f8be72589e72782777d474e61a0",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T21:06:12.856Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\154942_222978.webp",
+          "size": 222978,
+          "md5": "1c9ba9cc07b1ca55430218cd95434479",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T21:06:12.863Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\155040_300140.webp",
+          "size": 300140,
+          "md5": "2be9e810bc55dee961f33c8642bc3052",
+          "mtime": "2026-07-15T19:50:40.205Z",
+          "ctime": "2026-07-15T21:06:12.871Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_firstgen_window\\160022_108578.webp",
+          "size": 108578,
+          "md5": "56c7b20bdb53b9224caff841a8163099",
+          "mtime": "2026-07-15T20:00:22.980Z",
+          "ctime": "2026-07-15T21:06:12.880Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_large_gt200kb\\hL5qcSEh-NzXJE3ogbhii_JQekViEkdmlrKDIH9T_208718.webp",
+          "size": 208718,
+          "md5": "168d9f8be72589e72782777d474e61a0",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T21:07:57.706Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_large_gt200kb\\Ozi9IWtutE6zAE5toSix9D0ksgT2efEHGWQ78bx1_222978.webp",
+          "size": 222978,
+          "md5": "1c9ba9cc07b1ca55430218cd95434479",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T21:07:57.716Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\next_image_cache_large_gt200kb\\YtoB5WoP-7OWmw3-iUpvzr1L9PzkCZVpUdnjjp1u_300140.webp",
+          "size": 300140,
+          "md5": "2be9e810bc55dee961f33c8642bc3052",
+          "mtime": "2026-07-15T19:50:40.205Z",
+          "ctime": "2026-07-15T21:07:57.720Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\oni.png",
+          "size": 2005797,
+          "md5": "705c89c7c9f95ada3f09f70cae586474",
+          "mtime": "2026-07-15T19:21:57.689Z",
+          "ctime": "2026-07-15T21:06:12.680Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\orc.png",
+          "size": 1725933,
+          "md5": "87ce99d9e84e6a28b16b1e32dbc47f61",
+          "mtime": "2026-07-15T19:24:01.359Z",
+          "ctime": "2026-07-15T21:06:12.677Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\skull.png",
+          "size": 1927352,
+          "md5": "a59cbd4f1319617d2c095cfea6c41a09",
+          "mtime": "2026-07-15T19:25:08.669Z",
+          "ctime": "2026-07-15T21:06:12.705Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\_prior_recovery\\wolf.png",
+          "size": 2380967,
+          "md5": "ad5fa0846c5155ffaa834364c0a79784",
+          "mtime": "2026-07-15T19:21:59.108Z",
+          "ctime": "2026-07-15T21:06:12.697Z",
+          "creature": null,
+          "sameAsLive": false
+        }
+      ]
+    },
+    "assets": {
+      "exists": true,
+      "files": [
+        {
+          "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\amphiptere.jpg",
+          "size": 1724373,
+          "md5": "288320dee7dc0bf9371dea4683d32c0f",
+          "mtime": "2026-07-15T20:29:59.826Z",
+          "ctime": "2026-07-15T20:14:54.445Z",
+          "creature": "amphiptere",
+          "sameAsLive": true
+        },
+        {
+          "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\gorgon.jpg",
+          "size": 1931348,
+          "md5": "b0a53fa04f3661e66f6d45a7935d94f0",
+          "mtime": "2026-07-15T21:29:27.437Z",
+          "ctime": "2026-07-15T20:14:48.395Z",
+          "creature": "gorgon",
+          "sameAsLive": true
+        },
+        {
+          "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\griffin.jpg",
+          "size": 1908842,
+          "md5": "c9f06010f283080bacc3a7ff64586b92",
+          "mtime": "2026-07-15T21:10:01.370Z",
+          "ctime": "2026-07-15T19:43:11.196Z",
+          "creature": "griffin",
+          "sameAsLive": true
+        },
+        {
+          "path": "C:\\Users\\autum\\.cursor\\projects\\c-Users-autum-Projects-LorePath\\assets\\phoenix.jpg",
+          "size": 2058824,
+          "md5": "dab69b561a9d935fc9720a6696c67d6c",
+          "mtime": "2026-07-15T21:10:07.717Z",
+          "ctime": "2026-07-15T19:43:16.772Z",
+          "creature": "phoenix",
+          "sameAsLive": true
+        }
+      ]
+    },
+    "agent_tools": {
+      "exists": true,
+      "files": []
+    },
+    "next_cache": {
+      "exists": true,
+      "files": [
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\-VmJ+5Uz1gJ+LdBPmxFOpnUwg7eQdrVwO90zce6zSnM=\\60.1784140165408.ypcgM01cEQHp8oYFNA9jQ05oeCtP1hnzBOg4mhDFdrk=.webp",
+          "size": 94352,
+          "md5": "dea41f3c65372628a82f7031bb701db3",
+          "mtime": "2026-07-15T18:28:25.410Z",
+          "ctime": "2026-07-15T18:28:25.410Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\1KeqIDuJJZWXuOWquoFkWo5y-3Y9M06yOZeWa+0LKLY=\\60.1784140673623.k7BkLpxfWxYkH+iHeshaYMrmUJ3UcciELE4Dz1ptqxE=.webp",
+          "size": 102760,
+          "md5": "02fcba7bf12a21b72b993c6f9d8f5931",
+          "mtime": "2026-07-15T18:36:53.625Z",
+          "ctime": "2026-07-15T18:36:53.625Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\cuz490yB79RtKZiOpnM-tDkFwpv1ZQrJvT+fEvFYzM0=\\60.1784122891122.6i21Bh-ZB8w88ZxktB0AkJUmyw8TU+yLoOMplCXNi4M=.webp",
+          "size": 79196,
+          "md5": "cd90318ca970f7902e778fb7868e4136",
+          "mtime": "2026-07-15T13:40:31.127Z",
+          "ctime": "2026-07-15T13:40:31.127Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\Eaz2UOd18Nbju-cLEBCJkm0o2MeLExx37SdfEU3ZnEc=\\60.1784144788476.dPFW5R63lo-kc+-YTzCNhQUXUN9L0bWl3dK6S-3ufzw=.webp",
+          "size": 83524,
+          "md5": "55b014f04eb8d8b826d04c16f54ff2ac",
+          "mtime": "2026-07-15T19:45:28.478Z",
+          "ctime": "2026-07-15T19:45:28.478Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\fcxLY6FaJrSvionWIYYbXgzf7LlsrmWTmwtmoSCRzks=\\60.1784135558003.1R4MFeBNMBo9OBmoV3l1R0Y1-KeSH4ukCKYUqjJYOPE=.webp",
+          "size": 106028,
+          "md5": "eceb64cbcc52cf2feb0c39a3b0c986e8",
+          "mtime": "2026-07-15T17:11:38.009Z",
+          "ctime": "2026-07-15T17:11:38.008Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\hL5qcSEh-NzXJE3ogbhii+JQekViEkdmlrKDIH9T3Tc=\\60.1784145042062.w3f8dvr3jQQwTmE1QohVicRjzzNuQMmJOACb7q4uj18=.webp",
+          "size": 208718,
+          "md5": "168d9f8be72589e72782777d474e61a0",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T19:49:42.065Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\j5YZe+Odv9UAf5zOh8kwB8vpS-yd693juT027HtIQRw=\\60.1784151471540.U5DuyVOTTwcRv2bpZSnrpxB1BgxioaNaK6jD2tBf31Y=.webp",
+          "size": 71960,
+          "md5": "0efcb978cf8d30692dcc7767b218bff2",
+          "mtime": "2026-07-15T21:36:51.550Z",
+          "ctime": "2026-07-15T21:36:51.550Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\Krf5jNGL9ubMK4C+mwWGAH9v82objp+8VxpD191QBSw=\\60.1784144797950.00ajYemmQxl1JHOAXt4SlDoZxfoVVNmgZSw-eoNWn+4=.webp",
+          "size": 56972,
+          "md5": "53b01b4b1a6aba7fa60fe361142baeef",
+          "mtime": "2026-07-15T19:45:37.958Z",
+          "ctime": "2026-07-15T19:45:37.957Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\Ozi9IWtutE6zAE5toSix9D0ksgT2efEHGWQ78bx1Jl8=\\60.1784145042061.yxqK29kO19o1xekDQP4WE+dPoXWOc+d8MlG23z33E+g=.webp",
+          "size": 222978,
+          "md5": "1c9ba9cc07b1ca55430218cd95434479",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T19:49:42.065Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\PfHSL2VE3rgMyrfTJnPjMNBJVBMOnbWnxr0Lkcr3xFA=\\60.1784148265235.kNZwjVXcLRwR+SFkoZc1Uo0GgKCncbnQEVJGXnFEmk0=.webp",
+          "size": 203968,
+          "md5": "4349f634c14fcfdcecdf4031368fba70",
+          "mtime": "2026-07-15T20:43:25.238Z",
+          "ctime": "2026-07-15T20:43:25.237Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\PlZn2a68cklDwL4a0dMNw9XNwNbIO9Zr67cgHlbJmAw=\\60.1784146531225.xDgcXeC2Fio7W+CT687lq6+6TJrvVzA+jv3hIJ-zVoo=.webp",
+          "size": 193118,
+          "md5": "292bf9330453f87ca009749e93cee0bf",
+          "mtime": "2026-07-15T20:14:31.229Z",
+          "ctime": "2026-07-15T20:14:31.229Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\qyJgtM44Ph3BB91aGG5xfonlcu3lQaadARYhjAN5QC4=\\60.1784144858164.1R4MFeBNMBo9OBmoV3l1R0Y1-KeSH4ukCKYUqjJYOPE=.webp",
+          "size": 106028,
+          "md5": "eceb64cbcc52cf2feb0c39a3b0c986e8",
+          "mtime": "2026-07-15T19:46:38.173Z",
+          "ctime": "2026-07-15T19:46:38.173Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\TMvoRHzTVoJQWxsyr3xE1iRfwX39iRd5k228nAlG1wY=\\60.1784147199105.9-ffP1tZ4CcHLjzzcfkROW2Eg8g3NkBxcBBp0A89i5U=.webp",
+          "size": 86750,
+          "md5": "64827a56c4f9983c241dba7b775fc3ff",
+          "mtime": "2026-07-15T20:25:39.126Z",
+          "ctime": "2026-07-15T20:25:39.124Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\YtoB5WoP-7OWmw3-iUpvzr1L9PzkCZVpUdnjjp1uxzU=\\60.1784145100200.lwPpmC8vZ5kabLz9tL6vZrVJySpmZhK7L34Nc8xdLCM=.webp",
+          "size": 300140,
+          "md5": "2be9e810bc55dee961f33c8642bc3052",
+          "mtime": "2026-07-15T19:50:40.205Z",
+          "ctime": "2026-07-15T19:50:40.204Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\YwFOSuWNBq2pyM95pVroErN2VJ0xz55KSjFJDr4Z9Rc=\\60.1784152066508.JyGABoZ2B0OzK2v3bZAIToc1Bok9Qdj5Iff8GO+ANKg=.webp",
+          "size": 129814,
+          "md5": "19306c8a9adaaddc9588422577f1b48d",
+          "mtime": "2026-07-15T21:46:46.515Z",
+          "ctime": "2026-07-15T21:46:46.514Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\ze0Ojq6O592qZD92D+oKuZqZ3p9tsva50kCe9GNJTI4=\\60.1784144785835.R2dHy8cKyimVuQBcVeyM53EJHPnvOeNJTylAwOm9DQM=.webp",
+          "size": 161352,
+          "md5": "e3ff6f34404049515f888e0255a9af80",
+          "mtime": "2026-07-15T19:45:25.838Z",
+          "ctime": "2026-07-15T19:45:25.837Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\ZO8TmmgBEppdPJj+pmuNBCIRdk9PT0G2uxWZOM34RHs=\\60.1784145682975.finRpxVXTT889lKzynrsQ6TQAOyuQBIvdbWvHFgz5Tg=.webp",
+          "size": 108578,
+          "md5": "56c7b20bdb53b9224caff841a8163099",
+          "mtime": "2026-07-15T20:00:22.980Z",
+          "ctime": "2026-07-15T20:00:22.979Z",
+          "creature": null,
+          "sameAsLive": false
+        }
+      ]
+    },
+    "next_root_images": {
+      "exists": true,
+      "files": [
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\-VmJ+5Uz1gJ+LdBPmxFOpnUwg7eQdrVwO90zce6zSnM=\\60.1784140165408.ypcgM01cEQHp8oYFNA9jQ05oeCtP1hnzBOg4mhDFdrk=.webp",
+          "size": 94352,
+          "md5": "dea41f3c65372628a82f7031bb701db3",
+          "mtime": "2026-07-15T18:28:25.410Z",
+          "ctime": "2026-07-15T18:28:25.410Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\1KeqIDuJJZWXuOWquoFkWo5y-3Y9M06yOZeWa+0LKLY=\\60.1784140673623.k7BkLpxfWxYkH+iHeshaYMrmUJ3UcciELE4Dz1ptqxE=.webp",
+          "size": 102760,
+          "md5": "02fcba7bf12a21b72b993c6f9d8f5931",
+          "mtime": "2026-07-15T18:36:53.625Z",
+          "ctime": "2026-07-15T18:36:53.625Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\cuz490yB79RtKZiOpnM-tDkFwpv1ZQrJvT+fEvFYzM0=\\60.1784122891122.6i21Bh-ZB8w88ZxktB0AkJUmyw8TU+yLoOMplCXNi4M=.webp",
+          "size": 79196,
+          "md5": "cd90318ca970f7902e778fb7868e4136",
+          "mtime": "2026-07-15T13:40:31.127Z",
+          "ctime": "2026-07-15T13:40:31.127Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\Eaz2UOd18Nbju-cLEBCJkm0o2MeLExx37SdfEU3ZnEc=\\60.1784144788476.dPFW5R63lo-kc+-YTzCNhQUXUN9L0bWl3dK6S-3ufzw=.webp",
+          "size": 83524,
+          "md5": "55b014f04eb8d8b826d04c16f54ff2ac",
+          "mtime": "2026-07-15T19:45:28.478Z",
+          "ctime": "2026-07-15T19:45:28.478Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\fcxLY6FaJrSvionWIYYbXgzf7LlsrmWTmwtmoSCRzks=\\60.1784135558003.1R4MFeBNMBo9OBmoV3l1R0Y1-KeSH4ukCKYUqjJYOPE=.webp",
+          "size": 106028,
+          "md5": "eceb64cbcc52cf2feb0c39a3b0c986e8",
+          "mtime": "2026-07-15T17:11:38.009Z",
+          "ctime": "2026-07-15T17:11:38.008Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\hL5qcSEh-NzXJE3ogbhii+JQekViEkdmlrKDIH9T3Tc=\\60.1784145042062.w3f8dvr3jQQwTmE1QohVicRjzzNuQMmJOACb7q4uj18=.webp",
+          "size": 208718,
+          "md5": "168d9f8be72589e72782777d474e61a0",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T19:49:42.065Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\j5YZe+Odv9UAf5zOh8kwB8vpS-yd693juT027HtIQRw=\\60.1784151471540.U5DuyVOTTwcRv2bpZSnrpxB1BgxioaNaK6jD2tBf31Y=.webp",
+          "size": 71960,
+          "md5": "0efcb978cf8d30692dcc7767b218bff2",
+          "mtime": "2026-07-15T21:36:51.550Z",
+          "ctime": "2026-07-15T21:36:51.550Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\Krf5jNGL9ubMK4C+mwWGAH9v82objp+8VxpD191QBSw=\\60.1784144797950.00ajYemmQxl1JHOAXt4SlDoZxfoVVNmgZSw-eoNWn+4=.webp",
+          "size": 56972,
+          "md5": "53b01b4b1a6aba7fa60fe361142baeef",
+          "mtime": "2026-07-15T19:45:37.958Z",
+          "ctime": "2026-07-15T19:45:37.957Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\Ozi9IWtutE6zAE5toSix9D0ksgT2efEHGWQ78bx1Jl8=\\60.1784145042061.yxqK29kO19o1xekDQP4WE+dPoXWOc+d8MlG23z33E+g=.webp",
+          "size": 222978,
+          "md5": "1c9ba9cc07b1ca55430218cd95434479",
+          "mtime": "2026-07-15T19:49:42.065Z",
+          "ctime": "2026-07-15T19:49:42.065Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\PfHSL2VE3rgMyrfTJnPjMNBJVBMOnbWnxr0Lkcr3xFA=\\60.1784148265235.kNZwjVXcLRwR+SFkoZc1Uo0GgKCncbnQEVJGXnFEmk0=.webp",
+          "size": 203968,
+          "md5": "4349f634c14fcfdcecdf4031368fba70",
+          "mtime": "2026-07-15T20:43:25.238Z",
+          "ctime": "2026-07-15T20:43:25.237Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\PlZn2a68cklDwL4a0dMNw9XNwNbIO9Zr67cgHlbJmAw=\\60.1784146531225.xDgcXeC2Fio7W+CT687lq6+6TJrvVzA+jv3hIJ-zVoo=.webp",
+          "size": 193118,
+          "md5": "292bf9330453f87ca009749e93cee0bf",
+          "mtime": "2026-07-15T20:14:31.229Z",
+          "ctime": "2026-07-15T20:14:31.229Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\qyJgtM44Ph3BB91aGG5xfonlcu3lQaadARYhjAN5QC4=\\60.1784144858164.1R4MFeBNMBo9OBmoV3l1R0Y1-KeSH4ukCKYUqjJYOPE=.webp",
+          "size": 106028,
+          "md5": "eceb64cbcc52cf2feb0c39a3b0c986e8",
+          "mtime": "2026-07-15T19:46:38.173Z",
+          "ctime": "2026-07-15T19:46:38.173Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\TMvoRHzTVoJQWxsyr3xE1iRfwX39iRd5k228nAlG1wY=\\60.1784147199105.9-ffP1tZ4CcHLjzzcfkROW2Eg8g3NkBxcBBp0A89i5U=.webp",
+          "size": 86750,
+          "md5": "64827a56c4f9983c241dba7b775fc3ff",
+          "mtime": "2026-07-15T20:25:39.126Z",
+          "ctime": "2026-07-15T20:25:39.124Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\YtoB5WoP-7OWmw3-iUpvzr1L9PzkCZVpUdnjjp1uxzU=\\60.1784145100200.lwPpmC8vZ5kabLz9tL6vZrVJySpmZhK7L34Nc8xdLCM=.webp",
+          "size": 300140,
+          "md5": "2be9e810bc55dee961f33c8642bc3052",
+          "mtime": "2026-07-15T19:50:40.205Z",
+          "ctime": "2026-07-15T19:50:40.204Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\YwFOSuWNBq2pyM95pVroErN2VJ0xz55KSjFJDr4Z9Rc=\\60.1784152066508.JyGABoZ2B0OzK2v3bZAIToc1Bok9Qdj5Iff8GO+ANKg=.webp",
+          "size": 129814,
+          "md5": "19306c8a9adaaddc9588422577f1b48d",
+          "mtime": "2026-07-15T21:46:46.515Z",
+          "ctime": "2026-07-15T21:46:46.514Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\ze0Ojq6O592qZD92D+oKuZqZ3p9tsva50kCe9GNJTI4=\\60.1784144785835.R2dHy8cKyimVuQBcVeyM53EJHPnvOeNJTylAwOm9DQM=.webp",
+          "size": 161352,
+          "md5": "e3ff6f34404049515f888e0255a9af80",
+          "mtime": "2026-07-15T19:45:25.838Z",
+          "ctime": "2026-07-15T19:45:25.837Z",
+          "creature": null,
+          "sameAsLive": false
+        },
+        {
+          "path": "C:\\Users\\autum\\Projects\\LorePath\\.next\\cache\\images\\ZO8TmmgBEppdPJj+pmuNBCIRdk9PT0G2uxWZOM34RHs=\\60.1784145682975.finRpxVXTT889lKzynrsQ6TQAOyuQBIvdbWvHFgz5Tg=.webp",
+          "size": 108578,
+          "md5": "56c7b20bdb53b9224caff841a8163099",
+          "mtime": "2026-07-15T20:00:22.980Z",
+          "ctime": "2026-07-15T20:00:22.979Z",
+          "creature": null,
+          "sameAsLive": false
+        }
+      ]
+    }
+  },
+  "history": {
+    "exists": true,
+    "folders": []
+  }
+}

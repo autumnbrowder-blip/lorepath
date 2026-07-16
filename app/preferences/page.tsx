@@ -1,0 +1,169 @@
+import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
+import { PreferencesForm } from "@/components/preferences/PreferencesForm";
+import { UpgradePrompt } from "@/components/preferences/UpgradePrompt";
+import { CornerFlourish } from "@/components/theme/FantasyDecor";
+import { PREFERENCES_TESTING_MODE } from "@/lib/dev-flags";
+import { getUserPreferences, getUserProfile } from "@/lib/preferences";
+import { DEFAULT_USER_PREFERENCES } from "@/lib/rating-categories";
+import {
+  getTrialDaysRemaining,
+  hasPremiumAccess,
+  isTrialActive,
+} from "@/lib/subscription";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
+import { ArrowLeft, Sparkles } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
+
+export default async function PreferencesPage() {
+  let user: User | null = null;
+  if (isSupabaseConfigured()) {
+    const supabase = await createClient();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+    user = currentUser;
+  }
+
+  // TEMP: skip login redirect while PREFERENCES_TESTING_MODE is true
+  if (!user && !PREFERENCES_TESTING_MODE) {
+    redirect("/login?redirect=/preferences");
+  }
+
+  const profile = user ? await getUserProfile(user.id) : null;
+  const premium = profile ? hasPremiumAccess(profile) : false;
+  const preferences =
+    user && premium
+      ? await getUserPreferences(user.id)
+      : PREFERENCES_TESTING_MODE
+        ? DEFAULT_USER_PREFERENCES
+        : null;
+  const trialDaysLeft =
+    profile && isTrialActive(profile.created_at)
+      ? getTrialDaysRemaining(profile.created_at)
+      : 0;
+
+  const showForm =
+    Boolean(preferences) && (premium || PREFERENCES_TESTING_MODE);
+
+  return (
+    <div className="relative isolate min-h-[calc(100vh-4.5rem)] overflow-hidden bg-[#d8c49a]">
+      {/* Aged parchment / enchanted scholar's book */}
+      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+        <Image
+          src="/images/lorepath-preferences-parchment.png"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-center brightness-[0.96] contrast-[1.06] saturate-[0.92]"
+        />
+        {/* Fiber grain + coffee stains */}
+        <div
+          className="absolute inset-0 opacity-[0.34] mix-blend-multiply"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='5' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E\")",
+          }}
+        />
+        <div className="absolute -left-[8%] top-[12%] h-64 w-72 rounded-full bg-[radial-gradient(ellipse,_rgba(110,70,30,0.18)_0%,_transparent_70%)] blur-2xl" />
+        <div className="absolute bottom-[8%] right-[4%] h-72 w-80 rounded-full bg-[radial-gradient(ellipse,_rgba(90,55,20,0.16)_0%,_transparent_68%)] blur-2xl" />
+        <div className="absolute left-[35%] top-[42%] h-40 w-52 rotate-12 rounded-full bg-[radial-gradient(ellipse,_rgba(80,50,20,0.1)_0%,_transparent_70%)] blur-xl" />
+        {/* Crease / open-book gutter */}
+        <div className="absolute inset-y-0 left-1/2 z-[1] w-[3px] -translate-x-1/2 bg-gradient-to-b from-transparent via-[#5a3c12]/35 to-transparent" />
+        <div className="absolute inset-y-[6%] left-[calc(50%-4px)] w-2 rounded-full bg-gradient-to-b from-transparent via-[#3d2a0e]/12 to-transparent blur-[2px]" />
+        {/* Soft candlelight + forest washes */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_12%,_rgba(166,124,45,0.14)_0%,_transparent_45%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_82%_78%,_rgba(61,107,79,0.14)_0%,_transparent_48%)]" />
+        {/* Magical vignette */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_transparent_35%,_rgba(40,28,10,0.22)_72%,_rgba(20,14,6,0.48)_100%)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#2a1c0a]/20 via-transparent to-[#1a1208]/35" />
+      </div>
+
+      {/* Page-corner flourishes */}
+      <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden="true">
+        <CornerFlourish className="absolute left-2 top-2 h-16 w-16 text-gold-600/45 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute right-2 top-2 h-16 w-16 rotate-90 text-gold-600/45 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute bottom-2 left-2 h-16 w-16 -rotate-90 text-gold-600/45 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute bottom-2 right-2 h-16 w-16 rotate-180 text-gold-600/45 sm:bottom-4 sm:right-4 sm:h-20 sm:w-20" />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-2xl px-6 py-10 sm:py-14">
+        <div
+          className="pointer-events-none absolute -left-16 top-20 h-64 w-64 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(212,170,60,0.2)_0%,_transparent_70%)] blur-2xl"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute -right-12 bottom-24 h-52 w-52 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(61,107,79,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.7s]"
+          aria-hidden="true"
+        />
+
+        <Link href="/browse" className="preference-codex-box--nav relative mb-10">
+          <ArrowLeft className="h-4 w-4" />
+          <span className="relative z-[1] nav-dragon-gold">Back to the Archives</span>
+        </Link>
+
+        {PREFERENCES_TESTING_MODE && (
+          <p
+            role="status"
+            className="relative mb-7 rounded-sm border border-gold-600/45 bg-forest-950/75 px-4 py-2.5 text-center font-storybook text-xs uppercase tracking-[0.2em] metallic-gold-soft shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
+          >
+            Temporary testing mode — login not required
+          </p>
+        )}
+
+        <header className="relative mb-10 text-center sm:mb-12 sm:text-left">
+          <div className="section-label metallic-emerald-darker justify-center !text-xs !font-bold tracking-[0.32em] sm:justify-start">
+            <Sparkles className="h-3.5 w-3.5 text-[#0a1f18]" />
+            The Preference Codex
+          </div>
+          <h1 className="metallic-emerald-deep mt-2 font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
+            Your Preferences
+          </h1>
+          <div
+            className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent sm:mx-0"
+            aria-hidden="true"
+          />
+
+          <div className="preference-codex-box relative mt-7 text-left">
+            <CodexBoxOrnament />
+            <p className="relative z-[3] px-1 font-heading text-xl leading-relaxed tracking-wide nav-dragon-gold sm:text-2xl">
+              These preferences help LorePath understand what kind of stories
+              feel right for you. Adjust the sliders to set your comfort levels
+              across different themes.
+            </p>
+          </div>
+
+          {premium && trialDaysLeft > 0 && !profile?.is_subscriber && (
+            <p className="metallic-gold mt-4 font-storybook text-sm uppercase tracking-[0.2em]">
+              Free trial — {trialDaysLeft} day
+              {trialDaysLeft !== 1 ? "s" : ""} remaining
+            </p>
+          )}
+          {PREFERENCES_TESTING_MODE && (
+            <p className="mt-3 font-heading text-sm italic text-forest-900/70 dark:text-cream-200/70">
+              Match Score on book pages still requires login and premium/trial
+              access.
+            </p>
+          )}
+        </header>
+
+        <div className="relative space-y-5">
+          {showForm && preferences ? (
+            <PreferencesForm
+              initialPreferences={preferences}
+              testingMode={PREFERENCES_TESTING_MODE && !(user && premium)}
+            />
+          ) : (
+            <div className="preference-codex-box">
+              <UpgradePrompt />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

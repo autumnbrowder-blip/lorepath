@@ -1,0 +1,5 @@
+{
+  "path": "C:\\Users\\autum\\Projects\\LorePath\\lib\\rating-categories.ts",
+  "old": "    hintLow: \"0 · PG-13\",\n    hintHigh: \"5 · Sexually explicit\",\n    levelLabels: {\n      0: \"PG-13\",\n      1: \"Most closed\",\n      5: \"Sexually explicit\",\n    },",
+  "new": "    hintLow: \"0 · NONE\",\n    hintHigh: \"5 · Adult\",\n    levelLabels: {\n      0: \"NONE\",\n      1: \"PG\",\n      2: \"PG-13\",\n      5: \"Adult\",\n    },"
+}
