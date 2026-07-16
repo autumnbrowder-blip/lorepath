@@ -99,7 +99,7 @@ export function AuthNav() {
         }
       });
 
-      function onProfileUpdated(event: Event) {
+      const onProfileUpdated = (event: Event) => {
         const detail =
           event instanceof CustomEvent
             ? (event.detail as { display_name?: string | null } | undefined)
@@ -116,7 +116,7 @@ export function AuthNav() {
         void supabase.auth.getUser().then(({ data: { user: currentUser } }) => {
           if (currentUser) void loadProfile(currentUser.id);
         });
-      }
+      };
 
       window.addEventListener(PROFILE_UPDATED_EVENT, onProfileUpdated);
 
