@@ -363,7 +363,7 @@ export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
     byId.set(book.id, candidate);
   }
 
-  for (const book of byId.values()) {
+  for (const book of Array.from(byId.values())) {
     const key = bookDedupeKey(book);
     const existing = byKey.get(key);
     if (!existing) {

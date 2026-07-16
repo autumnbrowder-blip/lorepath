@@ -203,7 +203,7 @@ export function computeUserReadingStats(
 
   let topGenre: string | null = null;
   let topGenreCount = 0;
-  for (const [genre, count] of genreCounts) {
+  for (const [genre, count] of Array.from(genreCounts.entries())) {
     if (count > topGenreCount) {
       topGenre = genre;
       topGenreCount = count;

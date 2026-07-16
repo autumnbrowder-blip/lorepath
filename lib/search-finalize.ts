@@ -171,7 +171,7 @@ export function finalizeSearchBooks(books: BookSummary[]): BookSummary[] {
   // Pass 2: title + author for the rest (and against ISBN survivors)
   const byTitleAuthor = new Map<string, BookSummary>();
 
-  for (const book of [...byIsbn.values(), ...withoutIsbn]) {
+  for (const book of [...Array.from(byIsbn.values()), ...withoutIsbn]) {
     const key = getBookDedupeKey(book);
     const existing = byTitleAuthor.get(key);
     if (!existing) {
