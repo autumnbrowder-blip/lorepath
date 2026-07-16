@@ -107,7 +107,7 @@ export function parseGutendexSearchResponse(
   if (!data.results) return [];
 
   return data.results
-    .map((book) => {
+    .map((book): BookSummary | null => {
       if (!book.id || !book.title) return null;
 
       return {
@@ -118,7 +118,7 @@ export function parseGutendexSearchResponse(
         description: parseGutendexDescription(book),
         genres: parseGutendexGenres(book),
         publishedYear: parseGutendexPublishedYear(book),
-        source: "gutendex" as const,
+        source: "gutendex",
         downloadCount: book.download_count ?? null,
       };
     })
