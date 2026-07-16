@@ -1,5 +1,0 @@
-{
-  "path": "C:\\Users\\autum\\Projects\\LorePath\\lib\\rating-categories.ts",
-  "old": "/** Default user preferences — max tolerance / neutral preferred levels. */\nexport const DEFAULT_USER_PREFERENCES: ContentRating = {\n  sexual_content: 5,\n  lgbt: 5,\n  horror: 5,\n  ideology: 3,\n  pacing: 3,\n};",
-  "new": "/** Default user preferences — start at 0 for all categories. */\nexport const DEFAULT_USER_PREFERENCES: ContentRating = {\n  sexual_content: 0,\n  lgbt: 0,\n  horror: 0,\n  ideology: 0,\n  pacing: 0,\n};"
-}
