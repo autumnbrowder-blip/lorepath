@@ -16,41 +16,51 @@ type MatchScoreProps = {
   userPreferences: ContentRating | null;
 };
 
-function ScoreRing({ score, ringClass }: { score: number; ringClass: string }) {
-  const radius = 28;
+function ScoreRing({
+  score,
+  ringClass,
+  textClass,
+}: {
+  score: number;
+  ringClass: string;
+  textClass: string;
+}) {
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
 
   return (
-    <div className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center">
+    <div className="relative flex h-[92px] w-[92px] shrink-0 items-center justify-center">
       <svg
         className="-rotate-90"
-        width="72"
-        height="72"
-        viewBox="0 0 72 72"
+        width="92"
+        height="92"
+        viewBox="0 0 92 92"
         aria-hidden="true"
       >
         <circle
-          cx="36"
-          cy="36"
+          cx="46"
+          cy="46"
           r={radius}
           fill="none"
-          strokeWidth="6"
+          strokeWidth="7"
           className="stroke-forest-950/70"
         />
         <circle
-          cx="36"
-          cy="36"
+          cx="46"
+          cy="46"
           r={radius}
           fill="none"
-          strokeWidth="6"
+          strokeWidth="7"
           strokeLinecap="round"
           className={`${ringClass} transition-all duration-700`}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
         />
       </svg>
-      <span className="absolute font-storybook text-lg font-bold tabular-nums nav-dragon-gold">
+      <span
+        className={`absolute font-storybook text-xl font-bold leading-none tracking-tight tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)] sm:text-2xl ${textClass}`}
+      >
         {score}%
       </span>
     </div>
@@ -61,20 +71,15 @@ function MatchScoreShell({ children }: { children: React.ReactNode }) {
   return (
     <section className="preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start">
       <CodexBoxOrnament />
-      <div className="relative z-[3] mb-2 flex items-center gap-2 px-0.5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
-          <Target className="h-3.5 w-3.5" />
+      <div className="relative z-[3] mb-3 flex items-center gap-2.5 px-0.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
+          <Target className="h-4 w-4" />
         </div>
-        <div>
-          <h2 className="font-storybook text-sm font-bold tracking-[0.1em] nav-dragon-gold sm:text-base">
-            Match Score
-          </h2>
-          <p className="font-heading text-[11px] nav-dragon-gold">
-            Fits your preferences
-          </p>
-        </div>
+        <h2 className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg">
+          Match Score
+        </h2>
       </div>
-      <div className="relative z-[3] flex flex-col px-0.5">{children}</div>
+      <div className="relative z-[3] flex flex-col gap-4 px-0.5">{children}</div>
     </section>
   );
 }
@@ -111,7 +116,7 @@ export function MatchScore({
   if (!hasCommunityData) {
     return (
       <MatchScoreShell>
-        <p className="font-heading text-xs leading-snug nav-dragon-gold">
+        <p className="font-heading text-xs leading-relaxed nav-dragon-gold">
           Not enough community ratings yet to calculate a match score for this
           book. Check back once others have rated it.
         </p>
@@ -129,32 +134,36 @@ export function MatchScore({
 
   return (
     <MatchScoreShell>
-      <div className="mb-3 flex items-center gap-3">
-        <ScoreRing score={score} ringClass={style.ring} />
-        <div className="min-w-0">
+      <div className="flex items-center gap-4">
+        <ScoreRing
+          score={score}
+          ringClass={style.ring}
+          textClass="nav-dragon-gold"
+        />
+        <div className="min-w-0 space-y-2">
           <span
-            className={`inline-flex rounded-sm border px-2.5 py-0.5 font-storybook text-xs font-bold tracking-wide ${style.badge}`}
+            className={`inline-flex rounded-sm border px-2.5 py-1 font-storybook text-sm font-bold tracking-wide ${style.badge}`}
           >
             {label}
           </span>
-          <p className="mt-1.5 font-heading text-xs leading-snug nav-dragon-gold">
+          <p className="font-heading text-xs leading-snug nav-dragon-gold">
             Community ratings vs your preferences.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-1.5 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {breakdown.map((item, index) => (
           <div
             key={item.label}
-            className="rounded-sm border border-gold-600/25 bg-forest-950/40 px-2 py-1.5"
+            className="rounded-sm border border-gold-600/25 bg-forest-950/40 px-2.5 py-2"
             style={{ animationDelay: `${index * 40}ms` }}
           >
-            <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
               <span className="truncate font-heading nav-dragon-gold">
                 {item.label}
               </span>
-              <span className={`font-bold tabular-nums ${style.text}`}>
+              <span className="shrink-0 font-heading font-bold tabular-nums nav-dragon-gold">
                 {item.score}%
               </span>
             </div>

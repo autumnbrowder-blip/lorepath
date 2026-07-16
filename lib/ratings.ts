@@ -1,4 +1,5 @@
 import { getBookById } from "@/lib/books";
+import { RATING_CATEGORIES } from "@/lib/rating-categories";
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
@@ -131,9 +132,92 @@ export type UserRatedBook = {
   title: string;
   author: string | null;
   coverImageUrl: string | null;
+  genre: string | null;
   ratings: ContentRating;
   createdAt: string;
 };
+
+export type UserReadingStats = {
+  totalBooksRated: number;
+  /** Mean of all five content fields across every rating. */
+  overallAverage: number | null;
+  byCategory: ContentRating | null;
+  /** Content category with the highest average mark. */
+  topContentCategory: {
+    key: keyof ContentRating;
+    label: string;
+    average: number;
+  } | null;
+  /** Most common book genre among rated titles, when available. */
+  topGenre: string | null;
+};
+
+export function computeUserReadingStats(
+  ratedBooks: UserRatedBook[]
+): UserReadingStats {
+  if (ratedBooks.length === 0) {
+    return {
+      totalBooksRated: 0,
+      overallAverage: null,
+      byCategory: null,
+      topContentCategory: null,
+      topGenre: null,
+    };
+  }
+
+  const contentRatings = ratedBooks.map((book) => book.ratings);
+  const byCategory = Object.fromEntries(
+    RATING_KEYS.map((key) => [key, averageCategory(contentRatings, key)])
+  ) as ContentRating;
+
+  const overallSum = contentRatings.reduce(
+    (sum, rating) =>
+      sum + RATING_KEYS.reduce((inner, key) => inner + rating[key], 0),
+    0
+  );
+  const overallAverage =
+    Math.round((overallSum / (contentRatings.length * RATING_KEYS.length)) * 10) /
+    10;
+
+  let topContentCategory: UserReadingStats["topContentCategory"] = null;
+  for (const category of RATING_CATEGORIES) {
+    const average = byCategory[category.key];
+    if (
+      !topContentCategory ||
+      average > topContentCategory.average
+    ) {
+      topContentCategory = {
+        key: category.key,
+        label: category.label,
+        average,
+      };
+    }
+  }
+
+  const genreCounts = new Map<string, number>();
+  for (const book of ratedBooks) {
+    const genre = book.genre?.trim();
+    if (!genre) continue;
+    genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
+  }
+
+  let topGenre: string | null = null;
+  let topGenreCount = 0;
+  for (const [genre, count] of genreCounts) {
+    if (count > topGenreCount) {
+      topGenre = genre;
+      topGenreCount = count;
+    }
+  }
+
+  return {
+    totalBooksRated: ratedBooks.length,
+    overallAverage,
+    byCategory,
+    topContentCategory,
+    topGenre,
+  };
+}
 
 export async function getUserRatedBooks(
   userId: string
@@ -160,7 +244,8 @@ export async function getUserRatedBooks(
           slug,
           title,
           author,
-          cover_image_url
+          cover_image_url,
+          genre
         )
       `
       )
@@ -183,6 +268,7 @@ export async function getUserRatedBooks(
           title: book.title as string,
           author: (book.author as string | null) ?? null,
           coverImageUrl: (book.cover_image_url as string | null) ?? null,
+          genre: (book.genre as string | null) ?? null,
           ratings: {
             sexual_content: row.sexual_content as number,
             lgbt: row.lgbt as number,
@@ -197,6 +283,13 @@ export async function getUserRatedBooks(
   } catch {
     return [];
   }
+}
+
+export async function getUserReadingStats(
+  userId: string
+): Promise<UserReadingStats> {
+  const ratedBooks = await getUserRatedBooks(userId);
+  return computeUserReadingStats(ratedBooks);
 }
 
 export async function submitUserRating(
@@ -233,6 +326,8 @@ export async function submitUserRating(
 
   revalidatePath(`/books/${bookExternalId}`, "page");
   revalidatePath("/browse");
+  revalidatePath("/rated");
+  revalidatePath("/stats");
 
   return { success: true };
 }

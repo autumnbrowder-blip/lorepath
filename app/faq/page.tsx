@@ -6,6 +6,7 @@ import {
   Feather,
   Hourglass,
   Library,
+  Scale,
   ScrollText,
   Sparkles,
   Stars,
@@ -26,17 +27,93 @@ const betaFeatures = [
   "Rate books and leave clear notes on tone, content, and pacing",
   "View community ratings from other readers",
   "Set preferences in the Preferences Codex as it grows",
+  "Match Score",
   "Share feedback that helps guide what we build next",
 ];
 
 const upcomingFeatures = [
-  "Match Score",
   "Advanced preferences and filters",
   "Multiple saved profiles",
   "Book recommendations matched to your preferences",
   "See your reading history in one place",
   "Wishlist",
+  "Mobile app",
+  "New avatars",
+  '"Surprise Me" Button',
+  "Quick Rate from Browse",
 ];
+
+const ratingScaleOverview = [
+  { level: 0, meaning: "None / lowest — the category is absent or at its minimum" },
+  { level: 1, meaning: "Very mild or minor presence" },
+  { level: 2, meaning: "Some presence, still moderate overall" },
+  { level: 3, meaning: "Clear, noticeable presence throughout" },
+  { level: 4, meaning: "Strong or prominent — a major part of the book" },
+  { level: 5, meaning: "Highest — central, intense, or extreme for that category" },
+];
+
+const ratingCategoryGuides = [
+  {
+    label: "Pacing",
+    blurb: "How fast or slow the story moves.",
+    levels: [
+      "0 — Very Slow: heavy on description and character development",
+      "1 — Slow: more atmosphere and detail",
+      "2 — Moderate: quieter stretches mixed with quicker spurts",
+      "3 — Fast: steady momentum",
+      "4 — Very Fast: little downtime",
+      "5 — Breakneck: extremely fast; can feel rushed",
+    ],
+  },
+  {
+    label: "Horror",
+    blurb: "Frightening, violent, or disturbing content.",
+    levels: [
+      "0 — None",
+      "1 — Mild: light tension or minimal scares",
+      "2 — Moderate: some horror and unsettling moments",
+      "3 — Dark: strong horror themes and tension",
+      "4 — Intense: heavy horror, graphic violence, strong psychological elements",
+      "5 — Extreme: very graphic horror, gore, and multiple potential triggers",
+    ],
+  },
+  {
+    label: "Sexual Content",
+    blurb: "Romance, intimacy, or sexual themes.",
+    levels: [
+      "0 — None",
+      "1 — PG: very mild",
+      "2 — PG-13: some tension or mild scenes",
+      "3 — R: moderate, more descriptive",
+      "4 — Mature: explicit scenes, but not the main focus",
+      "5 — Adult: heavy smut / very explicit",
+    ],
+  },
+  {
+    label: "LGBTQ+",
+    blurb: "LGBTQ+ characters, relationships, or themes.",
+    levels: [
+      "0 — None",
+      "1 — Very Minor: brief or very small roles",
+      "2 — Minor: present, but not central",
+      "3 — Moderate: a noticeable supporting role",
+      "4 — Major: significant to the story",
+      "5 — Central: the main focus of the book",
+    ],
+  },
+  {
+    label: "Social & Political Themes in Stories",
+    blurb: "How much social or political messaging appears in the story.",
+    levels: [
+      "0 — None: no noticeable messaging",
+      "1 — Minimal",
+      "2 — Subtle: present but understated",
+      "3 — Noticeable: clear themes throughout",
+      "4 — Prominent: a major part of the book",
+      "5 — Central: primarily focused on these themes",
+    ],
+  },
+] as const;
 
 function SectionCard({
   icon: Icon,
@@ -72,9 +149,9 @@ function SectionCard({
 
 export default function FaqPage() {
   return (
-    <div className="relative isolate min-h-[calc(100vh-4.5rem)] overflow-hidden bg-[#07120c]">
-      {/* Immersive classroom: wizard (left) + magical auditorium (right) */}
-      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+    <div className="faq-page">
+      {/* Full-page classroom scene — stretches with content and scrolls with it */}
+      <div className="faq-page-scene" aria-hidden="true">
         <div className="absolute inset-y-0 left-0 w-full lg:w-[48%]">
           <Image
             src="/images/lorepath-faq-wizard-left.png"
@@ -101,18 +178,10 @@ export default function FaqPage() {
         <div className="absolute inset-0 bg-gradient-to-b from-[#07120c]/40 via-transparent to-[#050a08]/72" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_70%,_rgba(166,124,45,0.12)_0%,_transparent_45%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_88%_35%,_rgba(61,107,79,0.14)_0%,_transparent_42%)]" />
-      </div>
 
-      <div
-        className="pointer-events-none absolute left-[12%] top-[22%] z-[1] h-40 w-40 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.22)_0%,_transparent_70%)] blur-2xl"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute right-[14%] top-[30%] z-[1] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.8s]"
-        aria-hidden="true"
-      />
+        <div className="absolute left-[12%] top-[22%] h-40 w-40 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.22)_0%,_transparent_70%)] blur-2xl" />
+        <div className="absolute right-[14%] top-[30%] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.8s]" />
 
-      <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden="true">
         <CornerFlourish className="absolute left-2 top-2 h-16 w-16 text-gold-500/55 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
         <CornerFlourish className="absolute right-2 top-2 h-16 w-16 rotate-90 text-gold-500/55 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
         <CornerFlourish className="absolute bottom-2 left-2 h-16 w-16 -rotate-90 text-gold-500/55 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
@@ -149,8 +218,8 @@ export default function FaqPage() {
           </div>
         </div>
 
-        <div className="book-detail-tome relative shadow-[0_28px_70px_rgba(0,0,0,0.55)]">
-          <div className="book-detail-tome-parchment" aria-hidden="true" />
+        <div className="book-detail-tome faq-tome relative shadow-[0_28px_70px_rgba(0,0,0,0.55)]">
+          <div className="book-detail-tome-parchment faq-tome-parchment" aria-hidden="true" />
           <CornerFlourish className="pointer-events-none absolute left-1 top-1 z-20 h-14 w-14 text-[#a67c2d]/70 sm:left-2 sm:top-2 sm:h-16 sm:w-16" />
           <CornerFlourish className="pointer-events-none absolute right-1 top-1 z-20 h-14 w-14 rotate-90 text-[#a67c2d]/70 sm:right-2 sm:top-2 sm:h-16 sm:w-16" />
           <CornerFlourish className="pointer-events-none absolute bottom-1 left-1 z-20 h-14 w-14 -rotate-90 text-[#a67c2d]/70 sm:bottom-2 sm:left-2 sm:h-16 sm:w-16" />
@@ -242,6 +311,81 @@ export default function FaqPage() {
                 catalog stays fresh. Over time, the library continues to grow
                 with both new releases and older works for readers to explore.
               </p>
+            </SectionCard>
+
+            <SectionCard
+              icon={Scale}
+              eyebrow="Chapter VI · Ratings Explained"
+              title="How Do the Ratings Work?"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                LorePath uses a shared 0–5 scale for each content category. The
+                numbers mean the same idea everywhere: lower scores mean little
+                or none of that element; higher scores mean more of it. Ratings
+                describe what is in the book — not whether the book is “good” or
+                “bad.”
+              </p>
+
+              <p className="mt-4 font-storybook text-sm font-bold uppercase tracking-[0.2em] nav-dragon-gold">
+                Understanding the 0–5 Scale
+              </p>
+              <ul className="mt-2.5 space-y-2">
+                {ratingScaleOverview.map(({ level, meaning }) => (
+                  <li
+                    key={level}
+                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
+                  >
+                    <span className="inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-600 to-gold-500 px-1.5 font-storybook text-xs font-bold text-forest-950">
+                      {level}
+                    </span>
+                    <span className="font-heading text-lg leading-snug nav-dragon-gold">
+                      {meaning}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="mt-5 font-storybook text-sm font-bold uppercase tracking-[0.2em] nav-dragon-gold">
+                Category details
+              </p>
+              <p className="mt-2 font-heading text-lg leading-relaxed nav-dragon-gold">
+                Open a category below for how readers typically use each number.
+                Pacing is about tempo; the others measure how much of that
+                content appears.
+              </p>
+              <div className="mt-3 space-y-2.5">
+                {ratingCategoryGuides.map((category) => (
+                  <details
+                    key={category.label}
+                    className="faq-rating-details rounded-sm border border-gold-600/40 bg-forest-950/45 open:border-gold-600/55 open:bg-forest-950/60"
+                  >
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-heading text-lg font-semibold nav-dragon-gold outline-none marker:content-none [&::-webkit-details-marker]:hidden">
+                      <span>{category.label}</span>
+                      <span
+                        aria-hidden="true"
+                        className="faq-rating-caret shrink-0 font-storybook text-xs font-bold uppercase tracking-[0.18em] text-[#e2c06a]/80"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+                    <div className="border-t border-gold-600/25 px-4 pb-3.5 pt-2.5">
+                      <p className="font-heading text-base leading-snug text-[#e2c06a]/85">
+                        {category.blurb}
+                      </p>
+                      <ul className="mt-2.5 space-y-1.5">
+                        {category.levels.map((line) => (
+                          <li
+                            key={line}
+                            className="font-heading text-base leading-snug nav-dragon-gold"
+                          >
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </details>
+                ))}
+              </div>
             </SectionCard>
 
             <div className="preference-codex-box relative text-center">

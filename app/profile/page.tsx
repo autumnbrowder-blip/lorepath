@@ -10,7 +10,7 @@ import {
 } from "@/lib/avatars";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowLeft, ScrollText } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -97,10 +97,6 @@ export default async function ProfilePage() {
         </Link>
 
         <header className="mb-8 text-center sm:mb-10 sm:text-left">
-          <p className="section-label justify-center text-sm nav-dragon-gold sm:justify-start">
-            <ScrollText className="h-3.5 w-3.5" />
-            Traveler&apos;s ledger
-          </p>
           <h1 className="page-title nav-dragon-gold">Your Profile</h1>
           <p className="mt-2 font-heading text-lg nav-dragon-gold">
             A quiet corner of the archives for your account.

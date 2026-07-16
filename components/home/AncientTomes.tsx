@@ -22,7 +22,7 @@ const TOMES: Tome[] = [
   },
   {
     title: "Your Rated Tomes",
-    subtitle: "Return to books you have judged",
+    subtitle: "Return to books you have marked",
     href: "/rated",
     leather: "olive",
   },

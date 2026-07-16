@@ -14,7 +14,9 @@ export function getSiteOrigin(): string {
   return "http://localhost:3000";
 }
 
-/** Allowlisted callback path — keep this exact string in Supabase Redirect URLs. */
+/** Allowlisted callback path — keep this exact string in Supabase Redirect URLs.
+ * Used for OAuth, email confirmation, and password-reset recovery (`next=/reset-password`).
+ */
 export function getAuthCallbackUrl(nextPath = "/"): string {
   const origin = getSiteOrigin();
   const next = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;

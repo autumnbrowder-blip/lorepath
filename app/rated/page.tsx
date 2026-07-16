@@ -30,7 +30,7 @@ export default async function RatedTomesPage() {
             <LogIn className="mx-auto mb-4 h-8 w-8 text-accent" />
             <h1 className="page-title">Your Rated Tomes</h1>
             <p className="page-subtitle">
-              Sign in to revisit the books you have judged.
+              Sign in to revisit the books you have marked.
             </p>
             <Link href="/login" className="btn-primary mt-8">
               Sign in to the Archives
@@ -55,7 +55,7 @@ export default async function RatedTomesPage() {
           <p className="page-subtitle">
             {ratedBooks.length === 0
               ? "No ratings yet — open a book and leave your mark."
-              : `${ratedBooks.length} tome${ratedBooks.length === 1 ? "" : "s"} you have judged.`}
+              : `${ratedBooks.length} tome${ratedBooks.length === 1 ? "" : "s"} you have marked.`}
           </p>
         </div>
 

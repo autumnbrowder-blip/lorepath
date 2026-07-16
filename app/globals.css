@@ -200,7 +200,7 @@
     overflow: hidden;
     border-radius: 4px;
     border: 3px solid #a67c2d;
-    background-color: #ebe0c4;
+    background-color: #e6d9b8;
     box-shadow:
       0 20px 50px rgba(0, 0, 0, 0.45),
       0 0 0 1px rgba(179, 139, 77, 0.25),
@@ -209,9 +209,10 @@
   }
 
   /*
-   * Parchment paint box uses a viewport-tied height so background-size: cover
-   * does not rescale when rating/avatar interactions change content height.
-   * Parent overflow clips; base color fills any remainder.
+   * Tall tomes (book detail + FAQ) share this layer. Use a FIXED pixel tile
+   * width (not 100%/cover) so expanding content (FAQ <details>, long ratings)
+   * never recalculates background-size and looks like a zoom. Soft wash mutes
+   * vignette seams (image is not a seamless tile).
    */
   .book-detail-tome-parchment {
     pointer-events: none;
@@ -220,32 +221,104 @@
     z-index: 0;
     overflow: hidden;
     border-radius: inherit;
+    background-color: #e6d9b8;
     transition: none;
+    transform: none;
   }
 
   .book-detail-tome-parchment::before {
     content: "";
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    width: 100%;
-    height: 100vh;
-    background-color: #ebe0c4;
-    background-image: url("/images/parchment.jpg");
-    background-size: cover;
-    background-position: center top;
-    background-repeat: no-repeat;
+    inset: 0;
+    background-color: #e6d9b8;
+    background-image:
+      linear-gradient(
+        180deg,
+        rgba(230, 217, 184, 0.32) 0%,
+        rgba(230, 217, 184, 0.14) 42%,
+        rgba(230, 217, 184, 0.32) 100%
+      ),
+      url("/images/parchment.jpg");
+    /* Fixed tile size — independent of container width/height */
+    background-size: auto, 1100px auto;
+    background-position: center, top center;
+    background-repeat: no-repeat, repeat-y;
+    background-attachment: scroll;
     transition: none;
+    transform: none;
   }
 
   .book-detail-tome-parchment::after {
     content: "";
     position: absolute;
     inset: 0;
-    opacity: 0.18;
+    opacity: 0.2;
     mix-blend-mode: multiply;
+    background-color: #dcc9a0;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    transition: none;
+    transform: none;
+  }
+
+  /*
+   * FAQ page: full-document classroom scene that grows with page content
+   * and scrolls with it. Tome parchment stays decoupled from book-detail zoom.
+   */
+  .faq-page {
+    position: relative;
+    isolation: isolate;
+    min-height: calc(100vh - 4.5rem);
+    background-color: #07120c;
+    overflow-x: clip;
+  }
+
+  .faq-page-scene {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    transform: none;
+  }
+
+  .faq-page-scene img {
+    object-fit: cover;
+    transition: none;
+    transform: none;
+  }
+
+  .faq-tome .book-detail-tome-parchment::before,
+  .faq-tome-parchment::before {
+    /* Slightly narrower fixed tile for max-w-3xl FAQ tome */
+    background-size: auto, 900px auto;
+    background-position: center, top center;
+    background-repeat: no-repeat, repeat-y;
+  }
+
+  .faq-tome,
+  .faq-tome .book-detail-tome-parchment,
+  .faq-tome .book-detail-tome-parchment::before,
+  .faq-tome .book-detail-tome-parchment::after {
+    transition: none;
+    transform: none;
+  }
+
+  /* FAQ rating <details>: only caret rotates — no scale on parents/bg */
+  .faq-rating-details > summary {
+    transition: filter 150ms ease;
+  }
+
+  .faq-rating-details > summary:hover {
+    filter: brightness(1.1);
+  }
+
+  .faq-rating-details > summary .faq-rating-caret {
+    transition: transform 150ms ease;
+    transform: none;
+  }
+
+  .faq-rating-details[open] > summary .faq-rating-caret {
+    transform: rotate(180deg);
   }
 
   .book-detail-tome::before {

@@ -68,18 +68,24 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const configured = isSupabaseConfigured();
 
   useEffect(() => {
     const authError = searchParams.get("error");
+    const message = searchParams.get("message");
     if (authError === "auth_callback_failed") {
       setError(
         "That confirmation link could not finish signing you in. Make sure LorePath is running at http://localhost:3000, then request a new confirmation email or try signing in."
       );
     } else if (authError === "supabase_not_configured") {
       setError(missingConfigMessage);
+    } else if (message === "password_updated") {
+      setSuccessMessage(
+        "Your password has been updated. Sign in with your new credentials."
+      );
     }
   }, [searchParams]);
 
@@ -166,6 +172,9 @@ export function LoginForm() {
       {!configured && (
         <div className="alert-error mb-4">{missingConfigMessage}</div>
       )}
+      {successMessage && (
+        <div className="alert-success mb-4">{successMessage}</div>
+      )}
       {error && <div className="alert-error mb-4">{error}</div>}
 
         <button
@@ -248,6 +257,16 @@ export function LoginForm() {
           Sign in to the Archives
         </button>
       </form>
+
+      <p className="mt-4 text-center text-sm text-[#0f2a22]">
+        <Link
+          href="/forgot-password"
+          className="font-semibold text-[#0f2a22] underline underline-offset-4 decoration-[#a67c2d]/70 hover:decoration-[#a67c2d]"
+          style={{ fontFamily: bodyFont }}
+        >
+          Forgot Password?
+        </Link>
+      </p>
 
       <p
         className="mt-7 text-center text-base leading-relaxed text-[#0f2a22]"

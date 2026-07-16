@@ -171,13 +171,16 @@ export function AuthNav() {
     const avatar = getAvatarOption(profile?.avatar_key);
     const onProfile = pathname === "/profile";
     const onPreferences = pathname === "/preferences";
+    const onStats = pathname === "/stats";
 
     return (
       <div ref={containerRef} className="relative shrink-0">
         <button
           type="button"
           className={`flex max-w-[10.5rem] items-center gap-1.5 rounded-sm border border-gold-600/35 bg-forest-950/80 px-1.5 py-1 transition-[border-color,filter] hover:border-gold-500/55 sm:max-w-[13rem] ${
-            open || onProfile || onPreferences ? "border-gold-500/60" : ""
+            open || onProfile || onPreferences || onStats
+              ? "border-gold-500/60"
+              : ""
           }`}
           aria-expanded={open}
           aria-haspopup="menu"
@@ -238,6 +241,16 @@ export function AuthNav() {
               onClick={() => setOpen(false)}
             >
               Preferences
+            </Link>
+            <Link
+              href="/stats"
+              role="menuitem"
+              className={`block px-3 py-2 font-storybook text-sm tracking-wide transition-[filter] nav-dragon-gold hover:bg-forest-900/80 ${
+                onStats ? "nav-dragon-gold--active bg-forest-900/50" : ""
+              }`}
+              onClick={() => setOpen(false)}
+            >
+              Reading Stats
             </Link>
             <div
               className="mx-2 my-1 border-t border-gold-600/25"
