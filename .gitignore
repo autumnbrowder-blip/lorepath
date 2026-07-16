@@ -18,6 +18,11 @@
 .DS_Store
 *.pem
 
+# local recovery / nested scaffold leftovers (break Next/tsc builds)
+_prior_recovery/
+_restore_extract/
+/lorepath/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
