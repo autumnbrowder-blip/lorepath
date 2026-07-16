@@ -60,7 +60,12 @@ const parchmentButtonStyle: CSSProperties = {
     "0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,248,230,0.5), inset 0 -2px 4px rgba(90,60,20,0.18)",
 };
 
-export function LoginForm() {
+type LoginFormProps = {
+  /** Server-computed flag; falls back to client env check when omitted. */
+  configured?: boolean;
+};
+
+export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") ?? "/";
@@ -71,7 +76,7 @@ export function LoginForm() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const configured = isSupabaseConfigured();
+  const configured = configuredProp ?? isSupabaseConfigured();
 
   useEffect(() => {
     const authError = searchParams.get("error");
@@ -81,13 +86,21 @@ export function LoginForm() {
         "That confirmation link could not finish signing you in. Make sure LorePath is running at http://localhost:3000, then request a new confirmation email or try signing in."
       );
     } else if (authError === "supabase_not_configured") {
-      setError(missingConfigMessage);
+      // Stale query param from an earlier misconfigured session — ignore when env is valid.
+      if (!configured) {
+        setError(missingConfigMessage);
+      } else {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("error");
+        const qs = params.toString();
+        router.replace(qs ? `/login?${qs}` : "/login");
+      }
     } else if (message === "password_updated") {
       setSuccessMessage(
         "Your password has been updated. Sign in with your new credentials."
       );
     }
-  }, [searchParams]);
+  }, [searchParams, configured, router]);
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();

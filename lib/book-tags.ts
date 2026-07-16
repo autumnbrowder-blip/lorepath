@@ -549,7 +549,7 @@ function selectTagEvidence(evidence: GenreEvidence[]): GenreEvidence[] {
   const hardcover = trusted.filter((entry) => entry.source === "hardcover");
   if (hardcover.length > 0 && hardcoverHasSufficientTags(hardcover)) {
     const mappedHc = mapEvidenceToTags(hardcover);
-    const needsSpecificEnrichment = [...mappedHc].every(
+    const needsSpecificEnrichment = mappedHc.every(
       (tag) => BROAD_FALLBACK_PARENTS.has(tag) || tag === "Young Adult"
     );
 
@@ -578,7 +578,7 @@ function selectTagEvidence(evidence: GenreEvidence[]): GenreEvidence[] {
   );
 }
 
-function mapEvidenceToTags(evidence: GenreEvidence[]): Set<CanonicalTag> {
+function mapEvidenceToTags(evidence: GenreEvidence[]): CanonicalTag[] {
   const mapped = new Set<CanonicalTag>();
   for (const entry of evidence) {
     for (const subject of splitRawCategories(entry.categories)) {
@@ -590,12 +590,12 @@ function mapEvidenceToTags(evidence: GenreEvidence[]): Set<CanonicalTag> {
       mapped.add(tag);
     }
   }
-  return new Set(preferSpecificOverBroad([...mapped]));
+  return preferSpecificOverBroad(Array.from(mapped));
 }
 
 /** Hardcover is usable alone when it yields enough non-Fiction canonical tags. */
 function hardcoverHasSufficientTags(evidence: GenreEvidence[]): boolean {
-  return mapEvidenceToTags(evidence).size >= HARDCOVER_MIN_GOOD_TAGS;
+  return mapEvidenceToTags(evidence).length >= HARDCOVER_MIN_GOOD_TAGS;
 }
 
 /**
@@ -759,7 +759,7 @@ export function normalizeBookTags(categories: string[]): string[] {
   }
 
   return dropRedundantFiction(
-    resolveConflictingTags(orderCanonical([...matched]), categories)
+    resolveConflictingTags(orderCanonical(Array.from(matched)), categories)
   );
 }
 
@@ -780,7 +780,7 @@ export function inferTagsFromText(
     if (pattern.test(haystack)) matched.add(tag);
   }
 
-  let tags = orderCanonical([...matched]);
+  let tags = orderCanonical(Array.from(matched));
   tags = preferSpecificOverBroad(tags);
   if (
     tags.some((tag) => SPECULATIVE_TAGS.has(tag)) &&
@@ -909,7 +909,7 @@ export function finalizeBookTags(input: FinalizeBookTagsInput): string[] {
     tags = resolveConflictingTags(orderCanonical(inferred), allRaw);
   }
 
-  for (const tag of STRICT_TAGS) {
+  for (const tag of Array.from(STRICT_TAGS)) {
     if (tags.includes(tag)) continue;
     if (mayKeepStrictTag(tag, votes, input)) tags.push(tag);
   }
