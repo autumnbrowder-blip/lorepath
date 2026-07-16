@@ -7,7 +7,6 @@ import {
   PROFILE_UPDATED_EVENT,
   resolveAvatarKey,
   type AvatarKey,
-  type PickerAvatarKey,
 } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -89,7 +88,7 @@ export function AvatarPicker({
     return () => window.clearTimeout(timer);
   }, [justSaved]);
 
-  async function handleSelect(key: PickerAvatarKey) {
+  async function handleSelect(key: AvatarKey) {
     if (saving || key === savedKey) return;
 
     if (!isSupabaseConfigured()) {
