@@ -23,7 +23,7 @@ function mergeSearchResults(
   existing: BookSummary[],
   incoming: BookSummary[]
 ): BookSummary[] {
-  // Same cleanup path as the server (description filter, dedupe, year sort)
+  // Same cleanup path as the server (quality filter, dedupe, year sort)
   return finalizeSearchBooks([...existing, ...incoming]);
 }
 

@@ -56,18 +56,6 @@ const SEARCH_SOURCES: BookSource[] = [
   "isbndb",
 ];
 
-function hasDescription(book: BookSummary): boolean {
-  return Boolean(book.description?.trim());
-}
-
-function hasCover(book: BookSummary): boolean {
-  return Boolean(book.coverUrl?.trim());
-}
-
-function hasDescriptionAndCover(book: BookSummary): boolean {
-  return hasDescription(book) && hasCover(book);
-}
-
 function readSettledPage(
   label: string,
   result: PromiseSettledResult<{ books: BookSummary[]; hasMore: boolean }>
@@ -212,9 +200,6 @@ export async function searchBooks(
   if (genreMode) {
     books = preferMatchingGenreTags(books, searchQuery);
   }
-
-  // Final safety: only return books with both description and cover
-  books = books.filter(hasDescriptionAndCover);
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
     hardcover: hardcoverBooks.length,

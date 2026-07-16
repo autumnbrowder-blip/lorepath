@@ -18,6 +18,8 @@ const SOURCE_DEDUP_BONUS: Record<BookSource, number> = {
   gutendex: 0,
 };
 
+const MISSING_DESCRIPTION_FALLBACK = "No description available.";
+
 function hasDescription(book: BookSummary): boolean {
   return Boolean(book.description?.trim());
 }
@@ -28,6 +30,30 @@ function hasCover(book: BookSummary): boolean {
 
 function hasDescriptionAndCover(book: BookSummary): boolean {
   return hasDescription(book) && hasCover(book);
+}
+
+/** Eligible for merge — need at least one of description or cover. */
+function hasUsableSearchFields(book: BookSummary): boolean {
+  return hasDescription(book) || hasCover(book);
+}
+
+function withDescriptionFallback(book: BookSummary): BookSummary {
+  if (hasDescription(book)) return book;
+  return { ...book, description: MISSING_DESCRIPTION_FALLBACK };
+}
+
+/**
+ * Prefer complete records. If none survive, fall back to cover-only
+ * (with a short description stub), then description-only — never junk with neither.
+ */
+function selectQualityBooks(books: BookSummary[]): BookSummary[] {
+  const withBoth = books.filter(hasDescriptionAndCover);
+  if (withBoth.length > 0) return withBoth;
+
+  const withCover = books.filter(hasCover).map(withDescriptionFallback);
+  if (withCover.length > 0) return withCover;
+
+  return books.filter(hasDescription);
 }
 
 /** Higher = cleaner / more complete record to keep during dedupe. */
@@ -52,7 +78,7 @@ function bookQualityScore(book: BookSummary): number {
 
 /**
  * Keep the stronger record when duplicates collide.
- * Prefer Hardcover whenever it has both description and cover.
+ * Prefer Hardcover whenever it has a cover (merge fills description gaps).
  */
 export function pickPreferredDuplicate(
   a: BookSummary,
@@ -61,15 +87,28 @@ export function pickPreferredDuplicate(
   const aHasBoth = hasDescriptionAndCover(a);
   const bHasBoth = hasDescriptionAndCover(b);
 
-  // Prefer complete Hardcover identity whenever available.
-  if (a.source === "hardcover" && b.source !== "hardcover" && aHasBoth) {
+  // Prefer Hardcover identity when it has a cover (or is fully complete).
+  if (
+    a.source === "hardcover" &&
+    b.source !== "hardcover" &&
+    (aHasBoth || hasCover(a))
+  ) {
     return a;
   }
-  if (b.source === "hardcover" && a.source !== "hardcover" && bHasBoth) {
+  if (
+    b.source === "hardcover" &&
+    a.source !== "hardcover" &&
+    (bHasBoth || hasCover(b))
+  ) {
     return b;
   }
 
   if (aHasBoth !== bHasBoth) return bHasBoth ? b : a;
+
+  // Prefer a cover over description-only when completeness differs.
+  const aCover = hasCover(a);
+  const bCover = hasCover(b);
+  if (aCover !== bCover) return bCover ? b : a;
 
   const aScore = bookQualityScore(a);
   const bScore = bookQualityScore(b);
@@ -100,19 +139,20 @@ function mergePreferredFields(
 }
 
 /**
- * 1) Keep only books with both a description and a cover
+ * 1) Keep books with a description and/or cover (exclude empty stubs)
  * 2) Deduplicate by ISBN (strongest) then normalized title + author
  * 3) Prefer Hardcover identity + metadata on overlaps
- * 4) Sort by published year, newest first (stable)
+ * 4) Prefer fully complete records; fall back to cover/description if needed
+ * 5) Sort by published year, newest first (stable)
  */
 export function finalizeSearchBooks(books: BookSummary[]): BookSummary[] {
-  const complete = books.filter(hasDescriptionAndCover);
+  const candidates = books.filter(hasUsableSearchFields);
 
   // Pass 1: ISBN matches always collapse
   const byIsbn = new Map<string, BookSummary>();
   const withoutIsbn: BookSummary[] = [];
 
-  for (const book of complete) {
+  for (const book of candidates) {
     const isbnKey = getBookIsbnKey(book);
     if (!isbnKey) {
       withoutIsbn.push(book);
@@ -143,9 +183,9 @@ export function finalizeSearchBooks(books: BookSummary[]): BookSummary[] {
     byTitleAuthor.set(key, mergePreferredFields(preferred, other));
   }
 
-  return sortByPublishedYearDesc(
-    Array.from(byTitleAuthor.values())
-      .map((book) => withFinalizedTags(book))
-      .filter(hasDescriptionAndCover)
+  const merged = Array.from(byTitleAuthor.values()).map((book) =>
+    withFinalizedTags(book)
   );
+
+  return sortByPublishedYearDesc(selectQualityBooks(merged));
 }
