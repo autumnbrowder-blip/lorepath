@@ -99,6 +99,8 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       setSuccessMessage(
         "Your password has been updated. Sign in with your new credentials."
       );
+    } else if (message === "preferences") {
+      setSuccessMessage("Please sign in to access your preferences.");
     }
   }, [searchParams, configured, router]);
 

@@ -2,10 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-const protectedRoutes: string[] = ["/profile", "/stats"];
+const protectedRoutes: string[] = ["/profile", "/stats", "/preferences"];
 // Public auth screens. Do not include /reset-password — recovery links
 // establish a session and the user must stay on that page to set a password.
 const authRoutes = ["/login", "/register", "/forgot-password"];
+
+const protectedRouteMessages: Record<string, string> = {
+  "/preferences": "preferences",
+};
 
 export async function updateSession(request: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -53,6 +57,15 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
+    const messageKey = protectedRoutes.find((route) =>
+      pathname.startsWith(route)
+    );
+    const message = messageKey
+      ? protectedRouteMessages[messageKey]
+      : undefined;
+    if (message) {
+      url.searchParams.set("message", message);
+    }
     return NextResponse.redirect(url);
   }
 

@@ -12,7 +12,7 @@ import { FormEvent, useState } from "react";
 
 type PreferencesFormProps = {
   initialPreferences: ContentRating;
-  /** When true, skips API persistence (guest / no-premium testing). */
+  /** When true, skips API persistence (local testing without login). */
   testingMode?: boolean;
 };
 
@@ -39,7 +39,7 @@ export function PreferencesForm({
     setSuccess(false);
 
     try {
-      // TEMP: local-only save while testing without login/premium
+      // TEMP: local-only save while testing without login
       if (testingMode) {
         try {
           sessionStorage.setItem(

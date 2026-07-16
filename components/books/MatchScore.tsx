@@ -7,10 +7,9 @@ import type { CommunityRatingsSummary } from "@/lib/ratings";
 import type { ContentRating } from "@/types";
 import { Target } from "lucide-react";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
-import { UpgradePrompt } from "@/components/preferences/UpgradePrompt";
+import { SignInPrompt } from "@/components/preferences/SignInPrompt";
 
 type MatchScoreProps = {
-  hasPremiumAccess: boolean;
   isLoggedIn: boolean;
   communityRatings: CommunityRatingsSummary;
   userPreferences: ContentRating | null;
@@ -85,7 +84,6 @@ function MatchScoreShell({ children }: { children: React.ReactNode }) {
 }
 
 export function MatchScore({
-  hasPremiumAccess,
   isLoggedIn,
   communityRatings,
   userPreferences,
@@ -93,19 +91,11 @@ export function MatchScore({
   if (!isLoggedIn) {
     return (
       <MatchScoreShell>
-        <UpgradePrompt
+        <SignInPrompt
           title="Sign in to see your Match Score"
-          description="Create an account to start your 14-day trial and see how well books match your content preferences."
+          description="During Beta, Match Score is free for every account. Sign in to see how well books match your content preferences."
           compact
         />
-      </MatchScoreShell>
-    );
-  }
-
-  if (!hasPremiumAccess) {
-    return (
-      <MatchScoreShell>
-        <UpgradePrompt compact />
       </MatchScoreShell>
     );
   }
@@ -124,10 +114,19 @@ export function MatchScore({
     );
   }
 
-  const prefs = userPreferences!;
+  if (!userPreferences) {
+    return (
+      <MatchScoreShell>
+        <p className="font-heading text-xs leading-relaxed nav-dragon-gold">
+          Set your preferences to unlock Match Score for this book.
+        </p>
+      </MatchScoreShell>
+    );
+  }
+
   const { score, breakdown } = calculateMatchScore(
     communityRatings.averages!,
-    prefs
+    userPreferences
   );
   const label = getMatchLabel(score);
   const style = getMatchStyle(score);

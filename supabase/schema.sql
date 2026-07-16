@@ -222,7 +222,7 @@ create trigger user_preferences_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
--- 5. saved_preference_profiles (paid users)
+-- 5. saved_preference_profiles (multi-profile; gated in RLS for later rollout)
 -- Named, reusable preference presets.
 -- -----------------------------------------------------------------------------
 create table public.saved_preference_profiles (
@@ -253,7 +253,7 @@ create trigger saved_preference_profiles_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
--- 6. wishlists (paid users)
+-- 6. wishlists (gated in RLS for later rollout)
 -- -----------------------------------------------------------------------------
 create table public.wishlists (
   id         uuid primary key default gen_random_uuid(),
@@ -335,7 +335,7 @@ create policy "Users can delete own preferences"
   on public.user_preferences for delete
   using (auth.uid() = user_id);
 
--- saved_preference_profiles: paid subscribers only
+-- saved_preference_profiles: reserved flag (is_subscriber) for later rollout
 create policy "Subscribers can view own saved profiles"
   on public.saved_preference_profiles for select
   using (
@@ -376,7 +376,7 @@ create policy "Subscribers can delete own saved profiles"
     )
   );
 
--- wishlists: paid subscribers only
+-- wishlists: reserved flag (is_subscriber) for later rollout
 create policy "Subscribers can view own wishlist"
   on public.wishlists for select
   using (

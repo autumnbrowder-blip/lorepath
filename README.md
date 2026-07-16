@@ -1,6 +1,6 @@
 # LorePath
 
-A Next.js 14+ app for exploring lore and premium narrative content.
+A Next.js 14+ app for exploring lore and narrative content.
 
 ## Stack
 
@@ -52,5 +52,6 @@ types/         # Shared TypeScript types
 | Path     | Description                          |
 |----------|--------------------------------------|
 | `/`      | Home                                 |
-| `/browse`| Browse placeholder catalog           |
-| `/paid`  | Protected paid features (auth required) |
+| `/browse`| Browse catalog                       |
+| `/faq`   | FAQ (Beta details)                   |
+| `/preferences` | Content preferences (auth required) |

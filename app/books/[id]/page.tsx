@@ -7,8 +7,7 @@ import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { getBookById } from "@/lib/books";
 import { getCommunityRatings } from "@/lib/ratings";
-import { getUserPreferences, getUserProfile } from "@/lib/preferences";
-import { hasPremiumAccess } from "@/lib/subscription";
+import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -46,11 +45,10 @@ export async function generateMetadata({
 
 async function loadViewerState(): Promise<{
   user: User | null;
-  hasPremium: boolean;
   userPreferences: ContentRating | null;
 }> {
   if (!isSupabaseConfigured()) {
-    return { user: null, hasPremium: false, userPreferences: null };
+    return { user: null, userPreferences: null };
   }
 
   const supabase = await createClient();
@@ -59,16 +57,13 @@ async function loadViewerState(): Promise<{
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { user: null, hasPremium: false, userPreferences: null };
+    return { user: null, userPreferences: null };
   }
 
-  const profile = await getUserProfile(user.id);
-  const hasPremium = profile ? hasPremiumAccess(profile) : false;
-  const userPreferences = hasPremium
-    ? await getUserPreferences(user.id)
-    : null;
+  // During Beta, every signed-in reader gets Match Score + preferences.
+  const userPreferences = await getUserPreferences(user.id);
 
-  return { user, hasPremium, userPreferences };
+  return { user, userPreferences };
 }
 
 export default async function BookDetailPage({
@@ -95,7 +90,7 @@ export default async function BookDetailPage({
     loadViewerState(),
   ]);
 
-  const { user, hasPremium, userPreferences } = viewer;
+  const { user, userPreferences } = viewer;
 
   const backHref = searchQuery
     ? `/browse?q=${encodeURIComponent(searchQuery)}`
@@ -126,7 +121,6 @@ export default async function BookDetailPage({
                 communityRatings={<LiveCommunityRatings />}
                 matchScore={
                   <LiveMatchScore
-                    hasPremiumAccess={hasPremium}
                     isLoggedIn={!!user}
                     userPreferences={userPreferences}
                   />

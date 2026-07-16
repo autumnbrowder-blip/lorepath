@@ -27,7 +27,7 @@ const betaFeatures = [
   "Rate books and leave clear notes on tone, content, and pacing",
   "View community ratings from other readers",
   "Set preferences in the Preferences Codex as it grows",
-  "Match Score",
+  "Match Score — free for every signed-in account during Beta",
   "Share feedback that helps guide what we build next",
 ];
 

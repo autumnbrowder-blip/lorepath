@@ -1,10 +1,8 @@
 import { PREFERENCE_CATEGORIES } from "@/lib/rating-categories";
 import {
   getUserPreferences,
-  getUserProfile,
   saveUserPreferences,
 } from "@/lib/preferences";
-import { hasPremiumAccess } from "@/lib/subscription";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
@@ -22,7 +20,7 @@ function isValidPreferences(value: unknown): value is ContentRating {
   });
 }
 
-async function requirePremiumUser() {
+async function requireUser() {
   if (!isSupabaseConfigured()) {
     return {
       error: NextResponse.json(
@@ -41,21 +39,11 @@ async function requirePremiumUser() {
     return { error: NextResponse.json({ error: "Unauthorized." }, { status: 401 }) };
   }
 
-  const profile = await getUserProfile(user.id);
-  if (!profile || !hasPremiumAccess(profile)) {
-    return {
-      error: NextResponse.json(
-        { error: "Premium access required." },
-        { status: 403 }
-      ),
-    };
-  }
-
   return { user };
 }
 
 export async function GET() {
-  const result = await requirePremiumUser();
+  const result = await requireUser();
   if ("error" in result && result.error) return result.error;
 
   const preferences = await getUserPreferences(result.user!.id);
@@ -63,7 +51,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const result = await requirePremiumUser();
+  const result = await requireUser();
   if ("error" in result && result.error) return result.error;
 
   let body: unknown;

@@ -1,53 +1,29 @@
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { PreferencesForm } from "@/components/preferences/PreferencesForm";
-import { UpgradePrompt } from "@/components/preferences/UpgradePrompt";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
-import { PREFERENCES_TESTING_MODE } from "@/lib/dev-flags";
-import { getUserPreferences, getUserProfile } from "@/lib/preferences";
-import { DEFAULT_USER_PREFERENCES } from "@/lib/rating-categories";
-import {
-  getTrialDaysRemaining,
-  hasPremiumAccess,
-  isTrialActive,
-} from "@/lib/subscription";
+import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
 
 export default async function PreferencesPage() {
-  let user: User | null = null;
-  if (isSupabaseConfigured()) {
-    const supabase = await createClient();
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
-    user = currentUser;
+  if (!isSupabaseConfigured()) {
+    redirect("/login?redirect=/preferences&message=preferences");
   }
 
-  // TEMP: skip login redirect while PREFERENCES_TESTING_MODE is true
-  if (!user && !PREFERENCES_TESTING_MODE) {
-    redirect("/login?redirect=/preferences");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login?redirect=/preferences&message=preferences");
   }
 
-  const profile = user ? await getUserProfile(user.id) : null;
-  const premium = profile ? hasPremiumAccess(profile) : false;
-  const preferences =
-    user && premium
-      ? await getUserPreferences(user.id)
-      : PREFERENCES_TESTING_MODE
-        ? DEFAULT_USER_PREFERENCES
-        : null;
-  const trialDaysLeft =
-    profile && isTrialActive(profile.created_at)
-      ? getTrialDaysRemaining(profile.created_at)
-      : 0;
-
-  const showForm =
-    Boolean(preferences) && (premium || PREFERENCES_TESTING_MODE);
+  const preferences = await getUserPreferences(user.id);
 
   return (
     <div className="relative isolate min-h-[calc(100vh-4.5rem)] overflow-hidden bg-[#d8c49a]">
@@ -106,15 +82,6 @@ export default async function PreferencesPage() {
           <span className="relative z-[1] nav-dragon-gold">Back to the Archives</span>
         </Link>
 
-        {PREFERENCES_TESTING_MODE && (
-          <p
-            role="status"
-            className="relative mb-7 rounded-sm border border-gold-600/45 bg-forest-950/75 px-4 py-2.5 text-center font-storybook text-xs uppercase tracking-[0.2em] metallic-gold-soft shadow-[0_8px_24px_rgba(0,0,0,0.25)]"
-          >
-            Temporary testing mode — login not required
-          </p>
-        )}
-
         <header className="relative mb-10 text-center sm:mb-12 sm:text-left">
           <div className="section-label metallic-emerald-darker justify-center !text-xs !font-bold tracking-[0.32em] sm:justify-start">
             <Sparkles className="h-3.5 w-3.5 text-[#0a1f18]" />
@@ -133,35 +100,14 @@ export default async function PreferencesPage() {
             <p className="relative z-[3] px-1 font-heading text-xl leading-relaxed tracking-wide nav-dragon-gold sm:text-2xl">
               These preferences help LorePath understand what kind of stories
               feel right for you. Adjust the sliders to set your comfort levels
-              across different themes.
+              across different themes. During Beta, preferences and Match Score
+              are free for every account.
             </p>
           </div>
-
-          {premium && trialDaysLeft > 0 && !profile?.is_subscriber && (
-            <p className="metallic-gold mt-4 font-storybook text-sm uppercase tracking-[0.2em]">
-              Free trial — {trialDaysLeft} day
-              {trialDaysLeft !== 1 ? "s" : ""} remaining
-            </p>
-          )}
-          {PREFERENCES_TESTING_MODE && (
-            <p className="mt-3 font-heading text-sm italic text-forest-900/70 dark:text-cream-200/70">
-              Match Score on book pages still requires login and premium/trial
-              access.
-            </p>
-          )}
         </header>
 
         <div className="relative space-y-5">
-          {showForm && preferences ? (
-            <PreferencesForm
-              initialPreferences={preferences}
-              testingMode={PREFERENCES_TESTING_MODE && !(user && premium)}
-            />
-          ) : (
-            <div className="preference-codex-box">
-              <UpgradePrompt />
-            </div>
-          )}
+          <PreferencesForm initialPreferences={preferences} />
         </div>
       </div>
     </div>
