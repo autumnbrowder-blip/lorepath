@@ -13,6 +13,15 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(env.url, env.anonKey, {
+    global: {
+      // Avoid Next.js Data Cache serving stale authenticated reads
+      // (e.g. preferences after save → navigate away → return).
+      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+        fetch(input, {
+          ...init,
+          cache: "no-store",
+        }),
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();

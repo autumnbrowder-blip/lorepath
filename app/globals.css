@@ -261,8 +261,9 @@
   }
 
   /*
-   * FAQ page: full-document classroom scene that grows with page content
-   * and scrolls with it. Tome parchment stays decoupled from book-detail zoom.
+   * FAQ page: classroom scene is viewport-locked (not content-height), so
+   * object-cover never "zooms" when <details> expand. Tome parchment uses
+   * width-fit + repeat-y so height growth only tiles — never rescales.
    */
   .faq-page {
     position: relative;
@@ -281,14 +282,19 @@
 
   .faq-page-scene {
     pointer-events: none;
-    position: absolute;
+    /* Fixed to the viewport — independent of FAQ content height */
+    position: fixed;
     inset: 0;
     z-index: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
     transform: none;
   }
 
   .faq-page-scene img {
+    /* Cover the viewport only; avoid stretch/zoom from tall page growth */
     object-fit: cover;
     transition: none;
     transform: none;
@@ -296,10 +302,11 @@
 
   .faq-tome .book-detail-tome-parchment::before,
   .faq-tome-parchment::before {
-    /* Slightly narrower fixed tile for max-w-3xl FAQ tome */
-    background-size: auto, 900px auto;
+    /* Width-fit tile: scales with tome width, not height — no expand-zoom */
+    background-size: auto, 100% auto;
     background-position: center, top center;
     background-repeat: no-repeat, repeat-y;
+    background-attachment: scroll;
   }
 
   .faq-tome,

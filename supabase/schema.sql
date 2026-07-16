@@ -335,7 +335,8 @@ create policy "Users can insert own preferences"
 
 create policy "Users can update own preferences"
   on public.user_preferences for update
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 create policy "Users can delete own preferences"
   on public.user_preferences for delete

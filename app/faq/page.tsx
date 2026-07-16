@@ -165,7 +165,7 @@ function SectionCard({
 export default function FaqPage() {
   return (
     <div className="faq-page">
-      {/* Full-page classroom scene — stretches with content and scrolls with it */}
+      {/* Viewport-locked classroom scene — does not grow/zoom with FAQ content */}
       <div className="faq-page-scene" aria-hidden="true">
         <div className="absolute inset-y-0 left-0 w-full lg:w-[48%]">
           <Image
@@ -256,135 +256,8 @@ export default function FaqPage() {
             </SectionCard>
 
             <SectionCard
-              icon={Hourglass}
-              eyebrow="Chapter II"
-              title="How long will the Beta last?"
-            >
-              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                We expect the Beta to run for a few months while we polish the
-                experience and grow alongside our community. We will share
-                updates as the journey unfolds, so you will always know when the
-                next chapter begins.
-              </p>
-            </SectionCard>
-
-            <SectionCard
-              icon={Feather}
-              eyebrow="Chapter III"
-              title="What can I do during Beta?"
-            >
-              <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
-                During Beta, you are welcome to explore freely. Here is what you
-                can do today:
-              </p>
-              <ul className="space-y-2.5">
-                {betaFeatures.map((feature) => (
-                  <li
-                    key={feature}
-                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
-                  >
-                    <Library className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                    <span className="font-heading text-lg leading-snug nav-dragon-gold">
-                      {feature}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-
-            <SectionCard
-              icon={Target}
-              eyebrow="Chapter IV · Match Score"
-              title="How Does the Match Score Work?"
-            >
-              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                Your Match Score is a friendly percentage that shows how well a
-                book fits the preferences you set in the Preferences Codex.
-                Think of it as a compass for each tome: the higher the number,
-                the closer the community&apos;s ratings land to what you enjoy —
-                and what you prefer to leave on the shelf.
-              </p>
-              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                We compare the community average for each category to your
-                preference settings, score every category from 0–100%, then
-                average those scores into one Match Score. Categories with a
-                comfort ceiling (like Horror or Spice Level) stay at 100% when
-                the book sits at or below your limit, and drop as the book goes
-                over it. Categories with a preferred level (like Pacing) score
-                higher the closer the book lands to the number you chose
-                (Romance works the same way as Pacing).
-              </p>
-              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                A high score means the story&apos;s tone and content are likely a
-                good fit for you. A lower score is a gentle heads-up that the
-                book may wander outside your comfort zone. Rough guide: around
-                90%+ is an excellent match, 75%+ is good, 50%+ is moderate, and
-                lower scores mean a weaker fit. During Beta, Match Score is free
-                for every signed-in reader.
-              </p>
-
-              <p className="mt-4 font-storybook text-sm font-bold uppercase tracking-[0.2em] nav-dragon-gold">
-                Romance vs Spice Level
-              </p>
-              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                Two nearby dials, two different questions.{" "}
-                <span className="font-semibold">Romance</span> asks how much
-                romantic plot and love-story energy drive the book — from no
-                pairing focus to a story built around falling in love.{" "}
-                <span className="font-semibold">Spice Level</span> (formerly
-                Sexual Content) asks how explicit the intimacy is — from none to
-                very steamy. A book can be rich in romance with little spice, or
-                carry higher spice without being primarily a romance.
-              </p>
-
-              <div className="rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3">
-                <p className="font-heading text-base leading-snug nav-dragon-gold">
-                  Tip from the desk: set your preferences first, then open any
-                  book — your Match Score appears at the top of the right-hand
-                  column once community ratings are in place.
-                </p>
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              icon={Stars}
-              eyebrow="Chapter V"
-              title="What’s coming in the future?"
-            >
-              <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
-                After Beta, we hope to add more tools that make finding the right
-                book easier. Here is what we have planned:
-              </p>
-              <ul className="space-y-2.5">
-                {upcomingFeatures.map((feature) => (
-                  <li
-                    key={feature}
-                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
-                  >
-                    <Compass className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                    <span className="font-heading text-lg leading-snug nav-dragon-gold">
-                      {feature}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-
-            <SectionCard
-              icon={BookOpen}
-              eyebrow="Chapter VI"
-              title="How do new books get added?"
-            >
-              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                New and recently published titles are added regularly so the
-                catalog stays fresh. Over time, the library continues to grow
-                with both new releases and older works for readers to explore.
-              </p>
-            </SectionCard>
-
-            <SectionCard
               icon={Scale}
-              eyebrow="Chapter VII · Ratings Explained"
+              eyebrow="Chapter II · Ratings Explained"
               title="How Do the Ratings Work?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
@@ -456,6 +329,119 @@ export default function FaqPage() {
                   </details>
                 ))}
               </div>
+            </SectionCard>
+
+            <SectionCard
+              icon={Target}
+              eyebrow="Chapter III · Match Score"
+              title="How Does the Match Score Work?"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Your Match Score is a friendly percentage that shows how well a
+                book fits the preferences you set in the Preferences Codex.
+                Think of it as a compass for each tome: the higher the number,
+                the closer the community&apos;s ratings land to what you enjoy —
+                and what you prefer to leave on the shelf.
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                We compare the community average for each category to your
+                preference settings, score every category from 0–100%, then
+                average those scores into one Match Score. Categories with a
+                comfort ceiling (like Horror or Spice Level) stay at 100% when
+                the book sits at or below your limit, and drop as the book goes
+                over it. Categories with a preferred level (like Pacing) score
+                higher the closer the book lands to the number you chose
+                (Romance works the same way as Pacing).
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                A high score means the story&apos;s tone and content are likely a
+                good fit for you. A lower score is a gentle heads-up that the
+                book may wander outside your comfort zone. Rough guide: around
+                90%+ is an excellent match, 75%+ is good, 50%+ is moderate, and
+                lower scores mean a weaker fit. During Beta, Match Score is free
+                for every signed-in reader.
+              </p>
+
+              <div className="rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3">
+                <p className="font-heading text-base leading-snug nav-dragon-gold">
+                  Tip from the desk: set your preferences first, then open any
+                  book — your Match Score appears at the top of the right-hand
+                  column once community ratings are in place.
+                </p>
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              icon={Feather}
+              eyebrow="Chapter IV"
+              title="What can I do during Beta?"
+            >
+              <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
+                During Beta, you are welcome to explore freely. Here is what you
+                can do today:
+              </p>
+              <ul className="space-y-2.5">
+                {betaFeatures.map((feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
+                  >
+                    <Library className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                    <span className="font-heading text-lg leading-snug nav-dragon-gold">
+                      {feature}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+
+            <SectionCard
+              icon={Stars}
+              eyebrow="Chapter V"
+              title="What’s coming in the future?"
+            >
+              <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
+                After Beta, we hope to add more tools that make finding the right
+                book easier. Here is what we have planned:
+              </p>
+              <ul className="space-y-2.5">
+                {upcomingFeatures.map((feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
+                  >
+                    <Compass className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                    <span className="font-heading text-lg leading-snug nav-dragon-gold">
+                      {feature}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+
+            <SectionCard
+              icon={Hourglass}
+              eyebrow="Chapter VI"
+              title="How long will the Beta last?"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                We expect the Beta to run for a few months while we polish the
+                experience and grow alongside our community. We will share
+                updates as the journey unfolds, so you will always know when the
+                next chapter begins.
+              </p>
+            </SectionCard>
+
+            <SectionCard
+              icon={BookOpen}
+              eyebrow="Chapter VII"
+              title="How do new books get added?"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                New and recently published titles are added regularly so the
+                catalog stays fresh. Over time, the library continues to grow
+                with both new releases and older works for readers to explore.
+              </p>
             </SectionCard>
 
             <div className="preference-codex-box relative text-center">

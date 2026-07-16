@@ -8,7 +8,8 @@ import {
 } from "@/lib/rating-categories";
 import type { ContentRating } from "@/types";
 import { AlertCircle, CheckCircle2, Feather, Loader2, Scroll } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
 
 type PreferencesFormProps = {
   initialPreferences: ContentRating;
@@ -20,11 +21,16 @@ export function PreferencesForm({
   initialPreferences,
   testingMode = false,
 }: PreferencesFormProps) {
+  const router = useRouter();
   const [preferences, setPreferences] =
     useState<ContentRating>(initialPreferences);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    setPreferences(initialPreferences);
+  }, [initialPreferences]);
 
   function updatePreference(key: keyof ContentRating, value: number) {
     setPreferences((prev) => ({ ...prev, [key]: value }));
@@ -39,7 +45,6 @@ export function PreferencesForm({
     setSuccess(false);
 
     try {
-      // TEMP: local-only save while testing without login
       if (testingMode) {
         try {
           sessionStorage.setItem(
@@ -56,16 +61,32 @@ export function PreferencesForm({
       const response = await fetch("/api/preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
         body: JSON.stringify(preferences),
       });
 
-      const data = await response.json();
+      let data: {
+        error?: string;
+        message?: string;
+        preferences?: ContentRating;
+      } = {};
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Could not read the server response. Please try again.");
+      }
 
       if (!response.ok) {
         throw new Error(data.error ?? "Failed to save preferences.");
       }
 
+      if (data.preferences) {
+        setPreferences(data.preferences);
+      }
+
       setSuccess(true);
+      // Bust the App Router cache so leaving and returning shows DB values.
+      router.refresh();
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -108,14 +129,14 @@ export function PreferencesForm({
       )}
 
       {error && (
-        <div className="alert-error">
+        <div className="alert-error" role="alert">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="alert-success">
+        <div className="alert-success" role="status">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             {testingMode

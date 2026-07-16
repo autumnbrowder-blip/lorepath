@@ -6,6 +6,7 @@ import {
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 const PREFERENCE_KEYS: (keyof ContentRating)[] = PREFERENCE_CATEGORIES.map(
@@ -47,7 +48,10 @@ export async function GET() {
   if ("error" in result && result.error) return result.error;
 
   const preferences = await getUserPreferences(result.user!.id);
-  return NextResponse.json({ preferences });
+  return NextResponse.json(
+    { preferences },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export async function PUT(request: Request) {
@@ -73,8 +77,14 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: saveResult.error }, { status: 500 });
   }
 
-  return NextResponse.json({
-    success: true,
-    preferences: body,
-  });
+  revalidatePath("/preferences");
+
+  return NextResponse.json(
+    {
+      success: true,
+      preferences: saveResult.preferences,
+      message: "Your preferences have been inscribed.",
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

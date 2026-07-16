@@ -1,5 +1,9 @@
 -- Migration: add romance (0–5) to ratings, preferences, and saved profiles.
 -- Run this in the Supabase SQL Editor if your project already applied an older schema.
+--
+-- Without this column, preference SELECT/UPSERT that include `romance` fail.
+-- The app falls back to a legacy column set, but Romance will not persist until
+-- this migration is applied. Also run 20260716_user_preferences_rls_hardening.sql.
 
 -- ratings
 alter table public.ratings

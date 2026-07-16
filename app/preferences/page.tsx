@@ -15,6 +15,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function PreferencesPage() {
   if (!isSupabaseConfigured()) {
     redirect("/login?redirect=/preferences&message=preferences");
@@ -126,13 +128,11 @@ export default async function PreferencesPage() {
             </div>
           </div>
 
-          <div className="preference-codex-box relative mt-7 text-left">
+          <div className="preference-codex-box relative mt-4 !p-3.5 !pt-4 text-left sm:mt-5 sm:!p-4 sm:!pt-4">
             <CodexBoxOrnament />
-            <p className="relative z-[3] px-1 font-heading text-xl leading-relaxed tracking-wide nav-dragon-gold sm:text-2xl">
-              These preferences help LorePath understand what kind of stories
-              feel right for you. Adjust the sliders to set your comfort levels
-              across different themes. During Beta, preferences and Match Score
-              are free for every account.
+            <p className="relative z-[3] px-0.5 font-heading text-sm leading-snug tracking-wide nav-dragon-gold sm:text-[0.95rem]">
+              Set your comfort levels across themes for Match Score. During
+              Beta, preferences and Match Score are free for every account.
             </p>
           </div>
         </header>
