@@ -125,7 +125,7 @@ export function parseOpenLibrarySearchResponse(
         authors: cleanAuthors(doc.author_name ?? []),
         coverUrl: openLibraryCoverUrl(doc.cover_i),
         description: parseOpenLibraryDescription(undefined, doc.first_sentence),
-        genres: [],
+        genres: [] as string[],
         publishedYear: parsePublishedYear(doc.first_publish_year),
         source: "openlibrary" as const,
         isbn:
@@ -133,7 +133,7 @@ export function parseOpenLibrarySearchResponse(
           null,
       };
     })
-    .filter((book): book is BookSummary => book !== null)
+    .filter((book): book is NonNullable<typeof book> => book !== null)
     .filter((book) => !isLowQualityBook(book));
 }
 

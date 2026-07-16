@@ -122,7 +122,7 @@ export function parseGutendexSearchResponse(
         downloadCount: book.download_count ?? null,
       };
     })
-    .filter((book): book is BookSummary => book !== null)
+    .filter((book): book is NonNullable<typeof book> => book !== null)
     .filter((book) => !isLowQualityBook(book));
 }
 
