@@ -14,7 +14,7 @@ export async function getUserPreferences(
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("user_preferences")
-      .select("sexual_content, lgbt, horror, ideology, pacing")
+      .select("sexual_content, romance, lgbt, horror, ideology, pacing")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -24,6 +24,7 @@ export async function getUserPreferences(
 
     return {
       sexual_content: data.sexual_content,
+      romance: data.romance,
       lgbt: data.lgbt,
       horror: data.horror,
       ideology: data.ideology,
@@ -47,6 +48,7 @@ export async function saveUserPreferences(
     {
       user_id: userId,
       sexual_content: preferences.sexual_content,
+      romance: preferences.romance,
       lgbt: preferences.lgbt,
       horror: preferences.horror,
       ideology: preferences.ideology,

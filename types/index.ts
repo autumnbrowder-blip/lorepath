@@ -27,6 +27,7 @@ export type Book = {
 
 export type ContentRating = {
   sexual_content: number;
+  romance: number;
   lgbt: number;
   horror: number;
   ideology: number;

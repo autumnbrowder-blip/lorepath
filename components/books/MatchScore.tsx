@@ -58,7 +58,7 @@ function ScoreRing({
         />
       </svg>
       <span
-        className={`absolute font-storybook text-xl font-bold leading-none tracking-tight tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)] sm:text-2xl ${textClass}`}
+        className={`absolute font-storybook text-xl font-bold leading-none tracking-tight tabular-nums sm:text-2xl ${textClass}`}
       >
         {score}%
       </span>

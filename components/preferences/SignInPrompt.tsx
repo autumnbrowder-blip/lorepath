@@ -14,7 +14,7 @@ export function SignInPrompt({
 }: SignInPromptProps) {
   return (
     <div
-      className={`rounded-2xl border border-gold-300/60 bg-gradient-to-br from-gold-50 to-surface-elevated dark:border-gold-700/40 dark:from-gold-950/30 dark:to-forest-950 ${
+      className={`rounded-sm border border-gold-600/40 bg-forest-950/55 ${
         compact ? "p-5" : "p-6"
       }`}
     >

@@ -9,6 +9,7 @@ import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 
 const RATING_KEYS: (keyof ContentRating)[] = [
   "sexual_content",
+  "romance",
   "lgbt",
   "horror",
   "ideology",
@@ -107,7 +108,7 @@ export async function getCommunityRatings(
 
     const { data: ratings, error: ratingsError } = await supabase
       .from("ratings")
-      .select("sexual_content, lgbt, horror, ideology, pacing")
+      .select("sexual_content, romance, lgbt, horror, ideology, pacing")
       .eq("book_id", book.id);
 
     if (ratingsError || !ratings?.length) {
@@ -139,7 +140,7 @@ export type UserRatedBook = {
 
 export type UserReadingStats = {
   totalBooksRated: number;
-  /** Mean of all five content fields across every rating. */
+  /** Mean of all content fields across every rating. */
   overallAverage: number | null;
   byCategory: ContentRating | null;
   /** Content category with the highest average mark. */
@@ -235,6 +236,7 @@ export async function getUserRatedBooks(
         id,
         created_at,
         sexual_content,
+        romance,
         lgbt,
         horror,
         ideology,
@@ -271,6 +273,7 @@ export async function getUserRatedBooks(
           genre: (book.genre as string | null) ?? null,
           ratings: {
             sexual_content: row.sexual_content as number,
+            romance: row.romance as number,
             lgbt: row.lgbt as number,
             horror: row.horror as number,
             ideology: row.ideology as number,
@@ -312,6 +315,7 @@ export async function submitUserRating(
       book_id: bookResult.bookDbId,
       rated_by: userId,
       sexual_content: ratings.sexual_content,
+      romance: ratings.romance,
       lgbt: ratings.lgbt,
       horror: ratings.horror,
       ideology: ratings.ideology,

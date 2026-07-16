@@ -1,6 +1,12 @@
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { PreferencesForm } from "@/components/preferences/PreferencesForm";
+import { AvatarCrest } from "@/components/profile/AvatarCrest";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
+import {
+  getAvatarOption,
+  resolveAvatarKey,
+  resolveDisplayName,
+} from "@/lib/avatars";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +28,20 @@ export default async function PreferencesPage() {
   if (!user) {
     redirect("/login?redirect=/preferences&message=preferences");
   }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name, avatar_key")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const displayName = resolveDisplayName(
+    typeof profile?.display_name === "string" ? profile.display_name : null,
+    user.user_metadata as Record<string, unknown> | undefined,
+    user.email
+  );
+  const avatarKey = resolveAvatarKey(profile?.avatar_key);
+  const avatar = getAvatarOption(avatarKey);
 
   const preferences = await getUserPreferences(user.id);
 
@@ -83,17 +103,28 @@ export default async function PreferencesPage() {
         </Link>
 
         <header className="relative mb-10 text-center sm:mb-12 sm:text-left">
-          <div className="section-label metallic-emerald-darker justify-center !text-xs !font-bold tracking-[0.32em] sm:justify-start">
-            <Sparkles className="h-3.5 w-3.5 text-[#0a1f18]" />
-            The Preference Codex
+          <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
+            <AvatarCrest
+              avatarKey={avatarKey}
+              variant="display"
+              className="h-40 w-40 sm:h-44 sm:w-44 md:h-48 md:w-48"
+              size={192}
+              title={avatar.label}
+            />
+            <div className="min-w-0 sm:pt-1">
+              <div className="section-label metallic-emerald-darker justify-center !text-xs !font-bold tracking-[0.32em] sm:justify-start">
+                <Sparkles className="h-3.5 w-3.5 text-[#0a1f18]" />
+                The Preference Codex
+              </div>
+              <h1 className="metallic-emerald-deep mt-2 font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
+                {displayName}&apos;s Preferences
+              </h1>
+              <div
+                className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent sm:mx-0"
+                aria-hidden="true"
+              />
+            </div>
           </div>
-          <h1 className="metallic-emerald-deep mt-2 font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
-            Your Preferences
-          </h1>
-          <div
-            className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent sm:mx-0"
-            aria-hidden="true"
-          />
 
           <div className="preference-codex-box relative mt-7 text-left">
             <CodexBoxOrnament />

@@ -10,6 +10,7 @@ import {
   ScrollText,
   Sparkles,
   Stars,
+  Target,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -78,8 +79,22 @@ const ratingCategoryGuides = [
     ],
   },
   {
-    label: "Sexual Content",
-    blurb: "Romance, intimacy, or sexual themes.",
+    label: "Romance",
+    blurb:
+      "How central romantic love is to the story — separate from Spice Level.",
+    levels: [
+      "0 — None: no romantic subplot or romantic focus",
+      "1 — Hint: a faint spark of romance in the background",
+      "2 — Light: romantic threads weave through the tale",
+      "3 — Moderate: romance plays a clear supporting role",
+      "4 — Strong: romance is a major thread of the story",
+      "5 — Central: the heart of the tale is romance itself",
+    ],
+  },
+  {
+    label: "Spice Level",
+    blurb:
+      "How explicit the intimacy is (formerly Sexual Content) — steamy scenes and intensity, not whether a romance exists.",
     levels: [
       "0 — None",
       "1 — PG: very mild",
@@ -190,14 +205,14 @@ export default function FaqPage() {
 
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-10 sm:px-6 sm:py-14">
         <header className="mb-7 text-center">
-          <p className="mx-auto flex items-center justify-center gap-2 font-storybook text-xs font-bold uppercase tracking-[0.32em] nav-dragon-gold drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]">
+          <p className="mx-auto flex items-center justify-center gap-2 font-storybook text-xs font-bold uppercase tracking-[0.32em] nav-dragon-gold">
             <Sparkles className="h-3.5 w-3.5 text-[#f0d78a]" />
             From the Wizard&apos;s Desk
           </p>
-          <h1 className="mt-3 font-storybook text-4xl font-bold tracking-[0.06em] nav-dragon-gold drop-shadow-[0_4px_18px_rgba(0,0,0,0.5)] sm:text-5xl">
+          <h1 className="mt-3 font-storybook text-4xl font-bold tracking-[0.06em] nav-dragon-gold sm:text-5xl">
             Frequently Asked Questions
           </h1>
-          <p className="mx-auto mt-3 max-w-xl font-heading text-lg leading-relaxed nav-dragon-gold drop-shadow-[0_2px_12px_rgba(0,0,0,0.75)]">
+          <p className="mx-auto mt-3 max-w-xl font-heading text-lg leading-relaxed nav-dragon-gold">
             Sit among the students in the enchanted classroom — open the
             professor&apos;s tome for answers about Beta, the road ahead, and
             how new books find their way to LorePath.
@@ -278,8 +293,62 @@ export default function FaqPage() {
             </SectionCard>
 
             <SectionCard
+              icon={Target}
+              eyebrow="Chapter IV · Match Score"
+              title="How Does the Match Score Work?"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Your Match Score is a friendly percentage that shows how well a
+                book fits the preferences you set in the Preferences Codex.
+                Think of it as a compass for each tome: the higher the number,
+                the closer the community&apos;s ratings land to what you enjoy —
+                and what you prefer to leave on the shelf.
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                We compare the community average for each category to your
+                preference settings, score every category from 0–100%, then
+                average those scores into one Match Score. Categories with a
+                comfort ceiling (like Horror or Spice Level) stay at 100% when
+                the book sits at or below your limit, and drop as the book goes
+                over it. Categories with a preferred level (like Pacing) score
+                higher the closer the book lands to the number you chose
+                (Romance works the same way as Pacing).
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                A high score means the story&apos;s tone and content are likely a
+                good fit for you. A lower score is a gentle heads-up that the
+                book may wander outside your comfort zone. Rough guide: around
+                90%+ is an excellent match, 75%+ is good, 50%+ is moderate, and
+                lower scores mean a weaker fit. During Beta, Match Score is free
+                for every signed-in reader.
+              </p>
+
+              <p className="mt-4 font-storybook text-sm font-bold uppercase tracking-[0.2em] nav-dragon-gold">
+                Romance vs Spice Level
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Two nearby dials, two different questions.{" "}
+                <span className="font-semibold">Romance</span> asks how much
+                romantic plot and love-story energy drive the book — from no
+                pairing focus to a story built around falling in love.{" "}
+                <span className="font-semibold">Spice Level</span> (formerly
+                Sexual Content) asks how explicit the intimacy is — from none to
+                very steamy. A book can be rich in romance with little spice, or
+                carry higher spice without being primarily a romance.
+              </p>
+
+              <div className="rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3">
+                <p className="font-heading text-base leading-snug nav-dragon-gold">
+                  Tip from the desk: set your preferences first, then open any
+                  book — your Match Score appears at the top of the right-hand
+                  column once community ratings are in place.
+                </p>
+              </div>
+            </SectionCard>
+
+            <SectionCard
               icon={Stars}
-              eyebrow="Chapter IV"
+              eyebrow="Chapter V"
               title="What’s coming in the future?"
             >
               <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
@@ -303,7 +372,7 @@ export default function FaqPage() {
 
             <SectionCard
               icon={BookOpen}
-              eyebrow="Chapter V"
+              eyebrow="Chapter VI"
               title="How do new books get added?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
@@ -315,7 +384,7 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Scale}
-              eyebrow="Chapter VI · Ratings Explained"
+              eyebrow="Chapter VII · Ratings Explained"
               title="How Do the Ratings Work?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
@@ -350,7 +419,8 @@ export default function FaqPage() {
               </p>
               <p className="mt-2 font-heading text-lg leading-relaxed nav-dragon-gold">
                 Open a category below for how readers typically use each number.
-                Pacing is about tempo; the others measure how much of that
+                Pacing is about tempo; Romance is about love-story focus; Spice
+                Level is about explicitness; the others measure how much of that
                 content appears.
               </p>
               <div className="mt-3 space-y-2.5">

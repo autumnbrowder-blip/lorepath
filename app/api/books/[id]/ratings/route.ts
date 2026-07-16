@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 
 const RATING_KEYS: (keyof ContentRating)[] = [
   "sexual_content",
+  "romance",
   "lgbt",
   "horror",
   "ideology",

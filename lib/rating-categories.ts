@@ -16,9 +16,14 @@ export const RATING_CATEGORIES: {
     description: "Frightening, violent, or disturbing content",
   },
   {
+    key: "romance",
+    label: "Romance",
+    description: "How central romantic love is to the story",
+  },
+  {
     key: "sexual_content",
-    label: "Sexual Content",
-    description: "Romance, intimacy, or sexual themes",
+    label: "Spice Level",
+    description: "Intimacy, explicit scenes, or sexual themes",
   },
   {
     key: "lgbt",
@@ -34,6 +39,7 @@ export const RATING_CATEGORIES: {
 
 export const DEFAULT_RATINGS: ContentRating = {
   sexual_content: 0,
+  romance: 0,
   lgbt: 0,
   horror: 0,
   ideology: 0,
@@ -43,6 +49,7 @@ export const DEFAULT_RATINGS: ContentRating = {
 /** Default user preferences — start at 0 for all categories. */
 export const DEFAULT_USER_PREFERENCES: ContentRating = {
   sexual_content: 0,
+  romance: 0,
   lgbt: 0,
   horror: 0,
   ideology: 0,
@@ -114,8 +121,34 @@ export const PREFERENCE_CATEGORIES: {
     },
   },
   {
+    key: "romance",
+    label: "Romance",
+    description:
+      '"The heart has its reasons which reason knows nothing of." — Blaise Pascal',
+    note: "How much romantic love and courtship drive the story — separate from Spice Level.",
+    type: "preferred",
+    hintLow: "0 · None",
+    hintHigh: "5 · Central",
+    levelLabels: {
+      0: "None",
+      1: "Hint",
+      2: "Light",
+      3: "Moderate",
+      4: "Strong",
+      5: "Central",
+    },
+    levelDescriptions: {
+      0: "No romantic subplot or romantic focus",
+      1: "A faint spark of romance in the background",
+      2: "Light romantic threads weave through the tale",
+      3: "Romance plays a clear supporting role",
+      4: "Romance is a major thread of the story",
+      5: "The heart of the tale is romance itself",
+    },
+  },
+  {
     key: "sexual_content",
-    label: "Sexual Content",
+    label: "Spice Level",
     description:
       "Some tales reach toward intimacy, while others remain quietly apart.",
     type: "max",
@@ -130,10 +163,10 @@ export const PREFERENCE_CATEGORIES: {
       5: "Adult",
     },
     levelDescriptions: {
-      0: "No sexual content",
-      1: "Very mild sexual content",
+      0: "No spice",
+      1: "Very mild spice",
       2: "Some sexual tension or mild scenes",
-      3: "Moderate sexual content, more descriptive",
+      3: "Moderate spice, more descriptive",
       4: "Explicit scenes, but not the main focus",
       5: "Heavy smut / very explicit + multiple triggers",
     },
