@@ -115,7 +115,7 @@ export function parseOpenLibrarySearchResponse(
   if (!data.docs) return [];
 
   return data.docs
-    .map((doc) => {
+    .map((doc): BookSummary | null => {
       const workId = workIdFromKey(doc.key);
       if (!workId || !doc.title) return null;
 
@@ -127,7 +127,7 @@ export function parseOpenLibrarySearchResponse(
         description: parseOpenLibraryDescription(undefined, doc.first_sentence),
         genres: [],
         publishedYear: parsePublishedYear(doc.first_publish_year),
-        source: "openlibrary" as const,
+        source: "openlibrary",
         isbn:
           doc.isbn?.find((value) => value.replace(/\D/g, "").length >= 10) ??
           null,
