@@ -2,8 +2,9 @@ import Image from "next/image";
 
 /**
  * Immersive login/register scene: open book + magical portal.
- * Background is viewport-fixed (like FAQ) so form validation / focus never
- * rescales the portal art. Login + Register share this layout.
+ * Background is viewport-fixed (position:fixed + 100dvh) so form validation /
+ * focus / route switches never rescale the portal art. Login + Register share
+ * this layout exclusively via app/(portal-auth)/layout.tsx.
  */
 export function PortalAuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -47,8 +48,8 @@ export function PortalAuthLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Parchment login box — fixed tile so form growth never reflows cover */}
-      <div className="relative z-10 flex min-h-[calc(100vh-4.5rem)] w-full flex-1 items-center justify-center px-6 py-12">
-        <div className="portal-auth-parchment relative w-full max-w-md overflow-hidden rounded-md p-7 sm:p-8">
+      <div className="portal-auth-shell">
+        <div className="portal-auth-parchment">
           <div className="pointer-events-none absolute inset-[6px] rounded-[2px] border border-[#a67c2d]/30" />
           <div className="relative z-10">{children}</div>
         </div>
