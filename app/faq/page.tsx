@@ -199,26 +199,7 @@ export default function FaqPage() {
           <h1 className="mt-3 font-storybook text-4xl font-bold tracking-[0.06em] nav-dragon-gold sm:text-5xl">
             Frequently Asked Questions
           </h1>
-          <p className="mx-auto mt-3 max-w-xl font-heading text-lg leading-relaxed nav-dragon-gold">
-            Sit among the students in the enchanted classroom — open the
-            professor&apos;s tome for answers about our book rating platform,
-            Match Scores, Beta, and how new books find their way to LorePath.
-          </p>
         </header>
-
-        <div className="preference-codex-box relative mb-7 text-center">
-          <CodexBoxOrnament />
-          <div className="relative z-[3] px-1 py-1">
-            <p className="font-storybook text-sm font-bold uppercase tracking-[0.22em] nav-dragon-gold">
-              Welcome
-            </p>
-            <p className="mt-3 font-heading text-lg leading-relaxed nav-dragon-gold">
-              Sit among the students in the enchanted classroom — open the
-              professor&apos;s tome for answers about our book rating platform,
-              Match Scores, Beta, and how new books find their way to LorePath.
-            </p>
-          </div>
-        </div>
 
         <div className="book-detail-tome faq-tome relative shadow-[0_28px_70px_rgba(0,0,0,0.55)]">
           <div className="book-detail-tome-parchment faq-tome-parchment" aria-hidden="true" />
