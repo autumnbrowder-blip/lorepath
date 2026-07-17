@@ -71,7 +71,7 @@ export function HomeHero() {
               id="home-tagline"
               className="nav-dragon-gold mx-auto mt-4 max-w-xl font-storybook text-xl leading-relaxed tracking-[0.06em] sm:mt-6 sm:text-2xl md:text-[1.75rem]"
             >
-              Know before you turn the page.
+              Built for readers by readers who wander between worlds.
             </p>
           </div>
         </div>

@@ -261,9 +261,13 @@
   }
 
   /*
-   * FAQ page: classroom scene is viewport-locked (not content-height), so
-   * object-cover never "zooms" when <details> expand. Tome parchment uses
-   * width-fit + repeat-y so height growth only tiles — never rescales.
+   * FAQ page backgrounds (must stay stable when <details> expand):
+   * - Classroom scene is position:fixed to the viewport (100dvh), never the
+   *   document height — so object-cover cannot "zoom" as the page grows.
+   * - Scene photos sit in an oversized inset frame (~12% bleed) so cover shows
+   *   more of the art (zoom-out) instead of a tight cropped blow-up.
+   * - Tome parchment uses a FIXED pixel tile + repeat (not 100%/cover) so
+   *   texture density stays constant as the tome gets taller.
    */
   .faq-page {
     position: relative;
@@ -282,7 +286,6 @@
 
   .faq-page-scene {
     pointer-events: none;
-    /* Fixed to the viewport — independent of FAQ content height */
     position: fixed;
     inset: 0;
     z-index: 0;
@@ -291,21 +294,56 @@
     height: 100dvh;
     overflow: hidden;
     transform: none;
+    background-color: #07120c;
+  }
+
+  .faq-page-scene-panel {
+    position: absolute;
+    inset-block: 0;
+    overflow: hidden;
+    background-color: #07120c;
+  }
+
+  .faq-page-scene-panel--left {
+    left: 0;
+    width: 100%;
+  }
+
+  .faq-page-scene-panel--right {
+    display: none;
+    right: 0;
+    width: 52%;
+  }
+
+  @media (min-width: 1024px) {
+    .faq-page-scene-panel--left {
+      width: 48%;
+    }
+
+    .faq-page-scene-panel--right {
+      display: block;
+    }
+  }
+
+  /* Oversized frame = object-cover paints more of the photo (less cropped/zoomed) */
+  .faq-page-scene-frame {
+    position: absolute;
+    inset: -12%;
   }
 
   .faq-page-scene img {
-    /* Cover the viewport only; avoid stretch/zoom from tall page growth */
     object-fit: cover;
+    object-position: center center;
     transition: none;
     transform: none;
   }
 
   .faq-tome .book-detail-tome-parchment::before,
   .faq-tome-parchment::before {
-    /* Width-fit tile: scales with tome width, not height — no expand-zoom */
-    background-size: auto, 100% auto;
-    background-position: center, top center;
-    background-repeat: no-repeat, repeat-y;
+    /* Fixed tile width — independent of tome height/width; tiles as content grows */
+    background-size: auto, 520px auto;
+    background-position: center, top left;
+    background-repeat: no-repeat, repeat;
     background-attachment: scroll;
   }
 

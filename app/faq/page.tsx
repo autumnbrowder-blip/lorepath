@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 export const metadata: Metadata = {
   title: "FAQ | LorePath",
   description:
-    "Friendly answers from the LorePath classroom — Beta details, what you can try today, and how new books find their way here.",
+    "LorePath is a fantasy-book rating platform — Beta answers on ratings, Match Score, preferences, and how new books find their way here.",
 };
 
 const betaFeatures = [
@@ -165,27 +165,31 @@ function SectionCard({
 export default function FaqPage() {
   return (
     <div className="faq-page">
-      {/* Viewport-locked classroom scene — does not grow/zoom with FAQ content */}
+      {/* Viewport-locked classroom scene — fixed 100dvh; oversized frames zoom out */}
       <div className="faq-page-scene" aria-hidden="true">
-        <div className="absolute inset-y-0 left-0 w-full lg:w-[48%]">
-          <Image
-            src="/images/lorepath-faq-wizard-left.png"
-            alt=""
-            fill
-            priority
-            sizes="(max-width: 1024px) 100vw, 48vw"
-            className="object-cover object-[42%_center] opacity-90 lg:opacity-100"
-          />
+        <div className="faq-page-scene-panel faq-page-scene-panel--left">
+          <div className="faq-page-scene-frame">
+            <Image
+              src="/images/lorepath-faq-wizard-left.png"
+              alt=""
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 48vw"
+              className="object-cover object-[42%_center] opacity-90 lg:opacity-100"
+            />
+          </div>
         </div>
-        <div className="absolute inset-y-0 right-0 hidden w-[52%] lg:block">
-          <Image
-            src="/images/lorepath-faq-auditorium-amphitheater.png"
-            alt=""
-            fill
-            priority
-            sizes="52vw"
-            className="object-cover object-[58%_center]"
-          />
+        <div className="faq-page-scene-panel faq-page-scene-panel--right">
+          <div className="faq-page-scene-frame">
+            <Image
+              src="/images/lorepath-faq-auditorium-amphitheater.png"
+              alt=""
+              fill
+              priority
+              sizes="52vw"
+              className="object-cover object-[58%_center]"
+            />
+          </div>
         </div>
 
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_rgba(8,16,12,0.55)_0%,_rgba(8,16,12,0.22)_38%,_transparent_68%)]" />
@@ -214,8 +218,9 @@ export default function FaqPage() {
           </h1>
           <p className="mx-auto mt-3 max-w-xl font-heading text-lg leading-relaxed nav-dragon-gold">
             Sit among the students in the enchanted classroom — open the
-            professor&apos;s tome for answers about Beta, the road ahead, and
-            how new books find their way to LorePath.
+            professor&apos;s tome for answers about our fantasy-book rating
+            platform, Match Scores, Beta, and how new books find their way to
+            LorePath.
           </p>
         </header>
 
@@ -226,9 +231,10 @@ export default function FaqPage() {
               Welcome
             </p>
             <p className="mt-3 font-heading text-lg leading-relaxed nav-dragon-gold">
-              Welcome to the LorePath Beta. Everything is free while we build
-              something magical together. Your ratings and feedback help shape
-              the stories ahead — thank you for being here.
+              Welcome to the LorePath Beta — a free rating platform where fantasy
+              readers rate books by content themes, set preferences, and find
+              better matches. Your ratings and feedback help shape the stories
+              ahead — thank you for being here.
             </p>
           </div>
         </div>
@@ -243,22 +249,29 @@ export default function FaqPage() {
           <div className="book-detail-tome-content relative z-[2] space-y-6 p-5 sm:p-8">
             <SectionCard
               icon={ScrollText}
-              eyebrow="Chapter I"
-              title="What is the LorePath Beta?"
+              eyebrow="Chapter I of VII · The Path Begins"
+              title="Chapter I · What is the LorePath Beta?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                LorePath Beta is the early chapter of our story — a living archive
-                where everything remains free while we listen, learn, and gather
-                ratings and feedback from readers like you. Think of it as an open
-                classroom: the shelves are ready, the candles are lit, and your
-                voice helps us shape what LorePath becomes next.
+                LorePath is a rating platform for fantasy books — a place where
+                readers map what is actually in a story, not merely whether they
+                liked it. During Beta, everything remains free while we listen,
+                learn, and grow the library with you.
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Here you rate books across content themes (pacing, horror, romance,
+                spice, and more), set your preferences in the Preferences Codex, and
+                receive a Match Score that shows how well each tome fits the kind of
+                journey you want. Think of it as an open classroom: the shelves are
+                ready, the candles are lit, and every rating helps fellow wanderers
+                choose their next adventure with clearer eyes.
               </p>
             </SectionCard>
 
             <SectionCard
               icon={Scale}
-              eyebrow="Chapter II · Ratings Explained"
-              title="How Do the Ratings Work?"
+              eyebrow="Chapter II of VII · Ratings Explained"
+              title="Chapter II · How Do the Ratings Work?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 LorePath uses a shared 0–5 scale for each content category. The
@@ -333,8 +346,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Target}
-              eyebrow="Chapter III · Match Score"
-              title="How Does the Match Score Work?"
+              eyebrow="Chapter III of VII · Match Score"
+              title="Chapter III · How Does the Match Score Work?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 Your Match Score is a friendly percentage that shows how well a
@@ -373,8 +386,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Feather}
-              eyebrow="Chapter IV"
-              title="What can I do during Beta?"
+              eyebrow="Chapter IV of VII · Beta Capabilities"
+              title="Chapter IV · What can I do during Beta?"
             >
               <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
                 During Beta, you are welcome to explore freely. Here is what you
@@ -397,8 +410,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Stars}
-              eyebrow="Chapter V"
-              title="What’s coming in the future?"
+              eyebrow="Chapter V of VII · The Road Ahead"
+              title="Chapter V · What’s coming in the future?"
             >
               <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
                 After Beta, we hope to add more tools that make finding the right
@@ -421,8 +434,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Hourglass}
-              eyebrow="Chapter VI"
-              title="How long will the Beta last?"
+              eyebrow="Chapter VI of VII · The Timeline"
+              title="Chapter VI · How long will the Beta last?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 We expect the Beta to run for a few months while we polish the
@@ -434,8 +447,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={BookOpen}
-              eyebrow="Chapter VII"
-              title="How do new books get added?"
+              eyebrow="Chapter VII of VII · The Growing Library"
+              title="Chapter VII · How do new books get added?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 New and recently published titles are added regularly so the

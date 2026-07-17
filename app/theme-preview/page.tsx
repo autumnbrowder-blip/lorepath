@@ -31,7 +31,7 @@ export default function ThemePreviewPage() {
             <BookLogoMark />
 
             <p className="mx-auto mt-8 max-w-md text-center font-heading text-lg leading-relaxed text-cream-300/90 sm:text-xl">
-              Know before you turn the page.
+              Built for readers by readers who wander between worlds.
             </p>
 
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
