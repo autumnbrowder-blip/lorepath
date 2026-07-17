@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 export const metadata: Metadata = {
   title: "FAQ | LorePath",
   description:
-    "LorePath is a fantasy-book rating platform — Beta answers on ratings, Match Score, preferences, and how new books find their way here.",
+    "LorePath is a book rating platform — Beta answers on ratings, Match Score, preferences, and how new books find their way here.",
 };
 
 const betaFeatures = [
@@ -218,9 +218,8 @@ export default function FaqPage() {
           </h1>
           <p className="mx-auto mt-3 max-w-xl font-heading text-lg leading-relaxed nav-dragon-gold">
             Sit among the students in the enchanted classroom — open the
-            professor&apos;s tome for answers about our fantasy-book rating
-            platform, Match Scores, Beta, and how new books find their way to
-            LorePath.
+            professor&apos;s tome for answers about our book rating platform,
+            Match Scores, Beta, and how new books find their way to LorePath.
           </p>
         </header>
 
@@ -231,7 +230,7 @@ export default function FaqPage() {
               Welcome
             </p>
             <p className="mt-3 font-heading text-lg leading-relaxed nav-dragon-gold">
-              Welcome to the LorePath Beta — a free rating platform where fantasy
+              Welcome to the LorePath Beta — a free rating platform where
               readers rate books by content themes, set preferences, and find
               better matches. Your ratings and feedback help shape the stories
               ahead — thank you for being here.
@@ -253,10 +252,10 @@ export default function FaqPage() {
               title="Chapter I · What is the LorePath Beta?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                LorePath is a rating platform for fantasy books — a place where
-                readers map what is actually in a story, not merely whether they
-                liked it. During Beta, everything remains free while we listen,
-                learn, and grow the library with you.
+                LorePath is a rating platform for books of every genre — a place
+                where readers map what is actually in a story, not merely whether
+                they liked it. During Beta, everything remains free while we
+                listen, learn, and grow the library with you.
               </p>
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 Here you rate books across content themes (pacing, horror, romance,
