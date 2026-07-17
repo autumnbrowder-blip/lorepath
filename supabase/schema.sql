@@ -322,7 +322,8 @@ create policy "Users can insert own ratings"
 
 create policy "Users can update own ratings"
   on public.ratings for update
-  using (auth.uid() = rated_by);
+  using (auth.uid() = rated_by)
+  with check (auth.uid() = rated_by);
 
 -- user_preferences: users manage own
 create policy "Users can view own preferences"
@@ -343,6 +344,15 @@ create policy "Users can delete own preferences"
   using (auth.uid() = user_id);
 
 -- Table privileges for PostgREST roles (RLS still constrains rows).
+grant select, insert, update on table public.profiles to authenticated;
+grant select on table public.profiles to anon;
+
+grant select, insert, update on table public.books to authenticated;
+grant select on table public.books to anon;
+
+grant select, insert, update, delete on table public.ratings to authenticated;
+grant select on table public.ratings to anon;
+
 grant select, insert, update, delete on table public.user_preferences to authenticated;
 grant select on table public.user_preferences to anon;
 

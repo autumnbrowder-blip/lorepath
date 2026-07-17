@@ -46,6 +46,8 @@ export async function POST(
     );
   }
 
+  // One cookie-bound client for auth + write so the JWT reaches PostgREST
+  // (auth.uid()) on the same connection used for book upsert + rating upsert.
   const supabase = await createClient();
   const {
     data: { user },
@@ -75,7 +77,10 @@ export async function POST(
     );
   }
 
-  const result = await submitUserRating(bookExternalId, user.id, body);
+  const result = await submitUserRating(bookExternalId, body, {
+    supabase,
+    expectedUserId: user.id,
+  });
 
   if (!result.success) {
     return NextResponse.json({ error: result.error }, { status: 500 });

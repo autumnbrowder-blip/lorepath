@@ -77,9 +77,12 @@ export function RatingForm({
     setSuccess(false);
 
     try {
+      // Same-origin cookies carry the Supabase session for auth.uid() / RLS.
       const response = await fetch(`/api/books/${bookId}/ratings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
         body: JSON.stringify(ratings),
       });
 

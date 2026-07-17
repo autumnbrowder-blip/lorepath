@@ -11,17 +11,26 @@ const PREFERENCE_SELECT =
 const LEGACY_PREFERENCE_SELECT =
   "sexual_content, lgbt, horror, ideology, pacing";
 
-const ROMANCE_MIGRATION_HINT =
-  "Your database is missing the romance column. Run supabase/migrations/20260716_fix_user_preferences_production.sql in the Supabase SQL Editor, then try again.";
+const PREFS_SQL_HINT =
+  "Run supabase/migrations/20260716_fix_user_preferences_production.sql in the Supabase SQL Editor, then try again.";
 
-const RLS_HINT =
-  "Could not save preferences (blocked by row-level security). Confirm you are signed in and that user_preferences policies allow select/insert/update where user_id = auth.uid(). If policies look correct, run supabase/migrations/20260716_fix_user_preferences_production.sql (includes grants).";
+const ROMANCE_MIGRATION_HINT =
+  `Your database is missing the romance column. ${PREFS_SQL_HINT}`;
+
+const RLS_WRITE_HINT =
+  `Could not save preferences (blocked by row-level security on INSERT/UPDATE). Confirm you are signed in and that user_preferences policies allow insert/update where user_id = auth.uid(). ${PREFS_SQL_HINT}`;
+
+const RLS_READBACK_HINT =
+  `Preferences may have been written, but the row could not be read back (SELECT RLS or grants). Upsert needs a SELECT policy where user_id = auth.uid(). ${PREFS_SQL_HINT}`;
 
 const GRANT_HINT =
-  "Could not save preferences (permission denied on user_preferences). Run supabase/migrations/20260716_fix_user_preferences_production.sql in the Supabase SQL Editor to grant select/insert/update to authenticated.";
+  `Could not save preferences (permission denied on user_preferences). ${PREFS_SQL_HINT}`;
 
 const FK_HINT =
   "Could not save preferences because no profile exists for your account (foreign key). Sign out and back in, or open /profile once, then try again.";
+
+const NO_SESSION_HINT =
+  "You are not signed in. Please sign in and try again.";
 
 function clampPreference(value: unknown, fallback: number): number {
   if (typeof value !== "number" || Number.isNaN(value)) return fallback;
@@ -89,7 +98,7 @@ function formatPreferenceError(message: string): string {
   if (isMissingRomanceColumn(message)) return ROMANCE_MIGRATION_HINT;
   if (isForeignKeyError(message)) return FK_HINT;
   if (isGrantError(message)) return GRANT_HINT;
-  if (isRlsError(message)) return RLS_HINT;
+  if (isRlsError(message)) return RLS_WRITE_HINT;
   return message || "Failed to save preferences.";
 }
 
@@ -201,22 +210,21 @@ async function ensureProfileExists(
   return { ok: true };
 }
 
+/**
+ * Upsert without .select()/RETURNING.
+ * Coupling write + RETURNING makes a missing SELECT policy look like a failed
+ * write (and the previous path returned a generic RLS_HINT even when INSERT
+ * succeeded but RETURNING was hidden).
+ */
 async function upsertPreferenceRow(
   supabase: SupabaseClient,
-  row: PreferenceWriteRow,
-  selectColumns: string
-): Promise<{ data: PreferenceRow | null; error: { message: string } | null }> {
-  // Prefer: return representation so we can confirm the write under RLS.
+  row: PreferenceWriteRow
+): Promise<{ error: { message: string } | null }> {
   const result = await supabase
     .from("user_preferences")
-    .upsert(row, { onConflict: "user_id" })
-    .select(selectColumns)
-    .maybeSingle();
+    .upsert(row, { onConflict: "user_id" });
 
-  return {
-    data: (result.data as PreferenceRow | null) ?? null,
-    error: result.error,
-  };
+  return { error: result.error };
 }
 
 export async function getUserPreferences(
@@ -275,10 +283,7 @@ export async function saveUserPreferences(
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    return {
-      success: false,
-      error: "You are not signed in. Please sign in and try again.",
-    };
+    return { success: false, error: NO_SESSION_HINT };
   }
 
   if (options?.expectedUserId && options.expectedUserId !== user.id) {
@@ -306,49 +311,28 @@ export async function saveUserPreferences(
     pacing: normalized.pacing,
   };
 
-  let primaryWrite = await upsertPreferenceRow(
-    supabase,
-    fullRow,
-    PREFERENCE_SELECT
-  );
-
-  let savedRow: PreferenceRow | null =
-    !primaryWrite.error && primaryWrite.data ? primaryWrite.data : null;
-  let writeError = primaryWrite.error;
+  let writeError = (await upsertPreferenceRow(supabase, fullRow)).error;
 
   if (writeError && isMissingRomanceColumn(writeError.message)) {
     // Keep other categories writable until the romance migration is applied.
     const { romance: _romance, ...legacyRow } = fullRow;
-    const legacy = await upsertPreferenceRow(
-      supabase,
-      legacyRow,
-      LEGACY_PREFERENCE_SELECT
-    );
-
-    savedRow = legacy.data
-      ? ({ ...legacy.data, romance: normalized.romance } as PreferenceRow)
-      : null;
-    writeError = legacy.error;
+    writeError = (await upsertPreferenceRow(supabase, legacyRow)).error;
   }
 
   if (writeError) {
     return { success: false, error: formatPreferenceError(writeError.message) };
   }
 
-  if (!savedRow) {
-    // Upsert can report no error while RLS hides RETURNING — verify with a read
-    // on the same authenticated client.
-    const verify = await fetchPreferenceRow(supabase, sessionUserId);
-    if (verify.error) {
-      return { success: false, error: formatPreferenceError(verify.error) };
-    }
-    if (!verify.data) {
-      return { success: false, error: RLS_HINT };
-    }
-    savedRow = verify.data;
+  // Separate read-back: distinguishes "write failed" from "write ok, SELECT blocked".
+  const verify = await fetchPreferenceRow(supabase, sessionUserId);
+  if (verify.error) {
+    return { success: false, error: formatPreferenceError(verify.error) };
+  }
+  if (!verify.data) {
+    return { success: false, error: RLS_READBACK_HINT };
   }
 
-  const confirmed = normalizePreferences(savedRow);
+  const confirmed = normalizePreferences(verify.data);
   revalidatePath("/preferences");
   revalidatePath("/browse");
   return { success: true, preferences: confirmed };
