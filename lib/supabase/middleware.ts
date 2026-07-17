@@ -75,7 +75,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && isAuthRoute) {
-    const redirectTo = request.nextUrl.searchParams.get("redirect") ?? "/";
+    const redirectTo = request.nextUrl.searchParams.get("redirect") ?? "/profile";
     return NextResponse.redirect(new URL(redirectTo, request.url));
   }
 

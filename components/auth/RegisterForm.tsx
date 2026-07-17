@@ -39,7 +39,7 @@ const parchmentButtonStyle: CSSProperties = {
 
 export function RegisterForm() {
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/";
+  const redirectTo = searchParams.get("redirect") ?? "/profile";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -226,7 +226,7 @@ export function RegisterForm() {
       >
         Already have an account?{" "}
         <Link
-          href={`/login${redirectTo !== "/" ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`}
+          href={`/login${redirectTo !== "/profile" ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`}
           className="font-semibold text-[#0f2a22] underline underline-offset-4 decoration-[#a67c2d]/70 hover:decoration-[#a67c2d]"
           style={{ fontFamily: bodyFont }}
         >

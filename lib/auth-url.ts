@@ -17,10 +17,11 @@ export function getSiteOrigin(): string {
 /** Allowlisted callback path — keep this exact string in Supabase Redirect URLs.
  * Used for OAuth, email confirmation, and password-reset recovery (`next=/reset-password`).
  */
-export function getAuthCallbackUrl(nextPath = "/"): string {
+export function getAuthCallbackUrl(nextPath = "/profile"): string {
   const origin = getSiteOrigin();
   const next = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
-  if (next === "/") {
+  // Default post-auth destination is /profile; omit query so callback uses its default.
+  if (next === "/profile") {
     return `${origin}/auth/callback`;
   }
   return `${origin}/auth/callback?next=${encodeURIComponent(next)}`;

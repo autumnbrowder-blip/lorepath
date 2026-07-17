@@ -6,7 +6,7 @@ import { getSupabaseEnv } from "@/lib/supabase/config";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/";
+    return "/profile";
   }
   return value;
 }

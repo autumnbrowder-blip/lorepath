@@ -68,7 +68,7 @@ type LoginFormProps = {
 export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/";
+  const redirectTo = searchParams.get("redirect") ?? "/profile";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -289,7 +289,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       >
         Don&apos;t have an account?{" "}
         <Link
-          href={`/register${redirectTo !== "/" ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`}
+          href={`/register${redirectTo !== "/profile" ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`}
           className="font-semibold text-[#0f2a22] underline underline-offset-4 decoration-[#a67c2d]/70 hover:decoration-[#a67c2d]"
           style={{ fontFamily: bodyFont }}
         >
