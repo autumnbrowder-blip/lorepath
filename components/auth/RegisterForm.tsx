@@ -5,11 +5,14 @@ import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type CSSProperties } from "react";
 
 const missingConfigMessage =
   "Supabase is not configured. Add real NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart the dev server.";
+
+const confirmEmailBlockedMessage =
+  "Your account was created, but sign-in is blocked until email confirmation is turned off. In the Supabase dashboard: Authentication → Providers → Email → disable Confirm email, then sign in.";
 
 const storybookFont =
   "var(--font-storybook), var(--font-display), Georgia, serif";
@@ -38,6 +41,7 @@ const parchmentButtonStyle: CSSProperties = {
 };
 
 export function RegisterForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") ?? "/profile";
 
@@ -45,7 +49,6 @@ export function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const configured = isSupabaseConfigured();
 
@@ -72,11 +75,11 @@ export function RegisterForm() {
 
     try {
       const supabase = createClient();
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          // Stable callback so confirm emails hit :3000 (not a dead :3001 tab)
+          // Only used if Confirm email is still enabled in Supabase.
           emailRedirectTo: getAuthCallbackUrl(redirectTo),
         },
       });
@@ -87,39 +90,29 @@ export function RegisterForm() {
         return;
       }
 
-      setSuccess(true);
-      setLoading(false);
+      // Immediate session when Confirm email is disabled (preferred UX).
+      if (data.session) {
+        router.push(redirectTo);
+        router.refresh();
+        return;
+      }
+
+      // No session from signUp — try signing in with the same credentials.
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({ email, password });
+
+      if (signInError || !signInData.session) {
+        setError(confirmEmailBlockedMessage);
+        setLoading(false);
+        return;
+      }
+
+      router.push(redirectTo);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
       setLoading(false);
     }
-  }
-
-  if (success) {
-    return (
-      <div className="text-center" style={{ fontFamily: bodyFont }}>
-        <h1
-          className="metallic-emerald mb-2 text-3xl font-normal tracking-[0.06em]"
-          style={{ fontFamily: storybookFont }}
-        >
-          Check your email
-        </h1>
-        <p className="mb-6 text-lg leading-relaxed text-[#0f2a22]">
-          We sent a confirmation link to{" "}
-          <strong className="font-semibold">{email}</strong>. Open it on this
-          computer while LorePath is running at{" "}
-          <strong className="font-semibold">http://localhost:3000</strong>, then
-          click the link to activate your account.
-        </p>
-        <Link
-          href="/login"
-          className="inline-flex items-center justify-center rounded-[4px] px-5 py-3 text-sm font-normal tracking-[0.06em] transition hover:-translate-y-0.5"
-          style={parchmentButtonStyle}
-        >
-          Back to sign in
-        </Link>
-      </div>
-    );
   }
 
   return (
