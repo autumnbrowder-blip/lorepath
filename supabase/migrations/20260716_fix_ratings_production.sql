@@ -5,6 +5,10 @@
 -- =============================================================================
 -- Prefer the combined script if profiles is also missing:
 --   20260716_fix_production_combined.sql
+--
+-- App note: The Next.js server verifies the user JWT, then writes via the
+-- Supabase service role (SUPABASE_SERVICE_ROLE_KEY), which bypasses RLS.
+-- Keep policies below as defense-in-depth for direct client access.
 -- =============================================================================
 
 create extension if not exists "pgcrypto";

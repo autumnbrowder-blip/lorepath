@@ -49,7 +49,8 @@ export async function POST(
     );
   }
 
-  // JWT-scoped client so auth.uid() is set on PostgREST (Bearer preferred).
+  // Verify JWT first. Writes use the service role client after auth —
+  // see submitUserRating (rated_by is always the verified user.id).
   const session = await createAuthenticatedClient({
     accessToken: getBearerToken(request),
   });
@@ -78,8 +79,8 @@ export async function POST(
   }
 
   const result = await submitUserRating(bookExternalId, body, {
-    supabase: session.supabase,
     expectedUserId: session.user.id,
+    accessToken: session.accessToken,
   });
 
   if (!result.success) {

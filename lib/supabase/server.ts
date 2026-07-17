@@ -230,3 +230,66 @@ export function getBearerToken(request: Request): string | null {
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1]?.trim() || null;
 }
+
+const MISSING_SERVICE_ROLE_HINT =
+  "Server is missing SUPABASE_SERVICE_ROLE_KEY. Add it in Netlify → Site configuration → Environment variables and in .env.local (Supabase Dashboard → Project Settings → API → service_role secret). Redeploy, sign in again, then retry.";
+
+/**
+ * Resolve the service role key (server-only). Prefer SUPABASE_SERVICE_ROLE_KEY;
+ * accept a few common aliases used in older projects. Never log the value.
+ */
+function getServiceRoleKey(): string | null {
+  const candidates = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+  ];
+
+  for (const raw of candidates) {
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (!value) continue;
+    if (/your-service|your-supabase|changeme|placeholder/i.test(value)) {
+      continue;
+    }
+    return value;
+  }
+
+  return null;
+}
+
+export type ServiceRoleClientResult =
+  | { supabase: SupabaseClient }
+  | { error: string };
+
+/**
+ * Server-only Supabase client that bypasses RLS (service_role).
+ * Use ONLY after verifying the user JWT, and ALWAYS stamp user_id / rated_by
+ * from the verified user.id — never from the request body.
+ *
+ * RLS policies remain defense-in-depth for direct browser/anon access;
+ * trusted server writes use this client after auth.
+ */
+export function createServiceRoleClient(): ServiceRoleClientResult {
+  const env = getSupabaseEnv();
+  if (!env) {
+    return { error: "Supabase is not configured." };
+  }
+
+  const serviceRoleKey = getServiceRoleKey();
+  if (!serviceRoleKey) {
+    return { error: MISSING_SERVICE_ROLE_HINT };
+  }
+
+  const supabase = createSupabaseClient(env.url, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      fetch: noStoreFetch,
+    },
+  });
+
+  return { supabase };
+}

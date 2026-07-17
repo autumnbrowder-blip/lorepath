@@ -4,6 +4,12 @@
 --   OR 20260716_fix_production_combined.sql
 -- Safe to re-run. Only needed if prefs still return RLS errors after those.
 --
+-- NOTE (app architecture): The Next.js server verifies the user JWT, then
+-- writes via the Supabase service role (SUPABASE_SERVICE_ROLE_KEY), which
+-- bypasses RLS. Keep these policies as defense-in-depth for direct
+-- browser/anon PostgREST access; server preference/rating writes do not
+-- depend on auth.uid() matching for INSERT/UPDATE.
+--
 -- Upsert (INSERT ... ON CONFLICT DO UPDATE) needs:
 --   SELECT + INSERT (WITH CHECK) + UPDATE (USING + WITH CHECK)
 -- plus table GRANTs to the authenticated role (same pattern as profiles).

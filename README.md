@@ -27,6 +27,7 @@ Copy names from `.env.local.example`. After changing env vars, restart `npm run 
 
 | Variable | Purpose |
 |----------|---------|
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only; preference/rating writes after JWT verify (required in Netlify) |
 | `GOOGLE_BOOKS_API_KEY` | Higher Google Books rate limits |
 | `NYT_BOOKS_API_KEY` | NYT bestsellers on Browse ([free key](https://developer.nytimes.com/)) |
 | `ISBNDB_API_KEY` | ISBNdb search |

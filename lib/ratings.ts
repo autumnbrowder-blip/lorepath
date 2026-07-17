@@ -2,7 +2,11 @@ import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { getBookById } from "@/lib/books";
 import { RATING_CATEGORIES } from "@/lib/rating-categories";
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createAuthenticatedClient,
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import type { BookDetail } from "@/types/book";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -22,10 +26,10 @@ const RATINGS_SQL_HINT =
   "Run supabase/migrations/20260716_fix_ratings_production.sql in the Supabase SQL Editor, then try again.";
 
 const RLS_HINT =
-  `Could not save rating (blocked by row-level security). Confirm you are signed in and that ratings policies allow insert/update where rated_by = auth.uid(). ${RATINGS_SQL_HINT}`;
+  `Could not save rating (unexpected RLS block on server write). Confirm SUPABASE_SERVICE_ROLE_KEY is set in Netlify and .env.local, then redeploy. ${RATINGS_SQL_HINT}`;
 
 const GRANT_HINT =
-  `Could not save rating (permission denied on ratings/books). ${RATINGS_SQL_HINT}`;
+  `Could not save rating (permission denied on ratings/books). Confirm SUPABASE_SERVICE_ROLE_KEY is set. ${RATINGS_SQL_HINT}`;
 
 const FK_HINT =
   "Could not save rating because no profile exists for your account (foreign key). Sign out and back in, or open /profile once, then try again.";
@@ -142,7 +146,7 @@ async function ensureProfileExists(
     return {
       ok: false,
       error:
-        "No profile was found for your account and creating one was blocked. Confirm profiles RLS allows insert/select for your own id, then try again.",
+        "No profile was found for your account and creating one failed. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
     };
   }
 
@@ -180,7 +184,7 @@ async function ensureBookRecord(
   if (!data?.id) {
     return {
       error:
-        "Book row could not be saved or read back. Confirm books insert/select policies and grants for authenticated users.",
+        "Book row could not be saved or read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
     };
   }
 
@@ -418,20 +422,15 @@ export async function getUserReadingStats(
 }
 
 type SubmitRatingOptions = {
-  /**
-   * Prefer a JWT-scoped client from createAuthenticatedClient so PostgREST
-   * receives Authorization: Bearer <access_token> (auth.uid() for RLS).
-   */
-  supabase?: SupabaseClient;
-  /**
-   * When provided with `supabase`, used as rated_by without calling
-   * auth.getUser() on the write client (JWT-only clients have no cookie session).
-   */
+  /** Optional sanity check; the write always uses verified JWT user.id for rated_by. */
   expectedUserId?: string;
+  /** Browser-supplied access token (Authorization Bearer) — preferred on Netlify. */
+  accessToken?: string | null;
 };
 
 /**
  * Persist a per-user rating. Column is `rated_by` (not `user_id`).
+ * Verifies the JWT, then upserts with the service role client (bypasses RLS).
  * Identity comes from the verified JWT user, never from the request body.
  */
 export async function submitUserRating(
@@ -443,36 +442,32 @@ export async function submitUserRating(
     return { success: false, error: "Supabase is not configured." };
   }
 
-  let supabase: SupabaseClient;
-  let sessionUserId: string;
-
-  if (options?.supabase && options.expectedUserId) {
-    supabase = options.supabase;
-    sessionUserId = options.expectedUserId;
-  } else {
-    const writeClient = options?.supabase ?? (await createClient());
-    const {
-      data: { user },
-      error: authError,
-    } = await writeClient.auth.getUser();
-
-    if (authError || !user) {
-      return {
-        success: false,
-        error: "You are not signed in. Please sign in and try again.",
-      };
-    }
-
-    if (options?.expectedUserId && options.expectedUserId !== user.id) {
-      return {
-        success: false,
-        error: "Signed-in user does not match the rating being saved.",
-      };
-    }
-
-    supabase = writeClient;
-    sessionUserId = user.id;
+  // 1) Verify the user via access token / cookie session.
+  const auth = await createAuthenticatedClient({
+    accessToken: options?.accessToken,
+  });
+  if ("error" in auth) {
+    return {
+      success: false,
+      error: "You are not signed in. Please sign in and try again.",
+    };
   }
+
+  const sessionUserId = auth.user.id;
+
+  if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
+    return {
+      success: false,
+      error: "Signed-in user does not match the rating being saved.",
+    };
+  }
+
+  // 2) Trusted server write with service role (bypasses RLS).
+  const admin = createServiceRoleClient();
+  if ("error" in admin) {
+    return { success: false, error: admin.error };
+  }
+  const supabase = admin.supabase;
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
@@ -495,8 +490,7 @@ export async function submitUserRating(
     pacing: ratings.pacing,
   };
 
-  // Write without .select() so INSERT/UPDATE RLS is not confused with
-  // RETURNING/SELECT policy failures.
+  // Write without .select() so INSERT/UPDATE failures are unambiguous.
   let { error } = await supabase
     .from("ratings")
     .upsert(row, { onConflict: "book_id,rated_by" });

@@ -71,8 +71,8 @@ export async function PUT(request: Request) {
 
   const hadAuthorizationHeader = Boolean(getBearerToken(request));
 
-  // One JWT-scoped client for auth + write. Browser Authorization header is
-  // preferred so Netlify/SSR cookie bridging cannot drop the token for PostgREST.
+  // Auth check first (Bearer preferred). Writes use the service role client
+  // after JWT verification — see saveUserPreferences.
   const session = await getSessionUser({
     accessToken: getBearerToken(request),
   });
@@ -119,7 +119,6 @@ export async function PUT(request: Request) {
   }
 
   const saveResult = await saveUserPreferences(body, {
-    supabase: session.supabase,
     expectedUserId: session.user.id,
     accessToken: session.accessToken,
     bodyUserId,

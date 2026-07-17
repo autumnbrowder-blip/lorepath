@@ -8,6 +8,10 @@
 --
 -- Skip 20260716_user_preferences_rls_hardening.sql if you run this —
 -- hardening is a subset (RLS + grants only) and is optional afterward.
+--
+-- App note: The Next.js server verifies the user JWT, then writes via the
+-- Supabase service role (SUPABASE_SERVICE_ROLE_KEY), which bypasses RLS.
+-- Keep policies below as defense-in-depth for direct client access.
 -- =============================================================================
 
 create extension if not exists "pgcrypto";

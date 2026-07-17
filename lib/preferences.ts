@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
   createClient,
+  createServiceRoleClient,
 } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
@@ -21,13 +22,13 @@ const ROMANCE_MIGRATION_HINT =
   `Your database is missing the romance column. ${PREFS_SQL_HINT}`;
 
 const RLS_WRITE_HINT =
-  `Could not save preferences (blocked by row-level security on INSERT/UPDATE). Confirm you are signed in and that user_preferences policies allow insert/update where user_id = auth.uid(). ${PREFS_SQL_HINT}`;
+  `Could not save preferences (unexpected RLS block on server write). Confirm SUPABASE_SERVICE_ROLE_KEY is set in Netlify and .env.local, then redeploy. ${PREFS_SQL_HINT}`;
 
 const RLS_READBACK_HINT =
-  `Preferences may have been written, but the row could not be read back (SELECT RLS or grants). Upsert needs a SELECT policy where user_id = auth.uid(). ${PREFS_SQL_HINT}`;
+  `Preferences may have been written, but the row could not be read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then redeploy. ${PREFS_SQL_HINT}`;
 
 const GRANT_HINT =
-  `Could not save preferences (permission denied on user_preferences). ${PREFS_SQL_HINT}`;
+  `Could not save preferences (permission denied on user_preferences). Confirm SUPABASE_SERVICE_ROLE_KEY is set. ${PREFS_SQL_HINT}`;
 
 const FK_HINT =
   "Could not save preferences because no profile exists for your account (foreign key). Sign out and back in, or open /profile once, then try again.";
@@ -226,7 +227,7 @@ async function ensureProfileExists(
     return {
       ok: false,
       error:
-        "No profile was found for your account and creating one was blocked. Confirm profiles RLS allows insert/select for your own id, then try again.",
+        "No profile was found for your account and creating one failed. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
     };
   }
 
@@ -282,9 +283,7 @@ export type PreferenceSaveDebug = {
 };
 
 type SaveOptions = {
-  /** Reuse an already JWT-scoped client so auth.uid() matches the write. */
-  supabase?: SupabaseClient;
-  /** Optional sanity check; the write always uses session user.id for user_id. */
+  /** Optional sanity check; the write always uses verified JWT user.id for user_id. */
   expectedUserId?: string;
   /** Browser-supplied access token (Authorization Bearer) — preferred on Netlify. */
   accessToken?: string | null;
@@ -304,6 +303,7 @@ type SaveFailure = {
 
 /**
  * Persist preferences for the currently authenticated user.
+ * Verifies the JWT, then upserts with the service role client (bypasses RLS).
  * `user_id` is ALWAYS taken from the verified JWT user, never from the body.
  */
 export async function saveUserPreferences(
@@ -339,35 +339,27 @@ export async function saveUserPreferences(
 
   const normalized = normalizePreferences(preferences);
 
-  let supabase: SupabaseClient;
-  let sessionUserId: string;
+  // 1) Verify the user via access token / cookie session.
+  const auth = await createAuthenticatedClient({
+    accessToken: options?.accessToken,
+  });
+  if ("error" in auth) {
+    return {
+      success: false,
+      error: auth.error === "Unauthorized." ? NO_SESSION_HINT : auth.error,
+      supabaseCode: auth.code,
+      debug: debugBase(null),
+    };
+  }
 
-  if (options?.supabase && options?.expectedUserId) {
-    // Caller already built a JWT-scoped client (API route path).
-    supabase = options.supabase;
-    sessionUserId = options.expectedUserId;
-  } else {
-    const auth = await createAuthenticatedClient({
-      accessToken: options?.accessToken,
-    });
-    if ("error" in auth) {
-      return {
-        success: false,
-        error: auth.error === "Unauthorized." ? NO_SESSION_HINT : auth.error,
-        supabaseCode: auth.code,
-        debug: debugBase(null),
-      };
-    }
-    supabase = auth.supabase;
-    sessionUserId = auth.user.id;
+  const sessionUserId = auth.user.id;
 
-    if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
-      return {
-        success: false,
-        error: "Signed-in user does not match the preferences being saved.",
-        debug: debugBase(sessionUserId, false),
-      };
-    }
+  if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
+    return {
+      success: false,
+      error: "Signed-in user does not match the preferences being saved.",
+      debug: debugBase(sessionUserId, false),
+    };
   }
 
   // Body must never supply user_id for the write. If a client sent one, it must match.
@@ -379,6 +371,17 @@ export async function saveUserPreferences(
       debug: debugBase(sessionUserId, false),
     };
   }
+
+  // 2) Trusted server write with service role (bypasses RLS).
+  const admin = createServiceRoleClient();
+  if ("error" in admin) {
+    return {
+      success: false,
+      error: admin.error,
+      debug: debugBase(sessionUserId, userIdMatched),
+    };
+  }
+  const supabase = admin.supabase;
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
@@ -418,7 +421,7 @@ export async function saveUserPreferences(
     };
   }
 
-  // Separate read-back: distinguishes "write failed" from "write ok, SELECT blocked".
+  // Separate read-back via service role (confirms the row exists).
   const verify = await fetchPreferenceRow(supabase, sessionUserId);
   if (verify.error) {
     return {
