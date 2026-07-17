@@ -156,11 +156,15 @@ export function BookSearch({
 
       setBooks((current) => mergeSearchResults(current, incoming));
       setSourceCounts((current) => ({
+        ...current,
         google: (current.google ?? 0) + (data.sourceCounts?.google ?? 0),
         openlibrary:
           (current.openlibrary ?? 0) + (data.sourceCounts?.openlibrary ?? 0),
         gutendex: (current.gutendex ?? 0) + (data.sourceCounts?.gutendex ?? 0),
         isbndb: (current.isbndb ?? 0) + (data.sourceCounts?.isbndb ?? 0),
+        // Hardcover only contributes on page 1 — preserve its count across pages.
+        hardcover:
+          current.hardcover ?? data.sourceCounts?.hardcover ?? undefined,
       }));
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));

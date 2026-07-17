@@ -12,11 +12,15 @@ const HARDCOVER_API_URL = "https://api.hardcover.app/v1/graphql";
 export const HARDCOVER_ID_PREFIX = "hardcover-";
 
 /**
- * Read token from `.env.local` as `HARDCOVER_API_TOKEN` (no spaces).
- * A name like `HARD COVER_API_TOKEN` will not load in Next.js.
+ * Read token from `.env.local` as `HARDCOVER_API_TOKEN` (no spaces in the name).
+ * Server-only — never use `NEXT_PUBLIC_`. Strip an accidental `Bearer ` prefix.
  */
 function getHardcoverToken(): string | null {
-  const token = process.env.HARDCOVER_API_TOKEN?.trim();
+  let token = process.env.HARDCOVER_API_TOKEN?.trim();
+  if (!token) return null;
+  if (/^Bearer\s+/i.test(token)) {
+    token = token.replace(/^Bearer\s+/i, "").trim();
+  }
   return token || null;
 }
 
@@ -67,18 +71,21 @@ type HardcoverSearchHit = {
   genres?: string[] | null;
   tags?: string[] | null;
   isbns?: string[] | null;
-  image?: HardcoverImage | null;
+  image?: HardcoverImage | string | null;
+};
+
+type HardcoverSearchResults = {
+  hits?: { document?: HardcoverSearchHit }[];
+  found?: number;
 };
 
 type HardcoverSearchResponse = {
   data?: {
     search?: {
       error?: string | null;
-      ids?: number[] | null;
-      results?: {
-        hits?: { document?: HardcoverSearchHit }[];
-        found?: number;
-      } | null;
+      ids?: Array<number | string> | null;
+      /** Typesense payload — object, or occasionally a JSON string. */
+      results?: HardcoverSearchResults | string | null;
     } | null;
   } | null;
   errors?: { message?: string }[] | null;
@@ -162,7 +169,13 @@ function parsePageCount(pages?: number | null): number | null {
   return null;
 }
 
-function parseCoverUrl(image?: HardcoverImage | null): string | null {
+function parseCoverUrl(
+  image?: HardcoverImage | string | null
+): string | null {
+  if (typeof image === "string") {
+    const raw = image.trim();
+    return raw ? raw.replace("http://", "https://") : null;
+  }
   const raw = image?.url?.trim();
   return raw ? raw.replace("http://", "https://") : null;
 }
@@ -235,14 +248,39 @@ export function parseHardcoverBookDetail(
   };
 }
 
+function normalizeSearchResults(
+  results: HardcoverSearchResults | string | null | undefined
+): HardcoverSearchResults | null {
+  if (!results) return null;
+  if (typeof results === "string") {
+    try {
+      const parsed = JSON.parse(results) as HardcoverSearchResults;
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof results === "object") return results;
+  return null;
+}
+
 function extractSearchHits(
   payload: HardcoverSearchResponse
 ): HardcoverSearchHit[] {
-  const hits = payload.data?.search?.results?.hits;
+  const results = normalizeSearchResults(payload.data?.search?.results);
+  const hits = results?.hits;
   if (!Array.isArray(hits)) return [];
   return hits
     .map((hit) => hit.document)
     .filter((doc): doc is HardcoverSearchHit => Boolean(doc));
+}
+
+function extractSearchIds(payload: HardcoverSearchResponse): number[] {
+  const raw = payload.data?.search?.ids ?? [];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0);
 }
 
 const BOOK_FIELDS = `
@@ -333,16 +371,19 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       return [];
     }
 
-    const ids = payload.data?.search?.ids ?? [];
+    const ids = extractSearchIds(payload);
     const hits = extractSearchHits(payload);
     let books = hits
       .map(parseHardcoverSearchHit)
       .filter((book): book is BookSummary => book !== null);
 
-    // Fill gaps from books_by_id when search hits lack desc/cover.
-    if (books.length < hits.length && ids.length > 0) {
+    // Hydrate from books-by-id when Typesense hits are missing/incomplete.
+    // Important: if `results.hits` fails to parse but `ids` is populated,
+    // we must still hydrate — otherwise search always returns [].
+    if (ids.length > 0 && books.length < ids.length) {
       console.info("[Hardcover] hydrating for missing desc/cover", {
         ids: ids.length,
+        hits: hits.length,
         completeHits: books.length,
       });
       const hydrated = await fetchHardcoverBooksByIds(ids.slice(0, 20), token);
@@ -360,7 +401,8 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
 
     // Hard quality gate: description + cover required
     books = books.filter(
-      (book) => Boolean(book.description?.trim()) && Boolean(book.coverUrl?.trim())
+      (book) =>
+        Boolean(book.description?.trim()) && Boolean(book.coverUrl?.trim())
     );
 
     console.info("[Hardcover] searchHardcover done", {

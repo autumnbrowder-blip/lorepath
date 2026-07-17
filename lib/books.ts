@@ -161,6 +161,23 @@ export async function searchBooks(
     );
   }
 
+  const hardcoverConfigured = Boolean(process.env.HARDCOVER_API_TOKEN?.trim());
+  if (
+    hardcoverConfigured &&
+    pageNumber === 1 &&
+    hardcoverSettled.status === "fulfilled" &&
+    hardcoverBooks.length === 0
+  ) {
+    console.error(
+      "[searchBooks] Hardcover returned 0 usable books (not silently ignored).",
+      {
+        query: searchQuery,
+        page: pageNumber,
+        mode: options?.mode ?? "text",
+      }
+    );
+  }
+
   const isbndbConfigured = Boolean(process.env.ISBNDB_API_KEY?.trim());
   if (
     isbndbConfigured &&
