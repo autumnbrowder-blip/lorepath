@@ -48,16 +48,16 @@ export default async function PreferencesPage() {
   const preferences = await getUserPreferences(user.id);
 
   return (
-    <div className="relative isolate min-h-[calc(100vh-4.5rem)] overflow-hidden bg-[#d8c49a]">
-      {/* Aged parchment / enchanted scholar's book */}
-      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+    <div className="preferences-page">
+      {/* Viewport-locked parchment scene — does not rescale when sliders/notes expand */}
+      <div className="preferences-page-scene" aria-hidden="true">
         <Image
           src="/images/lorepath-preferences-parchment.png"
           alt=""
           fill
           priority
           sizes="100vw"
-          className="object-cover object-center brightness-[0.96] contrast-[1.06] saturate-[0.92]"
+          className="preferences-page-scene-image"
         />
         {/* Fiber grain + coffee stains */}
         <div
@@ -79,10 +79,7 @@ export default async function PreferencesPage() {
         {/* Magical vignette */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_transparent_35%,_rgba(40,28,10,0.22)_72%,_rgba(20,14,6,0.48)_100%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#2a1c0a]/20 via-transparent to-[#1a1208]/35" />
-      </div>
 
-      {/* Page-corner flourishes */}
-      <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden="true">
         <CornerFlourish className="absolute left-2 top-2 h-16 w-16 text-gold-600/45 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
         <CornerFlourish className="absolute right-2 top-2 h-16 w-16 rotate-90 text-gold-600/45 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
         <CornerFlourish className="absolute bottom-2 left-2 h-16 w-16 -rotate-90 text-gold-600/45 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />

@@ -325,6 +325,99 @@
     transform: none;
   }
 
+  /*
+   * Shared viewport-locked page scenes (Login/Register, Preferences, Home):
+   * position:fixed + 100dvh so object-cover never recalculates when content
+   * expands (form errors, preference notes, CTA wrap). No transform/transition
+   * on the scene or its image.
+   */
+  .portal-auth-page,
+  .preferences-page,
+  .home-hero-page {
+    position: relative;
+    isolation: isolate;
+    min-height: calc(100vh - 4.5rem);
+    overflow-x: clip;
+  }
+
+  .portal-auth-page {
+    display: flex;
+    flex: 1 1 auto;
+    width: 100%;
+    background-color: #070e0a;
+  }
+
+  .preferences-page {
+    background-color: #d8c49a;
+  }
+
+  .home-hero-page {
+    background-color: #070e0a;
+  }
+
+  .portal-auth-scene,
+  .preferences-page-scene,
+  .home-hero-scene {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    transform: none;
+    transition: none;
+  }
+
+  .portal-auth-scene {
+    background-color: #070e0a;
+  }
+
+  .preferences-page-scene {
+    background-color: #d8c49a;
+  }
+
+  .home-hero-scene {
+    background-color: #070e0a;
+  }
+
+  .portal-auth-scene-image,
+  .portal-auth-scene img,
+  .preferences-page-scene-image,
+  .preferences-page-scene img,
+  .home-hero-scene-image,
+  .home-hero-scene img {
+    object-fit: cover;
+    object-position: center;
+    width: 100%;
+    height: 100%;
+    transition: none;
+    transform: none;
+  }
+
+  .preferences-page-scene-image,
+  .preferences-page-scene img {
+    filter: brightness(0.96) contrast(1.06) saturate(0.92);
+  }
+
+  /* Auth parchment card — fixed tile; form height changes never reflow cover */
+  .portal-auth-parchment {
+    background-color: #e6d9b8;
+    background-image: url("/images/parchment.jpg");
+    background-size: 520px auto;
+    background-position: top left;
+    background-repeat: repeat;
+    background-attachment: scroll;
+    border: 3px solid #a67c2d;
+    box-shadow:
+      0 6px 16px rgba(0, 0, 0, 0.35),
+      inset 0 0 40px rgba(166, 124, 45, 0.14);
+    font-family: var(--font-heading), Georgia, serif;
+    transition: none;
+    transform: none;
+  }
+
   /* FAQ rating <details>: only caret rotates — no scale on parents/bg */
   .faq-rating-details > summary {
     transition: filter 150ms ease;

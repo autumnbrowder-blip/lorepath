@@ -6,17 +6,17 @@ export function HomeHero() {
   return (
     <section
       aria-labelledby="home-tagline"
-      className="relative flex min-h-[calc(100vh-4.5rem)] flex-col overflow-hidden bg-[#070e0a]"
+      className="home-hero-page relative flex min-h-[calc(100vh-4.5rem)] flex-col overflow-hidden bg-[#070e0a]"
     >
-      {/* Immersive fantasy library background */}
-      <div className="absolute inset-0">
+      {/* Viewport-locked library — never rescales with layout/interaction */}
+      <div className="home-hero-scene" aria-hidden="true">
         <Image
           src="/images/lorepath-library-hero.png"
           alt=""
           fill
           priority
           sizes="100vw"
-          className="object-cover object-center scale-[1.02]"
+          className="home-hero-scene-image"
         />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,_rgba(7,14,10,0.1)_0%,_rgba(7,14,10,0.5)_55%,_rgba(4,8,6,0.9)_100%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#070e0a]/65 via-transparent to-[#070e0a]/92" />
@@ -25,13 +25,7 @@ export function HomeHero() {
         <div className="absolute bottom-[8%] left-[12%] h-56 w-56 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(212,170,60,0.22)_0%,_transparent_70%)] blur-2xl" />
         <div className="absolute bottom-[12%] right-[14%] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(184,148,31,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.9s]" />
         <div className="absolute left-1/2 top-[32%] h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(212,184,74,0.12)_0%,_transparent_68%)] blur-2xl" />
-      </div>
 
-      {/* Magical dust */}
-      <div
-        className="pointer-events-none absolute inset-0 overflow-hidden"
-        aria-hidden="true"
-      >
         {[
           { t: "16%", l: "20%", d: "0s" },
           { t: "26%", l: "72%", d: "1.1s" },
