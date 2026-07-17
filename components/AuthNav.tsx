@@ -14,7 +14,7 @@ import {
   BookOpen,
   Settings,
   SlidersHorizontal,
-  User,
+  User as UserIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -241,7 +241,7 @@ export function AuthNav() {
               }`}
               onClick={() => setOpen(false)}
             >
-              <User className={menuIconClass} aria-hidden="true" />
+              <UserIcon className={menuIconClass} aria-hidden="true" />
               Profile
             </Link>
             <Link
