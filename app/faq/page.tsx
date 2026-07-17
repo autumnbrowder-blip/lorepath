@@ -213,10 +213,9 @@ export default function FaqPage() {
               Welcome
             </p>
             <p className="mt-3 font-heading text-lg leading-relaxed nav-dragon-gold">
-              Welcome to the LorePath Beta — a free rating platform where
-              readers rate books by content themes, set preferences, and find
-              better matches. Your ratings and feedback help shape the stories
-              ahead — thank you for being here.
+              Sit among the students in the enchanted classroom — open the
+              professor&apos;s tome for answers about our book rating platform,
+              Match Scores, Beta, and how new books find their way to LorePath.
             </p>
           </div>
         </div>
