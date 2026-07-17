@@ -284,6 +284,7 @@
     filter: none !important;
   }
 
+  /* Fixed full-viewport auditorium — size locked to viewport, not page content */
   .faq-page-scene {
     pointer-events: none;
     position: fixed;
@@ -297,43 +298,12 @@
     background-color: #07120c;
   }
 
-  .faq-page-scene-panel {
-    position: absolute;
-    inset-block: 0;
-    overflow: hidden;
-    background-color: #07120c;
-  }
-
-  .faq-page-scene-panel--left {
-    left: 0;
-    width: 100%;
-  }
-
-  .faq-page-scene-panel--right {
-    display: none;
-    right: 0;
-    width: 52%;
-  }
-
-  @media (min-width: 1024px) {
-    .faq-page-scene-panel--left {
-      width: 48%;
-    }
-
-    .faq-page-scene-panel--right {
-      display: block;
-    }
-  }
-
-  /* Oversized frame = object-cover paints more of the photo (less cropped/zoomed) */
-  .faq-page-scene-frame {
-    position: absolute;
-    inset: -12%;
-  }
-
+  .faq-page-scene-image,
   .faq-page-scene img {
     object-fit: cover;
-    object-position: center center;
+    object-position: center 40%;
+    width: 100%;
+    height: 100%;
     transition: none;
     transform: none;
   }

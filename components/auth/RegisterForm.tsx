@@ -137,8 +137,7 @@ export function RegisterForm() {
         Join the Archives
       </h1>
       <p className="mb-7 text-lg leading-relaxed text-[#0f2a22]">
-        Begin your LorePath — built for readers by readers who wander between
-        worlds.
+        Begin your LorePath — know before you turn the page.
       </p>
 
       {!configured && (

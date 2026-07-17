@@ -29,8 +29,7 @@ const cinzelDecorative = Cinzel_Decorative({
 
 export const metadata: Metadata = {
   title: "LorePath",
-  description:
-    "Built for readers by readers who wander between worlds.",
+  description: "Know before you turn the page",
 };
 
 export default function RootLayout({

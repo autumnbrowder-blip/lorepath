@@ -165,35 +165,18 @@ function SectionCard({
 export default function FaqPage() {
   return (
     <div className="faq-page">
-      {/* Viewport-locked classroom scene — fixed 100dvh; oversized frames zoom out */}
+      {/* Viewport-locked auditorium background — fixed; does not rescale with content */}
       <div className="faq-page-scene" aria-hidden="true">
-        <div className="faq-page-scene-panel faq-page-scene-panel--left">
-          <div className="faq-page-scene-frame">
-            <Image
-              src="/images/lorepath-faq-wizard-left.png"
-              alt=""
-              fill
-              priority
-              sizes="(max-width: 1024px) 100vw, 48vw"
-              className="object-cover object-[42%_center] opacity-90 lg:opacity-100"
-            />
-          </div>
-        </div>
-        <div className="faq-page-scene-panel faq-page-scene-panel--right">
-          <div className="faq-page-scene-frame">
-            <Image
-              src="/images/lorepath-faq-auditorium-amphitheater.png"
-              alt=""
-              fill
-              priority
-              sizes="52vw"
-              className="object-cover object-[58%_center]"
-            />
-          </div>
-        </div>
+        <Image
+          src="/images/lorepath-faq-auditorium-amphitheater.png"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="faq-page-scene-image"
+        />
 
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_rgba(8,16,12,0.55)_0%,_rgba(8,16,12,0.22)_38%,_transparent_68%)]" />
-        <div className="absolute inset-y-0 left-[42%] hidden w-[16%] bg-gradient-to-r from-transparent via-[#07120c]/35 to-transparent lg:block" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#07120c]/40 via-transparent to-[#050a08]/72" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_70%,_rgba(166,124,45,0.12)_0%,_transparent_45%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_88%_35%,_rgba(61,107,79,0.14)_0%,_transparent_42%)]" />
