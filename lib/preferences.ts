@@ -4,7 +4,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 const PREFERENCE_SELECT =
   "sexual_content, romance, lgbt, horror, ideology, pacing";
@@ -12,10 +12,10 @@ const LEGACY_PREFERENCE_SELECT =
   "sexual_content, lgbt, horror, ideology, pacing";
 
 const ROMANCE_MIGRATION_HINT =
-  "Your database is missing the romance column. Run supabase/migrations/20260716_add_romance_category.sql (or 20260716_fix_user_preferences_production.sql) in the Supabase SQL Editor, then try again.";
+  "Your database is missing the romance column. Run supabase/migrations/20260716_fix_user_preferences_production.sql in the Supabase SQL Editor, then try again.";
 
 const RLS_HINT =
-  "Could not save preferences (blocked by row-level security). Confirm you are signed in and run supabase/migrations/20260716_fix_user_preferences_production.sql in the Supabase SQL Editor (SELECT/INSERT/UPDATE policies + grants for authenticated).";
+  "Could not save preferences (blocked by row-level security). Confirm you are signed in and that user_preferences policies allow select/insert/update where user_id = auth.uid(). If policies look correct, run supabase/migrations/20260716_fix_user_preferences_production.sql (includes grants).";
 
 const GRANT_HINT =
   "Could not save preferences (permission denied on user_preferences). Run supabase/migrations/20260716_fix_user_preferences_production.sql in the Supabase SQL Editor to grant select/insert/update to authenticated.";
@@ -96,6 +96,16 @@ function formatPreferenceError(message: string): string {
 type PreferenceRow = {
   sexual_content: number;
   romance?: number | null;
+  lgbt: number;
+  horror: number;
+  ideology: number;
+  pacing: number;
+};
+
+type PreferenceWriteRow = {
+  user_id: string;
+  sexual_content: number;
+  romance?: number;
   lgbt: number;
   horror: number;
   ideology: number;
@@ -191,6 +201,24 @@ async function ensureProfileExists(
   return { ok: true };
 }
 
+async function upsertPreferenceRow(
+  supabase: SupabaseClient,
+  row: PreferenceWriteRow,
+  selectColumns: string
+): Promise<{ data: PreferenceRow | null; error: { message: string } | null }> {
+  // Prefer: return representation so we can confirm the write under RLS.
+  const result = await supabase
+    .from("user_preferences")
+    .upsert(row, { onConflict: "user_id" })
+    .select(selectColumns)
+    .maybeSingle();
+
+  return {
+    data: (result.data as PreferenceRow | null) ?? null,
+    error: result.error,
+  };
+}
+
 export async function getUserPreferences(
   userId: string
 ): Promise<ContentRating> {
@@ -213,9 +241,21 @@ export async function getUserPreferences(
   }
 }
 
+type SaveOptions = {
+  /** Reuse the API route's cookie-bound client so auth.uid() matches the JWT. */
+  supabase?: SupabaseClient;
+  /** Optional sanity check; the write always uses session user.id for user_id. */
+  expectedUserId?: string;
+};
+
+/**
+ * Persist preferences for the currently authenticated user.
+ * `user_id` is ALWAYS taken from the cookie session (`auth.getUser()`), never
+ * from the request body, so RLS `auth.uid() = user_id` can succeed.
+ */
 export async function saveUserPreferences(
-  userId: string,
-  preferences: ContentRating
+  preferences: ContentRating,
+  options?: SaveOptions
 ): Promise<
   | { success: true; preferences: ContentRating }
   | { success: false; error: string }
@@ -225,9 +265,10 @@ export async function saveUserPreferences(
   }
 
   const normalized = normalizePreferences(preferences);
-  const supabase = await createClient();
+  const supabase = options?.supabase ?? (await createClient());
 
-  // Confirm the cookie session is attached to PostgREST (auth.uid() for RLS).
+  // Load the JWT session onto this client before any PostgREST write.
+  // Without this, auth.uid() is null and INSERT/UPDATE WITH CHECK fails RLS.
   const {
     data: { user },
     error: authError,
@@ -240,20 +281,23 @@ export async function saveUserPreferences(
     };
   }
 
-  if (user.id !== userId) {
+  if (options?.expectedUserId && options.expectedUserId !== user.id) {
     return {
       success: false,
       error: "Signed-in user does not match the preferences being saved.",
     };
   }
 
-  const profileResult = await ensureProfileExists(supabase, userId);
+  // Critical: RLS policies check auth.uid() = user_id. Use session id only.
+  const sessionUserId = user.id;
+
+  const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
     return { success: false, error: profileResult.error };
   }
 
-  const fullRow = {
-    user_id: userId,
+  const fullRow: PreferenceWriteRow = {
+    user_id: sessionUserId,
     sexual_content: normalized.sexual_content,
     romance: normalized.romance,
     lgbt: normalized.lgbt,
@@ -262,26 +306,24 @@ export async function saveUserPreferences(
     pacing: normalized.pacing,
   };
 
-  const primaryWrite = await supabase
-    .from("user_preferences")
-    .upsert(fullRow, { onConflict: "user_id" })
-    .select(PREFERENCE_SELECT)
-    .maybeSingle();
+  let primaryWrite = await upsertPreferenceRow(
+    supabase,
+    fullRow,
+    PREFERENCE_SELECT
+  );
 
   let savedRow: PreferenceRow | null =
-    !primaryWrite.error && primaryWrite.data
-      ? (primaryWrite.data as PreferenceRow)
-      : null;
+    !primaryWrite.error && primaryWrite.data ? primaryWrite.data : null;
   let writeError = primaryWrite.error;
 
   if (writeError && isMissingRomanceColumn(writeError.message)) {
     // Keep other categories writable until the romance migration is applied.
     const { romance: _romance, ...legacyRow } = fullRow;
-    const legacy = await supabase
-      .from("user_preferences")
-      .upsert(legacyRow, { onConflict: "user_id" })
-      .select(LEGACY_PREFERENCE_SELECT)
-      .maybeSingle();
+    const legacy = await upsertPreferenceRow(
+      supabase,
+      legacyRow,
+      LEGACY_PREFERENCE_SELECT
+    );
 
     savedRow = legacy.data
       ? ({ ...legacy.data, romance: normalized.romance } as PreferenceRow)
@@ -294,8 +336,9 @@ export async function saveUserPreferences(
   }
 
   if (!savedRow) {
-    // Upsert can report no error while RLS hides the write — verify with a read.
-    const verify = await fetchPreferenceRow(supabase, userId);
+    // Upsert can report no error while RLS hides RETURNING — verify with a read
+    // on the same authenticated client.
+    const verify = await fetchPreferenceRow(supabase, sessionUserId);
     if (verify.error) {
       return { success: false, error: formatPreferenceError(verify.error) };
     }
@@ -309,6 +352,23 @@ export async function saveUserPreferences(
   revalidatePath("/preferences");
   revalidatePath("/browse");
   return { success: true, preferences: confirmed };
+}
+
+/** Resolve the cookie session once for API routes that also need the user. */
+export async function getSessionUser(
+  supabase?: SupabaseClient
+): Promise<{ supabase: SupabaseClient; user: User } | { error: string }> {
+  const client = supabase ?? (await createClient());
+  const {
+    data: { user },
+    error,
+  } = await client.auth.getUser();
+
+  if (error || !user) {
+    return { error: "Unauthorized." };
+  }
+
+  return { supabase: client, user };
 }
 
 export async function getUserProfile(userId: string) {

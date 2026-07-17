@@ -1,10 +1,10 @@
 import { PREFERENCE_CATEGORIES } from "@/lib/rating-categories";
 import {
+  getSessionUser,
   getUserPreferences,
   saveUserPreferences,
 } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
@@ -21,33 +21,20 @@ function isValidPreferences(value: unknown): value is ContentRating {
   });
 }
 
-async function requireUser() {
-  if (!isSupabaseConfigured()) {
-    return {
-      error: NextResponse.json(
-        { error: "Supabase is not configured." },
-        { status: 503 }
-      ),
-    };
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: NextResponse.json({ error: "Unauthorized." }, { status: 401 }) };
-  }
-
-  return { user };
-}
-
 export async function GET() {
-  const result = await requireUser();
-  if ("error" in result && result.error) return result.error;
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      { error: "Supabase is not configured." },
+      { status: 503 }
+    );
+  }
 
-  const preferences = await getUserPreferences(result.user!.id);
+  const session = await getSessionUser();
+  if ("error" in session) {
+    return NextResponse.json({ error: session.error }, { status: 401 });
+  }
+
+  const preferences = await getUserPreferences(session.user.id);
   return NextResponse.json(
     { preferences },
     { headers: { "Cache-Control": "no-store" } }
@@ -55,8 +42,19 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const result = await requireUser();
-  if ("error" in result && result.error) return result.error;
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      { error: "Supabase is not configured." },
+      { status: 503 }
+    );
+  }
+
+  // One cookie-bound client for auth + write so the JWT reaches PostgREST
+  // (auth.uid()) on the same connection used for upsert.
+  const session = await getSessionUser();
+  if ("error" in session) {
+    return NextResponse.json({ error: session.error }, { status: 401 });
+  }
 
   let body: unknown;
   try {
@@ -72,7 +70,11 @@ export async function PUT(request: Request) {
     );
   }
 
-  const saveResult = await saveUserPreferences(result.user!.id, body);
+  const saveResult = await saveUserPreferences(body, {
+    supabase: session.supabase,
+    expectedUserId: session.user.id,
+  });
+
   if (!saveResult.success) {
     return NextResponse.json({ error: saveResult.error }, { status: 500 });
   }

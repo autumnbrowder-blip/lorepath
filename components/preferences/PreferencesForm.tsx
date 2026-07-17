@@ -58,9 +58,12 @@ export function PreferencesForm({
         return;
       }
 
+      // Same-origin cookies carry the Supabase session; include them explicitly
+      // so the API's createServerClient can set auth.uid() for RLS.
       const response = await fetch("/api/preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify(preferences),
       });

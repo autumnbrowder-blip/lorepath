@@ -215,10 +215,7 @@ export default function FaqPage() {
               title="Chapter I · What is the LorePath Beta?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                LorePath is a rating platform for books of every genre — a place
-                where readers map what is actually in a story, not merely whether
-                they liked it. During Beta, everything remains free while we
-                listen, learn, and grow the library with you.
+                LorePath is a rating platform for books of every genre.
               </p>
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 Here you rate books across content themes (pacing, horror, romance,
