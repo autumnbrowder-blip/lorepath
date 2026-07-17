@@ -1,10 +1,13 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { DEFAULT_USER_PREFERENCES } from "@/lib/rating-categories";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createAuthenticatedClient,
+  createClient,
+} from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient, User } from "@supabase/supabase-js";
 
 const PREFERENCE_SELECT =
   "sexual_content, romance, lgbt, horror, ideology, pacing";
@@ -70,8 +73,9 @@ function isMissingRomanceColumn(message: string): boolean {
   );
 }
 
-function isForeignKeyError(message: string): boolean {
+function isForeignKeyError(message: string, code?: string): boolean {
   return (
+    code === "23503" ||
     /foreign key/i.test(message) ||
     /23503/.test(message) ||
     /violates foreign key constraint/i.test(message)
@@ -85,8 +89,9 @@ function isGrantError(message: string): boolean {
   );
 }
 
-function isRlsError(message: string): boolean {
+function isRlsError(message: string, code?: string): boolean {
   return (
+    code === "42501" ||
     /row-level security/i.test(message) ||
     /violates row-level security/i.test(message) ||
     /42501/.test(message) ||
@@ -94,12 +99,30 @@ function isRlsError(message: string): boolean {
   );
 }
 
-function formatPreferenceError(message: string): string {
+function supabaseErrorDetail(
+  error: { message: string; code?: string; details?: string | null } | string
+): string {
+  if (typeof error === "string") return error;
+  const parts = [
+    error.code ? `code=${error.code}` : null,
+    error.message || null,
+    error.details ? `details=${error.details}` : null,
+  ].filter(Boolean);
+  return parts.join(" | ") || "Unknown Supabase error";
+}
+
+function formatPreferenceError(
+  error: { message: string; code?: string; details?: string | null } | string
+): string {
+  const message = typeof error === "string" ? error : error.message;
+  const code = typeof error === "string" ? undefined : error.code;
+  const detail = supabaseErrorDetail(error);
+
   if (isMissingRomanceColumn(message)) return ROMANCE_MIGRATION_HINT;
-  if (isForeignKeyError(message)) return FK_HINT;
-  if (isGrantError(message)) return GRANT_HINT;
-  if (isRlsError(message)) return RLS_WRITE_HINT;
-  return message || "Failed to save preferences.";
+  if (isForeignKeyError(message, code)) return FK_HINT;
+  if (isGrantError(message)) return `${GRANT_HINT} (${detail})`;
+  if (isRlsError(message, code)) return `${RLS_WRITE_HINT} (${detail})`;
+  return detail || "Failed to save preferences.";
 }
 
 type PreferenceRow = {
@@ -126,7 +149,7 @@ async function fetchPreferenceRow(
   userId: string
 ): Promise<
   | { data: PreferenceRow; error: null }
-  | { data: null; error: string | null }
+  | { data: null; error: PostgrestError | { message: string; code?: string } | null }
 > {
   const primary = await supabase
     .from("user_preferences")
@@ -146,7 +169,7 @@ async function fetchPreferenceRow(
       .maybeSingle();
 
     if (legacy.error) {
-      return { data: null, error: legacy.error.message };
+      return { data: null, error: legacy.error };
     }
 
     return {
@@ -157,7 +180,7 @@ async function fetchPreferenceRow(
     };
   }
 
-  return { data: null, error: primary.error.message };
+  return { data: null, error: primary.error };
 }
 
 /**
@@ -175,7 +198,7 @@ async function ensureProfileExists(
     .maybeSingle();
 
   if (profileError) {
-    return { ok: false, error: formatPreferenceError(profileError.message) };
+    return { ok: false, error: formatPreferenceError(profileError) };
   }
 
   if (profile) return { ok: true };
@@ -186,7 +209,7 @@ async function ensureProfileExists(
   );
 
   if (upsertError) {
-    return { ok: false, error: formatPreferenceError(upsertError.message) };
+    return { ok: false, error: formatPreferenceError(upsertError) };
   }
 
   const { data: created, error: verifyError } = await supabase
@@ -196,7 +219,7 @@ async function ensureProfileExists(
     .maybeSingle();
 
   if (verifyError) {
-    return { ok: false, error: formatPreferenceError(verifyError.message) };
+    return { ok: false, error: formatPreferenceError(verifyError) };
   }
 
   if (!created) {
@@ -219,7 +242,7 @@ async function ensureProfileExists(
 async function upsertPreferenceRow(
   supabase: SupabaseClient,
   row: PreferenceWriteRow
-): Promise<{ error: { message: string } | null }> {
+): Promise<{ error: PostgrestError | null }> {
   const result = await supabase
     .from("user_preferences")
     .upsert(row, { onConflict: "user_id" });
@@ -238,7 +261,9 @@ export async function getUserPreferences(
   }
 
   try {
-    const supabase = await createClient();
+    // Prefer JWT-scoped client so SELECT RLS (auth.uid() = user_id) succeeds.
+    const auth = await createAuthenticatedClient();
+    const supabase = "error" in auth ? await createClient() : auth.supabase;
     const result = await fetchPreferenceRow(supabase, userId);
     if (result.error || !result.data) {
       return DEFAULT_USER_PREFERENCES;
@@ -250,51 +275,59 @@ export async function getUserPreferences(
 }
 
 type SaveOptions = {
-  /** Reuse the API route's cookie-bound client so auth.uid() matches the JWT. */
+  /** Reuse an already JWT-scoped client so auth.uid() matches the write. */
   supabase?: SupabaseClient;
   /** Optional sanity check; the write always uses session user.id for user_id. */
   expectedUserId?: string;
+  /** Browser-supplied access token (Authorization Bearer) — preferred on Netlify. */
+  accessToken?: string | null;
 };
 
 /**
  * Persist preferences for the currently authenticated user.
- * `user_id` is ALWAYS taken from the cookie session (`auth.getUser()`), never
- * from the request body, so RLS `auth.uid() = user_id` can succeed.
+ * `user_id` is ALWAYS taken from the verified JWT user, never from the body.
  */
 export async function saveUserPreferences(
   preferences: ContentRating,
   options?: SaveOptions
 ): Promise<
   | { success: true; preferences: ContentRating }
-  | { success: false; error: string }
+  | { success: false; error: string; supabaseCode?: string; supabaseMessage?: string }
 > {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "Supabase is not configured." };
   }
 
   const normalized = normalizePreferences(preferences);
-  const supabase = options?.supabase ?? (await createClient());
 
-  // Load the JWT session onto this client before any PostgREST write.
-  // Without this, auth.uid() is null and INSERT/UPDATE WITH CHECK fails RLS.
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  let supabase: SupabaseClient;
+  let sessionUserId: string;
 
-  if (authError || !user) {
-    return { success: false, error: NO_SESSION_HINT };
+  if (options?.supabase && options?.expectedUserId) {
+    // Caller already built a JWT-scoped client (API route path).
+    supabase = options.supabase;
+    sessionUserId = options.expectedUserId;
+  } else {
+    const auth = await createAuthenticatedClient({
+      accessToken: options?.accessToken,
+    });
+    if ("error" in auth) {
+      return {
+        success: false,
+        error: auth.error === "Unauthorized." ? NO_SESSION_HINT : auth.error,
+        supabaseCode: auth.code,
+      };
+    }
+    supabase = auth.supabase;
+    sessionUserId = auth.user.id;
+
+    if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
+      return {
+        success: false,
+        error: "Signed-in user does not match the preferences being saved.",
+      };
+    }
   }
-
-  if (options?.expectedUserId && options.expectedUserId !== user.id) {
-    return {
-      success: false,
-      error: "Signed-in user does not match the preferences being saved.",
-    };
-  }
-
-  // Critical: RLS policies check auth.uid() = user_id. Use session id only.
-  const sessionUserId = user.id;
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
@@ -320,13 +353,23 @@ export async function saveUserPreferences(
   }
 
   if (writeError) {
-    return { success: false, error: formatPreferenceError(writeError.message) };
+    return {
+      success: false,
+      error: formatPreferenceError(writeError),
+      supabaseCode: writeError.code,
+      supabaseMessage: writeError.message,
+    };
   }
 
   // Separate read-back: distinguishes "write failed" from "write ok, SELECT blocked".
   const verify = await fetchPreferenceRow(supabase, sessionUserId);
   if (verify.error) {
-    return { success: false, error: formatPreferenceError(verify.error) };
+    return {
+      success: false,
+      error: formatPreferenceError(verify.error),
+      supabaseCode: verify.error.code,
+      supabaseMessage: verify.error.message,
+    };
   }
   if (!verify.data) {
     return { success: false, error: RLS_READBACK_HINT };
@@ -338,27 +381,29 @@ export async function saveUserPreferences(
   return { success: true, preferences: confirmed };
 }
 
-/** Resolve the cookie session once for API routes that also need the user. */
-export async function getSessionUser(
-  supabase?: SupabaseClient
-): Promise<{ supabase: SupabaseClient; user: User } | { error: string }> {
-  const client = supabase ?? (await createClient());
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser();
+/** Resolve a JWT-scoped client + user for API routes that also need writes. */
+export async function getSessionUser(options?: {
+  accessToken?: string | null;
+}): Promise<
+  | { supabase: SupabaseClient; user: User; accessToken: string }
+  | { error: string; code?: string }
+> {
+  const auth = await createAuthenticatedClient({
+    accessToken: options?.accessToken,
+  });
 
-  if (error || !user) {
-    return { error: "Unauthorized." };
+  if ("error" in auth) {
+    return { error: auth.error, code: auth.code };
   }
 
-  return { supabase: client, user };
+  return auth;
 }
 
 export async function getUserProfile(userId: string) {
   if (!isSupabaseConfigured()) return null;
 
-  const supabase = await createClient();
+  const auth = await createAuthenticatedClient();
+  const supabase = "error" in auth ? await createClient() : auth.supabase;
   const { data, error } = await supabase
     .from("profiles")
     .select("id, is_subscriber, created_at")

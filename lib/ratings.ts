@@ -418,18 +418,21 @@ export async function getUserReadingStats(
 }
 
 type SubmitRatingOptions = {
-  /** Reuse the API route's cookie-bound client so auth.uid() matches the JWT. */
+  /**
+   * Prefer a JWT-scoped client from createAuthenticatedClient so PostgREST
+   * receives Authorization: Bearer <access_token> (auth.uid() for RLS).
+   */
   supabase?: SupabaseClient;
   /**
-   * Optional sanity check only. `rated_by` is ALWAYS taken from
-   * `auth.getUser()` on the write client — never from the request body.
+   * When provided with `supabase`, used as rated_by without calling
+   * auth.getUser() on the write client (JWT-only clients have no cookie session).
    */
   expectedUserId?: string;
 };
 
 /**
  * Persist a per-user rating. Column is `rated_by` (not `user_id`).
- * Identity always comes from the cookie session on the write client.
+ * Identity comes from the verified JWT user, never from the request body.
  */
 export async function submitUserRating(
   bookExternalId: string,
@@ -440,30 +443,36 @@ export async function submitUserRating(
     return { success: false, error: "Supabase is not configured." };
   }
 
-  const supabase = options?.supabase ?? (await createClient());
+  let supabase: SupabaseClient;
+  let sessionUserId: string;
 
-  // Load JWT onto this client before any PostgREST write.
-  // Without this, auth.uid() is null and INSERT WITH CHECK fails RLS.
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  if (options?.supabase && options.expectedUserId) {
+    supabase = options.supabase;
+    sessionUserId = options.expectedUserId;
+  } else {
+    const writeClient = options?.supabase ?? (await createClient());
+    const {
+      data: { user },
+      error: authError,
+    } = await writeClient.auth.getUser();
 
-  if (authError || !user) {
-    return {
-      success: false,
-      error: "You are not signed in. Please sign in and try again.",
-    };
+    if (authError || !user) {
+      return {
+        success: false,
+        error: "You are not signed in. Please sign in and try again.",
+      };
+    }
+
+    if (options?.expectedUserId && options.expectedUserId !== user.id) {
+      return {
+        success: false,
+        error: "Signed-in user does not match the rating being saved.",
+      };
+    }
+
+    supabase = writeClient;
+    sessionUserId = user.id;
   }
-
-  if (options?.expectedUserId && options.expectedUserId !== user.id) {
-    return {
-      success: false,
-      error: "Signed-in user does not match the rating being saved.",
-    };
-  }
-
-  const sessionUserId = user.id;
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {

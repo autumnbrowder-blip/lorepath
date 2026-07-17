@@ -9,6 +9,7 @@ import {
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
 import type { CommunityRatingsSummary } from "@/lib/ratings";
+import { createClient } from "@/lib/supabase";
 import type { ContentRating } from "@/types";
 import {
   AlertCircle,
@@ -77,10 +78,24 @@ export function RatingForm({
     setSuccess(false);
 
     try {
-      // Same-origin cookies carry the Supabase session for auth.uid() / RLS.
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          headers.Authorization = `Bearer ${session.access_token}`;
+        }
+      } catch {
+        // Fall back to cookie session on the API.
+      }
+
       const response = await fetch(`/api/books/${bookId}/ratings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify(ratings),

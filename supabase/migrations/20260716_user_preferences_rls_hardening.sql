@@ -1,6 +1,8 @@
 -- Hardening: user_preferences RLS + grants for authenticated upserts.
--- Safe to re-run. Apply via Supabase Dashboard → SQL Editor if production
--- still returns "blocked by row-level security" on preference save.
+-- OPTIONAL / SKIP if you already ran:
+--   20260716_fix_user_preferences_production.sql
+--   OR 20260716_fix_production_combined.sql
+-- Safe to re-run. Only needed if prefs still return RLS errors after those.
 --
 -- Upsert (INSERT ... ON CONFLICT DO UPDATE) needs:
 --   SELECT + INSERT (WITH CHECK) + UPDATE (USING + WITH CHECK)

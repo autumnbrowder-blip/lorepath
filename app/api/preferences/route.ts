@@ -5,6 +5,7 @@ import {
   saveUserPreferences,
 } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getBearerToken } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
@@ -21,7 +22,7 @@ function isValidPreferences(value: unknown): value is ContentRating {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json(
       { error: "Supabase is not configured." },
@@ -29,9 +30,15 @@ export async function GET() {
     );
   }
 
-  const session = await getSessionUser();
+  // Prefer browser-supplied Bearer token; fall back to cookie session JWT.
+  const session = await getSessionUser({
+    accessToken: getBearerToken(request),
+  });
   if ("error" in session) {
-    return NextResponse.json({ error: session.error }, { status: 401 });
+    return NextResponse.json(
+      { error: session.error, code: session.code },
+      { status: 401 }
+    );
   }
 
   const preferences = await getUserPreferences(session.user.id);
@@ -49,11 +56,16 @@ export async function PUT(request: Request) {
     );
   }
 
-  // One cookie-bound client for auth + write so the JWT reaches PostgREST
-  // (auth.uid()) on the same connection used for upsert.
-  const session = await getSessionUser();
+  // One JWT-scoped client for auth + write. Browser Authorization header is
+  // preferred so Netlify/SSR cookie bridging cannot drop the token for PostgREST.
+  const session = await getSessionUser({
+    accessToken: getBearerToken(request),
+  });
   if ("error" in session) {
-    return NextResponse.json({ error: session.error }, { status: 401 });
+    return NextResponse.json(
+      { error: session.error, code: session.code },
+      { status: 401 }
+    );
   }
 
   let body: unknown;
@@ -73,10 +85,18 @@ export async function PUT(request: Request) {
   const saveResult = await saveUserPreferences(body, {
     supabase: session.supabase,
     expectedUserId: session.user.id,
+    accessToken: session.accessToken,
   });
 
   if (!saveResult.success) {
-    return NextResponse.json({ error: saveResult.error }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: saveResult.error,
+        code: saveResult.supabaseCode,
+        supabaseMessage: saveResult.supabaseMessage,
+      },
+      { status: 500 }
+    );
   }
 
   revalidatePath("/preferences");

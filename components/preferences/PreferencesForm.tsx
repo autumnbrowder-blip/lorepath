@@ -6,6 +6,7 @@ import {
   DEFAULT_USER_PREFERENCES,
   PREFERENCE_CATEGORIES,
 } from "@/lib/rating-categories";
+import { createClient } from "@/lib/supabase";
 import type { ContentRating } from "@/types";
 import { AlertCircle, CheckCircle2, Feather, Loader2, Scroll } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -58,11 +59,26 @@ export function PreferencesForm({
         return;
       }
 
-      // Same-origin cookies carry the Supabase session; include them explicitly
-      // so the API's createServerClient can set auth.uid() for RLS.
+      // Pass the browser session JWT explicitly. Cookie-only SSR often validates
+      // getUser() but omits Authorization on PostgREST → auth.uid() null → RLS.
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          headers.Authorization = `Bearer ${session.access_token}`;
+        }
+      } catch {
+        // Fall back to cookie session on the API if browser session read fails.
+      }
+
       const response = await fetch("/api/preferences", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify(preferences),
@@ -72,6 +88,8 @@ export function PreferencesForm({
         error?: string;
         message?: string;
         preferences?: ContentRating;
+        code?: string;
+        supabaseMessage?: string;
       } = {};
       try {
         data = await response.json();
@@ -80,7 +98,13 @@ export function PreferencesForm({
       }
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Failed to save preferences.");
+        const detail =
+          data.code || data.supabaseMessage
+            ? ` (${[data.code, data.supabaseMessage].filter(Boolean).join(": ")})`
+            : "";
+        throw new Error(
+          `${data.error ?? "Failed to save preferences."}${detail}`
+        );
       }
 
       if (data.preferences) {

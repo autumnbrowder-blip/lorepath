@@ -1,6 +1,9 @@
 import { getCommunityRatings, submitUserRating } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createAuthenticatedClient,
+  getBearerToken,
+} from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { NextResponse } from "next/server";
 
@@ -46,16 +49,13 @@ export async function POST(
     );
   }
 
-  // One cookie-bound client for auth + write so the JWT reaches PostgREST
-  // (auth.uid()) on the same connection used for book upsert + rating upsert.
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  // JWT-scoped client so auth.uid() is set on PostgREST (Bearer preferred).
+  const session = await createAuthenticatedClient({
+    accessToken: getBearerToken(request),
+  });
+  if ("error" in session) {
     return NextResponse.json(
-      { error: "You must be signed in to submit a rating." },
+      { error: "You must be signed in to submit a rating.", code: session.code },
       { status: 401 }
     );
   }
@@ -78,8 +78,8 @@ export async function POST(
   }
 
   const result = await submitUserRating(bookExternalId, body, {
-    supabase,
-    expectedUserId: user.id,
+    supabase: session.supabase,
+    expectedUserId: session.user.id,
   });
 
   if (!result.success) {
