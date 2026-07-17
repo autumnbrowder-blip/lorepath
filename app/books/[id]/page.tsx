@@ -6,7 +6,7 @@ import { RatingForm } from "@/components/books/RatingForm";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { getBookById } from "@/lib/books";
-import { getCommunityRatings } from "@/lib/ratings";
+import { getCommunityRatings, getUserRatingForBook } from "@/lib/ratings";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
@@ -43,12 +43,13 @@ export async function generateMetadata({
   }
 }
 
-async function loadViewerState(): Promise<{
+async function loadViewerState(bookExternalId: string): Promise<{
   user: User | null;
   userPreferences: ContentRating | null;
+  userRating: ContentRating | null;
 }> {
   if (!isSupabaseConfigured()) {
-    return { user: null, userPreferences: null };
+    return { user: null, userPreferences: null, userRating: null };
   }
 
   const supabase = await createClient();
@@ -57,13 +58,16 @@ async function loadViewerState(): Promise<{
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { user: null, userPreferences: null };
+    return { user: null, userPreferences: null, userRating: null };
   }
 
   // During Beta, every signed-in reader gets Match Score + preferences.
-  const userPreferences = await getUserPreferences(user.id);
+  const [userPreferences, userRating] = await Promise.all([
+    getUserPreferences(user.id),
+    getUserRatingForBook(bookExternalId, user.id),
+  ]);
 
-  return { user, userPreferences };
+  return { user, userPreferences, userRating };
 }
 
 export default async function BookDetailPage({
@@ -87,10 +91,10 @@ export default async function BookDetailPage({
 
   const [communityRatings, viewer] = await Promise.all([
     getCommunityRatings(id),
-    loadViewerState(),
+    loadViewerState(id),
   ]);
 
-  const { user, userPreferences } = viewer;
+  const { user, userPreferences, userRating } = viewer;
 
   const backHref = searchQuery
     ? `/browse?q=${encodeURIComponent(searchQuery)}`
@@ -126,7 +130,12 @@ export default async function BookDetailPage({
                   />
                 }
                 ratingForm={
-                  <RatingForm bookId={book.id} isLoggedIn={!!user} />
+                  <RatingForm
+                    key={book.id}
+                    bookId={book.id}
+                    isLoggedIn={!!user}
+                    initialRatings={userRating}
+                  />
                 }
               />
             </BookRatingsProvider>

@@ -20,12 +20,14 @@ import {
   Send,
 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type RatingFormProps = {
   bookId: string;
   isLoggedIn: boolean;
+  /** Previously saved marks for this book+user; null when none exist yet. */
+  initialRatings?: ContentRating | null;
   /** Optional when used outside BookRatingsProvider. */
   onRatingsUpdated?: (next: CommunityRatingsSummary) => void;
 };
@@ -53,17 +55,43 @@ function preferenceGuidance(key: keyof ContentRating): {
   return { levelDescriptions };
 }
 
+function ratingsEqual(a: ContentRating, b: ContentRating): boolean {
+  return RATING_CATEGORIES.every(
+    (category) => a[category.key] === b[category.key]
+  );
+}
+
 export function RatingForm({
   bookId,
   isLoggedIn,
+  initialRatings = null,
   onRatingsUpdated,
 }: RatingFormProps) {
   const router = useRouter();
   const ratingsCtx = useBookRatingsOptional();
-  const [ratings, setRatings] = useState<ContentRating>(DEFAULT_RATINGS);
+  const [ratings, setRatings] = useState<ContentRating>(
+    initialRatings ?? DEFAULT_RATINGS
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  /** Keeps confirmed marks across a refresh that temporarily returns null. */
+  const confirmedRef = useRef<ContentRating | null>(initialRatings);
+
+  // Hydrate from server when a saved rating exists. Do not wipe just-saved
+  // values if SSR briefly returns null after router.refresh().
+  useEffect(() => {
+    if (initialRatings != null) {
+      confirmedRef.current = initialRatings;
+      setRatings((prev) =>
+        ratingsEqual(prev, initialRatings) ? prev : initialRatings
+      );
+      return;
+    }
+    if (confirmedRef.current != null) {
+      setRatings(confirmedRef.current);
+    }
+  }, [initialRatings]);
 
   function updateRating(key: keyof ContentRating, value: number) {
     setRatings((prev) => ({ ...prev, [key]: value }));
@@ -83,9 +111,13 @@ export function RatingForm({
       };
       try {
         const supabase = createClient();
-        const {
+        let {
           data: { session },
         } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          const refreshed = await supabase.auth.refreshSession();
+          session = refreshed.data.session;
+        }
         if (session?.access_token) {
           headers.Authorization = `Bearer ${session.access_token}`;
         }
@@ -104,10 +136,19 @@ export function RatingForm({
       const data = (await response.json()) as {
         error?: string;
         communityRatings?: CommunityRatingsSummary;
+        userRating?: ContentRating;
       };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Failed to submit rating.");
+      }
+
+      // Prefer confirmed values from the API so remount/refresh cannot blank to zeros.
+      if (data.userRating) {
+        confirmedRef.current = data.userRating;
+        setRatings(data.userRating);
+      } else {
+        confirmedRef.current = ratings;
       }
 
       if (data.communityRatings) {

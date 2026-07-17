@@ -1,4 +1,8 @@
-import { getCommunityRatings, submitUserRating } from "@/lib/ratings";
+import {
+  getCommunityRatings,
+  getUserRatingForBook,
+  submitUserRating,
+} from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
@@ -26,14 +30,31 @@ function isValidRating(value: unknown): value is ContentRating {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: bookExternalId } = await params;
   const communityRatings = await getCommunityRatings(bookExternalId);
-  return NextResponse.json(communityRatings, {
-    headers: { "Cache-Control": "no-store" },
-  });
+
+  let userRating: ContentRating | null = null;
+  if (isSupabaseConfigured()) {
+    const session = await createAuthenticatedClient({
+      accessToken: getBearerToken(request),
+    });
+    if (!("error" in session)) {
+      userRating = await getUserRatingForBook(
+        bookExternalId,
+        session.user.id
+      );
+    }
+  }
+
+  return NextResponse.json(
+    { ...communityRatings, userRating },
+    {
+      headers: { "Cache-Control": "no-store" },
+    }
+  );
 }
 
 export async function POST(
@@ -87,11 +108,12 @@ export async function POST(
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
-  const communityRatings = await getCommunityRatings(bookExternalId);
-
+  // Prefer community averages computed on the same service-role client as the
+  // write — avoids empty averages from a flaky anon/romance SELECT right after save.
   return NextResponse.json({
     success: true,
     message: "Your marks have been recorded in the tome.",
-    communityRatings,
+    communityRatings: result.communityRatings,
+    userRating: result.userRating,
   });
 }

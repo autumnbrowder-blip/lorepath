@@ -1,6 +1,9 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { getBookById } from "@/lib/books";
-import { RATING_CATEGORIES } from "@/lib/rating-categories";
+import {
+  DEFAULT_RATINGS,
+  RATING_CATEGORIES,
+} from "@/lib/rating-categories";
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
@@ -21,6 +24,11 @@ const RATING_KEYS: (keyof ContentRating)[] = [
   "ideology",
   "pacing",
 ];
+
+const RATING_SELECT =
+  "sexual_content, romance, lgbt, horror, ideology, pacing";
+const LEGACY_RATING_SELECT =
+  "sexual_content, lgbt, horror, ideology, pacing";
 
 const RATINGS_SQL_HINT =
   "Run supabase/migrations/20260716_fix_ratings_production.sql in the Supabase SQL Editor, then try again.";
@@ -48,6 +56,141 @@ function averageCategory(
 ): number {
   const sum = ratings.reduce((total, rating) => total + rating[key], 0);
   return Math.round((sum / ratings.length) * 10) / 10;
+}
+
+function clampRating(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return Math.min(5, Math.max(0, Math.round(value)));
+}
+
+function normalizeUserRating(
+  row: {
+    sexual_content?: number | null;
+    romance?: number | null;
+    lgbt?: number | null;
+    horror?: number | null;
+    ideology?: number | null;
+    pacing?: number | null;
+  } | null | undefined
+): ContentRating {
+  return {
+    sexual_content: clampRating(
+      row?.sexual_content,
+      DEFAULT_RATINGS.sexual_content
+    ),
+    romance: clampRating(row?.romance, DEFAULT_RATINGS.romance),
+    lgbt: clampRating(row?.lgbt, DEFAULT_RATINGS.lgbt),
+    horror: clampRating(row?.horror, DEFAULT_RATINGS.horror),
+    ideology: clampRating(row?.ideology, DEFAULT_RATINGS.ideology),
+    pacing: clampRating(row?.pacing, DEFAULT_RATINGS.pacing),
+  };
+}
+
+async function fetchUserRatingRow(
+  supabase: SupabaseClient,
+  bookDbId: string,
+  userId: string
+): Promise<{ data: ContentRating | null; error: string | null }> {
+  const full = await supabase
+    .from("ratings")
+    .select(RATING_SELECT)
+    .eq("book_id", bookDbId)
+    .eq("rated_by", userId)
+    .maybeSingle();
+
+  if (full.error && isMissingRomanceColumn(full.error.message)) {
+    const legacy = await supabase
+      .from("ratings")
+      .select(LEGACY_RATING_SELECT)
+      .eq("book_id", bookDbId)
+      .eq("rated_by", userId)
+      .maybeSingle();
+
+    if (legacy.error) {
+      return { data: null, error: legacy.error.message };
+    }
+    if (!legacy.data) {
+      return { data: null, error: null };
+    }
+    return {
+      data: normalizeUserRating({
+        ...legacy.data,
+        romance: DEFAULT_RATINGS.romance,
+      }),
+      error: null,
+    };
+  }
+
+  if (full.error) {
+    return { data: null, error: full.error.message };
+  }
+  if (!full.data) {
+    return { data: null, error: null };
+  }
+  return { data: normalizeUserRating(full.data), error: null };
+}
+
+async function fetchAllRatingsForBook(
+  supabase: SupabaseClient,
+  bookDbId: string
+): Promise<{ data: ContentRating[]; error: string | null }> {
+  const full = await supabase
+    .from("ratings")
+    .select(RATING_SELECT)
+    .eq("book_id", bookDbId);
+
+  if (full.error && isMissingRomanceColumn(full.error.message)) {
+    const legacy = await supabase
+      .from("ratings")
+      .select(LEGACY_RATING_SELECT)
+      .eq("book_id", bookDbId);
+
+    if (legacy.error) {
+      return { data: [], error: legacy.error.message };
+    }
+
+    return {
+      data: (legacy.data ?? []).map((row) =>
+        normalizeUserRating({
+          ...row,
+          romance: DEFAULT_RATINGS.romance,
+        })
+      ),
+      error: null,
+    };
+  }
+
+  if (full.error) {
+    return { data: [], error: full.error.message };
+  }
+
+  return {
+    data: (full.data ?? []).map((row) => normalizeUserRating(row)),
+    error: null,
+  };
+}
+
+function summarizeCommunityRatings(
+  ratings: ContentRating[]
+): CommunityRatingsSummary {
+  if (ratings.length === 0) {
+    return { averages: null, count: 0 };
+  }
+
+  const averages = Object.fromEntries(
+    RATING_KEYS.map((key) => [key, averageCategory(ratings, key)])
+  ) as ContentRating;
+
+  return { averages, count: ratings.length };
+}
+
+/** Prefer service role for reads so post-write refresh matches the write path. */
+function resolveRatingsReadClient(): SupabaseClient | null {
+  const admin = createServiceRoleClient();
+  if (!("error" in admin)) {
+    return admin.supabase;
+  }
+  return createUncachedPublicClient();
 }
 
 function bookToDbRow(externalId: string, book: BookDetail) {
@@ -217,7 +360,7 @@ export async function getCommunityRatings(
   }
 
   try {
-    const supabase = createUncachedPublicClient();
+    const supabase = resolveRatingsReadClient();
     if (!supabase) {
       return { averages: null, count: 0 };
     }
@@ -228,27 +371,60 @@ export async function getCommunityRatings(
       .eq("slug", bookExternalId)
       .maybeSingle();
 
-    if (bookError || !book) {
+    if (bookError || !book?.id) {
       return { averages: null, count: 0 };
     }
 
-    const { data: ratings, error: ratingsError } = await supabase
-      .from("ratings")
-      .select("sexual_content, romance, lgbt, horror, ideology, pacing")
-      .eq("book_id", book.id);
-
-    if (ratingsError || !ratings?.length) {
+    const result = await fetchAllRatingsForBook(supabase, book.id);
+    if (result.error) {
       return { averages: null, count: 0 };
     }
 
-    const typedRatings = ratings as ContentRating[];
-    const averages = Object.fromEntries(
-      RATING_KEYS.map((key) => [key, averageCategory(typedRatings, key)])
-    ) as ContentRating;
-
-    return { averages, count: ratings.length };
+    return summarizeCommunityRatings(result.data);
   } catch {
     return { averages: null, count: 0 };
+  }
+}
+
+/**
+ * Load the signed-in user's rating for a book (by external/slug id).
+ * Prefer service-role read so JWT/RLS gaps cannot blank the form after a
+ * successful service-role write. Falls back to the session client.
+ */
+export async function getUserRatingForBook(
+  bookExternalId: string,
+  userId: string
+): Promise<ContentRating | null> {
+  noStore();
+
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  try {
+    const admin = createServiceRoleClient();
+    const auth = await createAuthenticatedClient();
+    const supabase =
+      "error" in admin
+        ? "error" in auth
+          ? await createClient()
+          : auth.supabase
+        : admin.supabase;
+
+    const { data: book, error: bookError } = await supabase
+      .from("books")
+      .select("id")
+      .eq("slug", bookExternalId)
+      .maybeSingle();
+
+    if (bookError || !book?.id) {
+      return null;
+    }
+
+    const result = await fetchUserRatingRow(supabase, book.id, userId);
+    return result.data;
+  } catch {
+    return null;
   }
 }
 
@@ -437,7 +613,14 @@ export async function submitUserRating(
   bookExternalId: string,
   ratings: ContentRating,
   options?: SubmitRatingOptions
-): Promise<{ success: true } | { success: false; error: string }> {
+): Promise<
+  | {
+      success: true;
+      userRating: ContentRating;
+      communityRatings: CommunityRatingsSummary;
+    }
+  | { success: false; error: string }
+> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "Supabase is not configured." };
   }
@@ -507,10 +690,35 @@ export async function submitUserRating(
     return { success: false, error: formatRatingError(error.message) };
   }
 
+  // Confirm via the same service-role client used for the write.
+  const readBack = await fetchUserRatingRow(
+    supabase,
+    bookResult.bookDbId,
+    sessionUserId
+  );
+
+  if (!readBack.data) {
+    return {
+      success: false,
+      error:
+        "Rating write did not persist (row missing on read-back). Confirm SUPABASE_SERVICE_ROLE_KEY and ratings schema, then try again.",
+    };
+  }
+
+  const userRating = readBack.data;
+
+  const allRatings = await fetchAllRatingsForBook(
+    supabase,
+    bookResult.bookDbId
+  );
+  const communityRatings = summarizeCommunityRatings(
+    allRatings.error ? [userRating] : allRatings.data
+  );
+
   revalidatePath(`/books/${bookExternalId}`, "page");
   revalidatePath("/browse");
   revalidatePath("/rated");
   revalidatePath("/stats");
 
-  return { success: true };
+  return { success: true, userRating, communityRatings };
 }
