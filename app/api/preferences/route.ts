@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 
   const preferences = await getUserPreferences(session.user.id);
   return NextResponse.json(
-    { preferences },
+    { preferences: preferences ?? null },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

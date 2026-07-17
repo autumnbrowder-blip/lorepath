@@ -7,7 +7,7 @@ import {
   resolveAvatarKey,
   resolveDisplayName,
 } from "@/lib/avatars";
-import { getUserPreferences } from "@/lib/preferences";
+import { loadPreferencesForPage } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft, Sparkles } from "lucide-react";
@@ -45,7 +45,9 @@ export default async function PreferencesPage() {
   const avatarKey = resolveAvatarKey(profile?.avatar_key);
   const avatar = getAvatarOption(avatarKey);
 
-  const preferences = await getUserPreferences(user.id);
+  const prefsLoad = await loadPreferencesForPage(user.id);
+  const preferences = prefsLoad.preferences;
+  const loadError = "error" in prefsLoad ? prefsLoad.error : null;
 
   return (
     <div className="preferences-page">
@@ -135,7 +137,10 @@ export default async function PreferencesPage() {
         </header>
 
         <div className="relative space-y-5">
-          <PreferencesForm initialPreferences={preferences} />
+          <PreferencesForm
+            initialPreferences={preferences}
+            loadError={loadError}
+          />
         </div>
       </div>
     </div>

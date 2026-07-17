@@ -251,27 +251,82 @@ async function upsertPreferenceRow(
   return { error: result.error };
 }
 
+/**
+ * Load preferences for a user by id.
+ * Prefer service-role read so JWT/RLS gaps cannot blank the form after a
+ * successful service-role write. Falls back to the session client.
+ * Returns null when no row exists (or on read failure) — never invents zeros.
+ */
 export async function getUserPreferences(
   userId: string
-): Promise<ContentRating> {
+): Promise<ContentRating | null> {
   // Never serve a cached empty/default payload after a successful save.
   noStore();
 
   if (!isSupabaseConfigured()) {
-    return DEFAULT_USER_PREFERENCES;
+    return null;
   }
 
   try {
-    // Prefer JWT-scoped client so SELECT RLS (auth.uid() = user_id) succeeds.
+    const admin = createServiceRoleClient();
     const auth = await createAuthenticatedClient();
-    const supabase = "error" in auth ? await createClient() : auth.supabase;
+    const supabase =
+      "error" in admin
+        ? "error" in auth
+          ? await createClient()
+          : auth.supabase
+        : admin.supabase;
+
     const result = await fetchPreferenceRow(supabase, userId);
     if (result.error || !result.data) {
-      return DEFAULT_USER_PREFERENCES;
+      return null;
     }
     return normalizePreferences(result.data);
   } catch {
-    return DEFAULT_USER_PREFERENCES;
+    return null;
+  }
+}
+
+/**
+ * Preferences page load: require the same service-role path used for writes.
+ * Surfaces a clear error when SUPABASE_SERVICE_ROLE_KEY is missing instead of
+ * silently falling through to RLS (which returns no row → blank defaults).
+ */
+export async function loadPreferencesForPage(userId: string): Promise<
+  | { preferences: ContentRating | null; error?: undefined }
+  | { preferences: null; error: string }
+> {
+  noStore();
+
+  if (!isSupabaseConfigured()) {
+    return { preferences: null, error: "Supabase is not configured." };
+  }
+
+  const admin = createServiceRoleClient();
+  if ("error" in admin) {
+    return { preferences: null, error: admin.error };
+  }
+
+  try {
+    const result = await fetchPreferenceRow(admin.supabase, userId);
+    if (result.error) {
+      return {
+        preferences: null,
+        error: formatPreferenceError(result.error),
+      };
+    }
+    if (!result.data) {
+      return { preferences: null };
+    }
+    return { preferences: normalizePreferences(result.data) };
+  } catch (err) {
+    return {
+      preferences: null,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Failed to load preferences.",
+    };
   }
 }
 

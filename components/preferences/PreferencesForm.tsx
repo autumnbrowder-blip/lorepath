@@ -10,28 +10,56 @@ import { createClient } from "@/lib/supabase";
 import type { ContentRating } from "@/types";
 import { AlertCircle, CheckCircle2, Feather, Loader2, Scroll } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type PreferencesFormProps = {
-  initialPreferences: ContentRating;
+  /** Previously saved prefs; null when no row exists yet. */
+  initialPreferences: ContentRating | null;
+  /** Server-side load failure (e.g. missing SUPABASE_SERVICE_ROLE_KEY). */
+  loadError?: string | null;
   /** When true, skips API persistence (local testing without login). */
   testingMode?: boolean;
 };
 
+function preferencesEqual(a: ContentRating, b: ContentRating): boolean {
+  return PREFERENCE_CATEGORIES.every(
+    (category) => a[category.key] === b[category.key]
+  );
+}
+
 export function PreferencesForm({
   initialPreferences,
+  loadError = null,
   testingMode = false,
 }: PreferencesFormProps) {
   const router = useRouter();
-  const [preferences, setPreferences] =
-    useState<ContentRating>(initialPreferences);
+  const [preferences, setPreferences] = useState<ContentRating>(
+    initialPreferences ?? DEFAULT_USER_PREFERENCES
+  );
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(loadError);
   const [success, setSuccess] = useState(false);
+  /** Keeps confirmed prefs across a refresh that temporarily returns null. */
+  const confirmedRef = useRef<ContentRating | null>(initialPreferences);
+
+  // Hydrate from server when a saved row exists. Do not wipe just-saved
+  // values if SSR briefly returns null/defaults after router.refresh().
+  useEffect(() => {
+    if (initialPreferences != null) {
+      confirmedRef.current = initialPreferences;
+      setPreferences((prev) =>
+        preferencesEqual(prev, initialPreferences) ? prev : initialPreferences
+      );
+      return;
+    }
+    if (confirmedRef.current != null) {
+      setPreferences(confirmedRef.current);
+    }
+  }, [initialPreferences]);
 
   useEffect(() => {
-    setPreferences(initialPreferences);
-  }, [initialPreferences]);
+    if (loadError) setError(loadError);
+  }, [loadError]);
 
   function updatePreference(key: keyof ContentRating, value: number) {
     setPreferences((prev) => ({ ...prev, [key]: value }));
@@ -55,6 +83,7 @@ export function PreferencesForm({
         } catch {
           // sessionStorage may be unavailable; still treat UI as success
         }
+        confirmedRef.current = preferences;
         setSuccess(true);
         return;
       }
@@ -128,8 +157,12 @@ export function PreferencesForm({
         );
       }
 
+      // Prefer confirmed values from the API so remount/refresh cannot blank to zeros.
       if (data.preferences) {
+        confirmedRef.current = data.preferences;
         setPreferences(data.preferences);
+      } else {
+        confirmedRef.current = preferences;
       }
 
       setSuccess(true);
@@ -212,7 +245,7 @@ export function PreferencesForm({
       ))}
 
       <div className="flex flex-wrap gap-3 pt-1">
-        <button type="submit" disabled={loading} className="btn-primary">
+        <button type="submit" disabled={loading || Boolean(loadError)} className="btn-primary">
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
