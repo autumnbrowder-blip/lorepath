@@ -40,7 +40,9 @@ export function LogoutButton({
         }
       }}
     >
-      {showIcon ? <LogOut className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+      {showIcon ? (
+        <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : null}
       {label}
     </button>
   );
