@@ -10,6 +10,7 @@ import {
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { User } from "@supabase/supabase-js";
+import { Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
@@ -172,13 +173,14 @@ export function AuthNav() {
     const onProfile = pathname === "/profile";
     const onPreferences = pathname === "/preferences";
     const onStats = pathname === "/stats";
+    const onSettings = pathname === "/settings" || pathname.startsWith("/settings/");
 
     return (
       <div ref={containerRef} className="relative shrink-0">
         <button
           type="button"
           className={`flex max-w-[10.5rem] items-center gap-1.5 rounded-sm border border-gold-600/35 bg-forest-950/80 px-1.5 py-1 transition-[border-color,filter] hover:border-gold-500/55 sm:max-w-[13rem] ${
-            open || onProfile || onPreferences || onStats
+            open || onProfile || onPreferences || onStats || onSettings
               ? "border-gold-500/60"
               : ""
           }`}
@@ -251,6 +253,17 @@ export function AuthNav() {
               onClick={() => setOpen(false)}
             >
               Reading Stats
+            </Link>
+            <Link
+              href="/settings"
+              role="menuitem"
+              className={`flex items-center gap-2 px-3 py-2 font-storybook text-sm tracking-wide transition-[filter] nav-dragon-gold hover:bg-forest-900/80 ${
+                onSettings ? "nav-dragon-gold--active bg-forest-900/50" : ""
+              }`}
+              onClick={() => setOpen(false)}
+            >
+              <Settings className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              Settings
             </Link>
             <div
               className="mx-2 my-1 border-t border-gold-600/25"
