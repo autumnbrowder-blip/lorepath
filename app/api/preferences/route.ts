@@ -22,6 +22,13 @@ function isValidPreferences(value: unknown): value is ContentRating {
   });
 }
 
+/** Optional body.user_id — never used for the write; diagnostics / mismatch only. */
+function extractBodyUserId(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const raw = (body as { user_id?: unknown }).user_id;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
 export async function GET(request: Request) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json(
@@ -36,7 +43,13 @@ export async function GET(request: Request) {
   });
   if ("error" in session) {
     return NextResponse.json(
-      { error: session.error, code: session.code },
+      {
+        error: session.error,
+        code: session.code,
+        hadAuthorizationHeader: Boolean(getBearerToken(request)),
+        sessionUserId: null,
+        bodyUserId: null,
+      },
       { status: 401 }
     );
   }
@@ -56,6 +69,8 @@ export async function PUT(request: Request) {
     );
   }
 
+  const hadAuthorizationHeader = Boolean(getBearerToken(request));
+
   // One JWT-scoped client for auth + write. Browser Authorization header is
   // preferred so Netlify/SSR cookie bridging cannot drop the token for PostgREST.
   const session = await getSessionUser({
@@ -63,7 +78,13 @@ export async function PUT(request: Request) {
   });
   if ("error" in session) {
     return NextResponse.json(
-      { error: session.error, code: session.code },
+      {
+        error: session.error,
+        code: session.code,
+        hadAuthorizationHeader,
+        sessionUserId: null,
+        bodyUserId: null,
+      },
       { status: 401 }
     );
   }
@@ -72,12 +93,27 @@ export async function PUT(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: "Invalid request body.",
+        hadAuthorizationHeader,
+        sessionUserId: session.user.id,
+        bodyUserId: null,
+      },
+      { status: 400 }
+    );
   }
+
+  const bodyUserId = extractBodyUserId(body);
 
   if (!isValidPreferences(body)) {
     return NextResponse.json(
-      { error: "Each preference must be a number between 0 and 5." },
+      {
+        error: "Each preference must be a number between 0 and 5.",
+        hadAuthorizationHeader,
+        sessionUserId: session.user.id,
+        bodyUserId,
+      },
       { status: 400 }
     );
   }
@@ -86,6 +122,8 @@ export async function PUT(request: Request) {
     supabase: session.supabase,
     expectedUserId: session.user.id,
     accessToken: session.accessToken,
+    bodyUserId,
+    hadAuthorizationHeader,
   });
 
   if (!saveResult.success) {
@@ -94,6 +132,11 @@ export async function PUT(request: Request) {
         error: saveResult.error,
         code: saveResult.supabaseCode,
         supabaseMessage: saveResult.supabaseMessage,
+        // Diagnostics only — never include the token itself.
+        sessionUserId: saveResult.debug.sessionUserId,
+        bodyUserId: saveResult.debug.bodyUserId,
+        hadAuthorizationHeader: saveResult.debug.hadAuthorizationHeader,
+        userIdMatched: saveResult.debug.userIdMatched,
       },
       { status: 500 }
     );
@@ -106,6 +149,10 @@ export async function PUT(request: Request) {
       success: true,
       preferences: saveResult.preferences,
       message: "Your preferences have been inscribed.",
+      sessionUserId: saveResult.debug.sessionUserId,
+      bodyUserId: saveResult.debug.bodyUserId,
+      hadAuthorizationHeader: saveResult.debug.hadAuthorizationHeader,
+      userIdMatched: saveResult.debug.userIdMatched,
     },
     { headers: { "Cache-Control": "no-store" } }
   );

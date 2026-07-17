@@ -33,6 +33,48 @@ export function noStoreFetch(
   });
 }
 
+/**
+ * Fetch wrapper that ALWAYS sends the user JWT on PostgREST calls.
+ *
+ * supabase-js `fetchWithAuth` does:
+ *   accessToken = (await getAccessToken()) ?? supabaseKey  // anon key fallback!
+ *   if (!headers.has('Authorization')) headers.set('Authorization', Bearer accessToken)
+ *
+ * If no auth session is attached, that becomes `Authorization: Bearer <anon key>`.
+ * PostgREST then runs as role `anon`, `auth.uid()` is null, and RLS INSERT/UPDATE
+ * fails with "new row violates row-level security policy".
+ *
+ * Setting only `global.headers.Authorization` is unreliable: it can be missing from
+ * the per-request init, so fetchWithAuth fills in the anon key instead. Forcing the
+ * user JWT here (after fetchWithAuth) guarantees auth.uid() matches the verified user.
+ */
+function createUserJwtFetch(accessToken: string, anonKey: string) {
+  return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const headers = new Headers(init?.headers ?? undefined);
+
+    // Own Authorization — overwrite anon-key fallback from fetchWithAuth.
+    headers.set("Authorization", `Bearer ${accessToken}`);
+    if (!headers.has("apikey")) {
+      headers.set("apikey", anonKey);
+    }
+
+    if (input instanceof Request) {
+      input.headers.forEach((value, key) => {
+        if (key.toLowerCase() === "authorization") return;
+        if (!headers.has(key)) {
+          headers.set(key, value);
+        }
+      });
+    }
+
+    return fetch(input, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+  };
+}
+
 export async function createClient() {
   const env = getSupabaseEnv();
   if (!env) {
@@ -75,6 +117,14 @@ export type AuthenticatedClientResult =
  * omitting Authorization on .from() writes (auth.uid() → null → RLS 42501).
  * Prefer an explicit Bearer token (from the browser Authorization header or
  * cookie session) on every DB call.
+ *
+ * Durable JWT wiring (all three layers):
+ * 1. Custom fetch that forcibly sets Authorization to the user JWT (overwrites
+ *    fetchWithAuth's anon-key fallback)
+ * 2. `accessToken` callback when no refresh_token (supabase-js 2.110.x) so
+ *    getAccessToken() returns the user JWT
+ * 3. `setSession` when a refresh_token is available so auth.getSession() also
+ *    returns the JWT for any code that reads the session
  */
 export async function createAuthenticatedClient(options?: {
   accessToken?: string | null;
@@ -89,6 +139,7 @@ export async function createAuthenticatedClient(options?: {
 
   let user: User;
   let accessToken: string;
+  let refreshToken: string | null = null;
 
   if (bearer) {
     const { data, error } = await cookieClient.auth.getUser(bearer);
@@ -97,6 +148,14 @@ export async function createAuthenticatedClient(options?: {
     }
     user = data.user;
     accessToken = bearer;
+
+    // Same browser session may still have a refresh_token in cookies.
+    const {
+      data: { session },
+    } = await cookieClient.auth.getSession();
+    if (session?.user?.id === user.id && session.refresh_token) {
+      refreshToken = session.refresh_token;
+    }
   } else {
     const {
       data: { user: cookieUser },
@@ -120,21 +179,44 @@ export async function createAuthenticatedClient(options?: {
       };
     }
     accessToken = session.access_token;
+    refreshToken = session.refresh_token ?? null;
   }
 
-  // Fresh client: Authorization is set globally so every PostgREST call is
-  // authenticated. Do not rely on cookie storage bridging for RLS writes.
-  const supabase = createSupabaseClient(env.url, env.anonKey, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+  const jwtFetch = createUserJwtFetch(accessToken, env.anonKey);
+  const authHeader = { Authorization: `Bearer ${accessToken}` };
+
+  // Prefer setSession when we have a refresh_token — keeps supabase.auth usable
+  // and makes getAccessToken() return the user JWT from the session.
+  if (refreshToken) {
+    const sessionClient = createSupabaseClient(env.url, env.anonKey, {
+      global: {
+        headers: authHeader,
+        fetch: jwtFetch,
       },
-      fetch: noStoreFetch,
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+
+    const { error: sessionError } = await sessionClient.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (!sessionError) {
+      return { supabase: sessionClient, user, accessToken };
+    }
+  }
+
+  // Bearer-only (or setSession failed): use accessToken callback so fetchWithAuth
+  // never falls back to the anon key. (Disables supabase.auth on this client.)
+  const supabase = createSupabaseClient(env.url, env.anonKey, {
+    accessToken: async () => accessToken,
+    global: {
+      headers: authHeader,
+      fetch: jwtFetch,
     },
   });
 

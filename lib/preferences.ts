@@ -274,6 +274,13 @@ export async function getUserPreferences(
   }
 }
 
+export type PreferenceSaveDebug = {
+  sessionUserId: string | null;
+  bodyUserId: string | null;
+  hadAuthorizationHeader: boolean;
+  userIdMatched: boolean | null;
+};
+
 type SaveOptions = {
   /** Reuse an already JWT-scoped client so auth.uid() matches the write. */
   supabase?: SupabaseClient;
@@ -281,6 +288,18 @@ type SaveOptions = {
   expectedUserId?: string;
   /** Browser-supplied access token (Authorization Bearer) — preferred on Netlify. */
   accessToken?: string | null;
+  /** Optional user_id from the request body (ignored for the write; used for diagnostics). */
+  bodyUserId?: string | null;
+  /** Whether the incoming request carried an Authorization Bearer header. */
+  hadAuthorizationHeader?: boolean;
+};
+
+type SaveFailure = {
+  success: false;
+  error: string;
+  supabaseCode?: string;
+  supabaseMessage?: string;
+  debug: PreferenceSaveDebug;
 };
 
 /**
@@ -291,11 +310,31 @@ export async function saveUserPreferences(
   preferences: ContentRating,
   options?: SaveOptions
 ): Promise<
-  | { success: true; preferences: ContentRating }
-  | { success: false; error: string; supabaseCode?: string; supabaseMessage?: string }
+  | { success: true; preferences: ContentRating; debug: PreferenceSaveDebug }
+  | SaveFailure
 > {
+  const hadAuthorizationHeader = Boolean(options?.hadAuthorizationHeader);
+  const bodyUserId =
+    typeof options?.bodyUserId === "string" && options.bodyUserId.trim()
+      ? options.bodyUserId.trim()
+      : null;
+
+  const debugBase = (
+    sessionUserId: string | null,
+    userIdMatched: boolean | null = null
+  ): PreferenceSaveDebug => ({
+    sessionUserId,
+    bodyUserId,
+    hadAuthorizationHeader,
+    userIdMatched,
+  });
+
   if (!isSupabaseConfigured()) {
-    return { success: false, error: "Supabase is not configured." };
+    return {
+      success: false,
+      error: "Supabase is not configured.",
+      debug: debugBase(null),
+    };
   }
 
   const normalized = normalizePreferences(preferences);
@@ -316,6 +355,7 @@ export async function saveUserPreferences(
         success: false,
         error: auth.error === "Unauthorized." ? NO_SESSION_HINT : auth.error,
         supabaseCode: auth.code,
+        debug: debugBase(null),
       };
     }
     supabase = auth.supabase;
@@ -325,15 +365,31 @@ export async function saveUserPreferences(
       return {
         success: false,
         error: "Signed-in user does not match the preferences being saved.",
+        debug: debugBase(sessionUserId, false),
       };
     }
   }
 
-  const profileResult = await ensureProfileExists(supabase, sessionUserId);
-  if (!profileResult.ok) {
-    return { success: false, error: profileResult.error };
+  // Body must never supply user_id for the write. If a client sent one, it must match.
+  const userIdMatched = bodyUserId ? bodyUserId === sessionUserId : null;
+  if (bodyUserId && bodyUserId !== sessionUserId) {
+    return {
+      success: false,
+      error: "Signed-in user does not match the preferences being saved.",
+      debug: debugBase(sessionUserId, false),
+    };
   }
 
+  const profileResult = await ensureProfileExists(supabase, sessionUserId);
+  if (!profileResult.ok) {
+    return {
+      success: false,
+      error: profileResult.error,
+      debug: debugBase(sessionUserId, userIdMatched),
+    };
+  }
+
+  // user_id ALWAYS from verified JWT — never from request body.
   const fullRow: PreferenceWriteRow = {
     user_id: sessionUserId,
     sexual_content: normalized.sexual_content,
@@ -358,6 +414,7 @@ export async function saveUserPreferences(
       error: formatPreferenceError(writeError),
       supabaseCode: writeError.code,
       supabaseMessage: writeError.message,
+      debug: debugBase(sessionUserId, userIdMatched),
     };
   }
 
@@ -369,16 +426,25 @@ export async function saveUserPreferences(
       error: formatPreferenceError(verify.error),
       supabaseCode: verify.error.code,
       supabaseMessage: verify.error.message,
+      debug: debugBase(sessionUserId, userIdMatched),
     };
   }
   if (!verify.data) {
-    return { success: false, error: RLS_READBACK_HINT };
+    return {
+      success: false,
+      error: RLS_READBACK_HINT,
+      debug: debugBase(sessionUserId, userIdMatched),
+    };
   }
 
   const confirmed = normalizePreferences(verify.data);
   revalidatePath("/preferences");
   revalidatePath("/browse");
-  return { success: true, preferences: confirmed };
+  return {
+    success: true,
+    preferences: confirmed,
+    debug: debugBase(sessionUserId, userIdMatched),
+  };
 }
 
 /** Resolve a JWT-scoped client + user for API routes that also need writes. */

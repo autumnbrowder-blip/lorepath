@@ -61,19 +61,30 @@ export function PreferencesForm({
 
       // Pass the browser session JWT explicitly. Cookie-only SSR often validates
       // getUser() but omits Authorization on PostgREST → auth.uid() null → RLS.
+      // Body never includes user_id — the API always writes session.user.id.
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
       try {
         const supabase = createClient();
-        const {
+        let {
           data: { session },
         } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          const refreshed = await supabase.auth.refreshSession();
+          session = refreshed.data.session;
+        }
         if (session?.access_token) {
           headers.Authorization = `Bearer ${session.access_token}`;
         }
       } catch {
         // Fall back to cookie session on the API if browser session read fails.
+      }
+
+      if (!headers.Authorization) {
+        throw new Error(
+          "You are not signed in (no access token). Please sign out and back in, then try again."
+        );
       }
 
       const response = await fetch("/api/preferences", {
@@ -90,6 +101,10 @@ export function PreferencesForm({
         preferences?: ContentRating;
         code?: string;
         supabaseMessage?: string;
+        sessionUserId?: string | null;
+        bodyUserId?: string | null;
+        hadAuthorizationHeader?: boolean;
+        userIdMatched?: boolean | null;
       } = {};
       try {
         data = await response.json();
@@ -98,10 +113,16 @@ export function PreferencesForm({
       }
 
       if (!response.ok) {
-        const detail =
-          data.code || data.supabaseMessage
-            ? ` (${[data.code, data.supabaseMessage].filter(Boolean).join(": ")})`
-            : "";
+        const parts = [
+          data.code,
+          data.supabaseMessage,
+          data.sessionUserId ? `sessionUserId=${data.sessionUserId}` : null,
+          data.bodyUserId != null ? `bodyUserId=${data.bodyUserId}` : null,
+          typeof data.hadAuthorizationHeader === "boolean"
+            ? `hadAuthorizationHeader=${data.hadAuthorizationHeader}`
+            : null,
+        ].filter(Boolean);
+        const detail = parts.length ? ` (${parts.join("; ")})` : "";
         throw new Error(
           `${data.error ?? "Failed to save preferences."}${detail}`
         );
