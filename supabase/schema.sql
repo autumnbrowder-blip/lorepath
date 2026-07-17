@@ -342,6 +342,10 @@ create policy "Users can delete own preferences"
   on public.user_preferences for delete
   using (auth.uid() = user_id);
 
+-- Table privileges for PostgREST roles (RLS still constrains rows).
+grant select, insert, update, delete on table public.user_preferences to authenticated;
+grant select on table public.user_preferences to anon;
+
 -- saved_preference_profiles: reserved flag (is_subscriber) for later rollout
 create policy "Subscribers can view own saved profiles"
   on public.saved_preference_profiles for select

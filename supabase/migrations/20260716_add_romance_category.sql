@@ -3,7 +3,9 @@
 --
 -- Without this column, preference SELECT/UPSERT that include `romance` fail.
 -- The app falls back to a legacy column set, but Romance will not persist until
--- this migration is applied. Also run 20260716_user_preferences_rls_hardening.sql.
+-- this migration is applied.
+-- For a one-shot production fix (romance + RLS + grants), prefer:
+--   20260716_fix_user_preferences_production.sql
 
 -- ratings
 alter table public.ratings
