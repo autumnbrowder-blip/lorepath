@@ -1,6 +1,7 @@
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import {
+  BarChart3,
   BookOpen,
   Compass,
   Feather,
@@ -211,8 +212,8 @@ export default function FaqPage() {
           <div className="book-detail-tome-content relative z-[2] space-y-6 p-5 sm:p-8">
             <SectionCard
               icon={ScrollText}
-              eyebrow="Chapter I of VII · The Path Begins"
-              title="Chapter I · What is the LorePath Beta?"
+              eyebrow="Chapter 1 of 8 · The Path Begins"
+              title="Chapter 1 · What is the LorePath Beta?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 LorePath is a rating platform for books of every genre.
@@ -229,8 +230,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Scale}
-              eyebrow="Chapter II of VII · Ratings Explained"
-              title="Chapter II · How Do the Ratings Work?"
+              eyebrow="Chapter 2 of 8 · Ratings Explained"
+              title="Chapter 2 · How Do the Ratings Work?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 LorePath uses a shared 0–5 scale for each content category. The
@@ -305,8 +306,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Target}
-              eyebrow="Chapter III of VII · Match Score"
-              title="Chapter III · How Does the Match Score Work?"
+              eyebrow="Chapter 3 of 8 · Match Score"
+              title="Chapter 3 · How Does the Match Score Work?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 Your Match Score is a friendly percentage that shows how well a
@@ -344,9 +345,54 @@ export default function FaqPage() {
             </SectionCard>
 
             <SectionCard
+              icon={BarChart3}
+              eyebrow="Chapter 4 of 8 · Reading Stats"
+              title="Chapter 4 · What Does “Your Average Mark” Mean?"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                On your Reading Stats page,{" "}
+                <span className="font-semibold">Your Average Mark</span> is a
+                single number that gathers every content rating you have left
+                across the archives — Spice Level, Romance, Horror, Pacing,
+                LGBTQ+ Representation, Social &amp; Political Themes, and the
+                rest — and averages them into one score on the familiar 0–5
+                scale.
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Think of it as a quick glance at your rating style: are you a
+                gentle marker who tends toward quieter tales, or do your marks
+                often climb toward richer spice, sharper horror, or faster
+                pacing? It does not judge whether a book was “good” or “bad” —
+                it simply reflects the kinds of content you tend to note when
+                you rate.
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Use it as a snapshot of your journey so far. For a finer map of
+                where your marks land, look at{" "}
+                <span className="font-semibold">Marks by category</span> on the
+                same page — that breakdown shows your average in each theme on
+                its own.
+              </p>
+
+              <div className="rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3">
+                <p className="font-heading text-base leading-snug nav-dragon-gold">
+                  Tip from the desk: open{" "}
+                  <Link
+                    href="/stats"
+                    className="font-semibold nav-dragon-gold underline decoration-gold-500/60 underline-offset-4 transition hover:brightness-125"
+                  >
+                    Reading Stats
+                  </Link>{" "}
+                  anytime to see Your Average Mark update as you rate more
+                  tomes.
+                </p>
+              </div>
+            </SectionCard>
+
+            <SectionCard
               icon={Feather}
-              eyebrow="Chapter IV of VII · Beta Capabilities"
-              title="Chapter IV · What can I do during Beta?"
+              eyebrow="Chapter 5 of 8 · Beta Capabilities"
+              title="Chapter 5 · What can I do during Beta?"
             >
               <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
                 During Beta, you are welcome to explore freely. Here is what you
@@ -369,8 +415,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Stars}
-              eyebrow="Chapter V of VII · The Road Ahead"
-              title="Chapter V · What’s coming in the future?"
+              eyebrow="Chapter 6 of 8 · The Road Ahead"
+              title="Chapter 6 · What’s coming in the future?"
             >
               <p className="mb-3 font-heading text-lg leading-relaxed nav-dragon-gold">
                 After Beta, we hope to add more tools that make finding the right
@@ -393,8 +439,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={Hourglass}
-              eyebrow="Chapter VI of VII · The Timeline"
-              title="Chapter VI · How long will the Beta last?"
+              eyebrow="Chapter 7 of 8 · The Timeline"
+              title="Chapter 7 · How long will the Beta last?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 We expect the Beta to run for a few months while we polish the
@@ -406,8 +452,8 @@ export default function FaqPage() {
 
             <SectionCard
               icon={BookOpen}
-              eyebrow="Chapter VII of VII · The Growing Library"
-              title="Chapter VII · How do new books get added?"
+              eyebrow="Chapter 8 of 8 · The Growing Library"
+              title="Chapter 8 · How do new books get added?"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 New and recently published titles are added regularly so the
