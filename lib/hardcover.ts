@@ -13,17 +13,40 @@ export const HARDCOVER_ID_PREFIX = "hardcover-";
 const FETCH_TIMEOUT_MS = 10000;
 const MISSING_DESCRIPTION_FALLBACK = "No description available.";
 
+/** Common misnamed env keys — log a hint if the real key is missing. */
+const HARDCOVER_TOKEN_ALIASES = [
+  "HARDCOVER_TOKEN",
+  "HARDCOVER_API_KEY",
+  "HARDCOVER_KEY",
+  "NEXT_PUBLIC_HARDCOVER_API_TOKEN",
+] as const;
+
 /**
- * Read token from `.env.local` as `HARDCOVER_API_TOKEN` (no spaces in the name).
+ * Read token from `.env.local` / host env as `HARDCOVER_API_TOKEN` (exact name).
  * Server-only — never use `NEXT_PUBLIC_`. Strip an accidental `Bearer ` prefix.
  */
 function getHardcoverToken(): string | null {
   let token = process.env.HARDCOVER_API_TOKEN?.trim();
-  if (!token) return null;
+  if (!token) {
+    const foundAlias = HARDCOVER_TOKEN_ALIASES.find((key) =>
+      Boolean(process.env[key]?.trim())
+    );
+    if (foundAlias) {
+      console.error(
+        `[Hardcover] Found ${foundAlias} but LorePath reads HARDCOVER_API_TOKEN. Rename the env var (no NEXT_PUBLIC_, no spaces) and redeploy.`
+      );
+    }
+    return null;
+  }
   if (/^Bearer\s+/i.test(token)) {
     token = token.replace(/^Bearer\s+/i, "").trim();
   }
   return token || null;
+}
+
+/** Whether a usable HARDCOVER_API_TOKEN is present (server-only). */
+export function isHardcoverConfigured(): boolean {
+  return Boolean(getHardcoverToken());
 }
 
 async function fetchHardcoverGraphql(
@@ -290,20 +313,52 @@ export function parseHardcoverBookDetail(
   };
 }
 
-function normalizeSearchResults(
-  results: HardcoverSearchResults | string | null | undefined
-): HardcoverSearchResults | null {
-  if (!results) return null;
-  if (typeof results === "string") {
+/** Unwrap Typesense payload (object, JSON string, or rare multi-search array). */
+function unwrapSearchResults(value: unknown): HardcoverSearchResults | null {
+  if (!value) return null;
+
+  if (typeof value === "string") {
     try {
-      const parsed = JSON.parse(results) as HardcoverSearchResults;
-      return parsed && typeof parsed === "object" ? parsed : null;
+      return unwrapSearchResults(JSON.parse(value) as unknown);
     } catch {
       return null;
     }
   }
-  if (typeof results === "object") return results;
+
+  if (Array.isArray(value)) {
+    const withHits = value.find(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        Array.isArray((entry as HardcoverSearchResults).hits)
+    );
+    return withHits ? (withHits as HardcoverSearchResults) : null;
+  }
+
+  if (typeof value === "object") {
+    return value as HardcoverSearchResults;
+  }
+
   return null;
+}
+
+function normalizeSearchResults(
+  results: HardcoverSearchResults | string | null | undefined
+): HardcoverSearchResults | null {
+  return unwrapSearchResults(results);
+}
+
+function summarizeHitForLog(hit: HardcoverSearchHit | undefined) {
+  if (!hit) return null;
+  const cover = parseCoverUrl(hit.image);
+  return {
+    id: hit.id ?? null,
+    title: hit.title?.slice(0, 80) ?? null,
+    hasDescription: Boolean(hit.description?.trim()),
+    hasCover: Boolean(cover),
+    imageType: hit.image == null ? "null" : typeof hit.image,
+    authorNames: Array.isArray(hit.author_names) ? hit.author_names.length : 0,
+  };
 }
 
 function extractSearchHits(
@@ -338,7 +393,7 @@ const BOOK_FIELDS = `
 
 /**
  * Search Hardcover.app via the official Typesense `search` query.
- * Searches title + author_names (and ISBNs / series / alt titles).
+ * Uses API defaults for fields/weights (same as hardcover.app book search).
  * Soft quality gate: keep rows with a cover and/or description (stub
  * missing blurbs so merge/finalize can still use cover-only hits).
  *
@@ -355,14 +410,18 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
 
   if (!token) {
     console.error(
-      "[Hardcover] HARDCOVER_API_TOKEN is missing. Add it to .env.local (and Netlify env) with no spaces in the name. Do not use NEXT_PUBLIC_."
+      "[Hardcover] HARDCOVER_API_TOKEN is missing. Add it to .env.local and Netlify → Site configuration → Environment variables (exact name, raw JWT, no Bearer prefix, no NEXT_PUBLIC_). Redeploy after saving."
     );
     return [];
   }
 
-  console.info("[Hardcover] searchHardcover start", { query: trimmed });
+  console.info("[Hardcover] searchHardcover start", {
+    query: trimmed,
+    tokenChars: token.length,
+  });
 
   try {
+    // Omit custom fields/weights so Typesense uses Hardcover's book defaults.
     const response = await fetchHardcoverGraphql(
       {
         query: `
@@ -371,9 +430,7 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
               query: $query,
               query_type: "Book",
               per_page: 20,
-              page: 1,
-              fields: "title,author_names,isbns,series_names,alternative_titles",
-              weights: "5,3,5,1,1"
+              page: 1
             ) {
               error
               ids
@@ -471,12 +528,26 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
         ids: ids.length,
         hits: hits.length,
         beforeGate,
+        sampleHit: summarizeHitForLog(hits[0]),
       });
     } else if (ids.length > 0 && books.length === 0) {
       console.error("[Hardcover] ids present but 0 usable books after hydrate", {
         query: trimmed,
         ids: ids.length,
         hits: hits.length,
+        resultsType: payload.data?.search?.results == null
+          ? "null"
+          : Array.isArray(payload.data.search.results)
+            ? "array"
+            : typeof payload.data.search.results,
+        sampleHit: summarizeHitForLog(hits[0]),
+        sampleIds: ids.slice(0, 5),
+      });
+    } else if (ids.length === 0 && hits.length === 0) {
+      console.warn("[Hardcover] empty Typesense response", {
+        query: trimmed,
+        hasSearchNode: Boolean(payload.data?.search),
+        resultsPresent: payload.data?.search?.results != null,
       });
     }
 

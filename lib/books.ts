@@ -15,6 +15,7 @@ import {
 } from "@/lib/google-books";
 import {
   getHardcoverBookById,
+  isHardcoverConfigured,
   isHardcoverId,
   searchHardcover,
 } from "@/lib/hardcover";
@@ -161,10 +162,10 @@ export async function searchBooks(
     );
   }
 
-  const hardcoverConfigured = Boolean(process.env.HARDCOVER_API_TOKEN?.trim());
+  const hardcoverConfigured = isHardcoverConfigured();
   if (!hardcoverConfigured && pageNumber === 1) {
     console.error(
-      "[searchBooks] HARDCOVER_API_TOKEN not set — Hardcover will contribute 0 results. Set it in .env.local / Netlify (no spaces in the name)."
+      "[searchBooks] HARDCOVER_API_TOKEN not set — Hardcover will contribute 0 results. Set exact name HARDCOVER_API_TOKEN in .env.local and Netlify (raw JWT, no Bearer, no NEXT_PUBLIC_), then redeploy."
     );
   } else if (
     hardcoverConfigured &&
@@ -202,6 +203,7 @@ export async function searchBooks(
     query: searchQuery,
     page: pageNumber,
     mode: genreMode ? "genre" : "text",
+    hardcoverConfigured,
     hardcover: hardcoverBooks.length,
     google: googleBooks.length,
     openlibrary: openLibraryBooks.length,
@@ -223,7 +225,11 @@ export async function searchBooks(
   }
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
-    hardcover: hardcoverBooks.length,
+    // Omit Hardcover from counts when unconfigured so the UI does not show a
+    // permanent "(0)" as if the provider ran and failed.
+    ...(hardcoverConfigured || hardcoverBooks.length > 0
+      ? { hardcover: hardcoverBooks.length }
+      : {}),
     google: googleBooks.length,
     openlibrary: openLibraryBooks.length,
     gutendex: gutendexBooks.length,
@@ -234,6 +240,9 @@ export async function searchBooks(
     books,
     sources: SEARCH_SOURCES,
     sourceCounts,
+    providerStatus: {
+      hardcover: { configured: hardcoverConfigured },
+    },
     source: "multi",
     page: pageNumber,
     hasMore:

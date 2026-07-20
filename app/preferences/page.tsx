@@ -10,7 +10,7 @@ import {
 import { loadPreferencesForPage } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -113,11 +113,7 @@ export default async function PreferencesPage() {
               title={avatar.label}
             />
             <div className="min-w-0 sm:pt-1">
-              <div className="section-label metallic-emerald-darker justify-center !text-xs !font-bold tracking-[0.32em] sm:justify-start">
-                <Sparkles className="h-3.5 w-3.5 text-[#0a1f18]" />
-                Comfort Levels
-              </div>
-              <h1 className="metallic-emerald-deep mt-2 font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
+              <h1 className="metallic-emerald-deep font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
                 {displayName}&apos;s Preference Codex
               </h1>
               <div

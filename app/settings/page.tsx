@@ -67,8 +67,8 @@ export default async function SettingsPage() {
             <AvatarCrest
               avatarKey={avatarKey}
               variant="display"
-              className="h-28 w-28 sm:h-32 sm:w-32"
-              size={128}
+              className="h-40 w-40 sm:h-44 sm:w-44 md:h-48 md:w-48"
+              size={192}
               title={avatar.label}
             />
             <div className="min-w-0 sm:pt-1">

@@ -31,13 +31,21 @@ Copy names from `.env.local.example`. After changing env vars, restart `npm run 
 | `GOOGLE_BOOKS_API_KEY` | Higher Google Books rate limits |
 | `NYT_BOOKS_API_KEY` | NYT bestsellers on Browse ([free key](https://developer.nytimes.com/)) |
 | `ISBNDB_API_KEY` | ISBNdb search |
-| `HARDCOVER_API_TOKEN` | Hardcover search |
+| `HARDCOVER_API_TOKEN` | Hardcover search ([API token](https://hardcover.app/account/api) / settings) — server-only |
 
 Browse search still works without `NYT_BOOKS_API_KEY` — only the bestsellers strip is omitted.
 
 ### Deploying (Netlify)
 
-Set the same variables in **Netlify → Site configuration → Environment variables** (not only in `.env.local`). Redeploy after adding keys so the server build picks them up.
+Set the same variables in **Netlify → Site configuration → Environment variables** (not only in `.env.local`). Redeploy after adding keys so the server runtime picks them up.
+
+**Hardcover specifically** (if the browse UI shows no Hardcover hits / a config warning):
+
+1. Exact name: `HARDCOVER_API_TOKEN` (no spaces, no `NEXT_PUBLIC_` prefix).
+2. Value: the raw JWT from Hardcover settings — do **not** include a `Bearer ` prefix (the app adds that).
+3. Scopes: enable for **Production** (and Preview if you test deploy previews).
+4. Trigger a **new deploy** after saving — changing env alone does not update an already-running site.
+5. Confirm in function logs: you should see `[Hardcover] searchHardcover done` with `books > 0`, not `HARDCOVER_API_TOKEN is missing`.
 
 ## Project structure
 

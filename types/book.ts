@@ -38,6 +38,10 @@ export type BookSearchResult = {
   sources: BookSource[];
   /** Raw hit counts from each provider for this page. */
   sourceCounts: Partial<Record<BookSource, number>>;
+  /** Non-secret provider readiness (e.g. missing API tokens). */
+  providerStatus?: {
+    hardcover?: { configured: boolean };
+  };
   /** Summary label for the search (use `sources` for per-provider detail). */
   source: BookSearchSource;
   /** 1-based page that was fetched. */

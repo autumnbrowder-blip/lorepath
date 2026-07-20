@@ -50,6 +50,9 @@ export function BookSearch({
   const [sourceCounts, setSourceCounts] = useState<
     Partial<Record<BookSource, number>>
   >({});
+  const [hardcoverConfigured, setHardcoverConfigured] = useState<
+    boolean | null
+  >(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -82,6 +85,9 @@ export function BookSearch({
       sources?: BookSource[];
       source?: BookSource;
       sourceCounts?: Partial<Record<BookSource, number>>;
+      providerStatus?: {
+        hardcover?: { configured: boolean };
+      };
       hasMore?: boolean;
       page?: number;
     };
@@ -123,12 +129,16 @@ export function BookSearch({
             : [];
       setSources(nextSources);
       setSourceCounts(data.sourceCounts ?? {});
+      setHardcoverConfigured(
+        data.providerStatus?.hardcover?.configured ?? null
+      );
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
       setBooks([]);
       setSources([]);
       setSourceCounts({});
+      setHardcoverConfigured(null);
       setHasMore(false);
       setError(
         err instanceof Error ? err.message : "Something went wrong. Try again."
@@ -164,8 +174,13 @@ export function BookSearch({
         isbndb: (current.isbndb ?? 0) + (data.sourceCounts?.isbndb ?? 0),
         // Hardcover only contributes on page 1 — preserve its count across pages.
         hardcover:
-          current.hardcover ?? data.sourceCounts?.hardcover ?? undefined,
+          typeof current.hardcover === "number"
+            ? current.hardcover
+            : data.sourceCounts?.hardcover,
       }));
+      if (data.providerStatus?.hardcover) {
+        setHardcoverConfigured(data.providerStatus.hardcover.configured);
+      }
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -370,11 +385,29 @@ export function BookSearch({
                   <p className="mt-1.5 font-heading text-sm font-medium tracking-wide nav-dragon-gold">
                     Drawn from multiple archives at once
                   </p>
+                  {hardcoverConfigured === false && (
+                    <p className="mt-2 font-heading text-xs tracking-wide text-[#c4a35a]/90">
+                      Hardcover is not configured on the server. Set{" "}
+                      <span className="font-storybook tracking-[0.08em]">
+                        HARDCOVER_API_TOKEN
+                      </span>{" "}
+                      in Netlify (or .env.local) and redeploy.
+                    </p>
+                  )}
                 </div>
                 {sources.length > 0 && (
                   <div className="flex flex-wrap gap-2 sm:justify-end">
                     {sources.map((s) => {
                       const count = sourceCounts[s];
+                      const showCount = typeof count === "number";
+                      // Skip a bare "Hardcover" chip when unconfigured (no count).
+                      if (
+                        s === "hardcover" &&
+                        hardcoverConfigured === false &&
+                        !showCount
+                      ) {
+                        return null;
+                      }
                       return (
                         <span
                           key={s}
@@ -382,9 +415,7 @@ export function BookSearch({
                         >
                           <span className="codex-tag-label">
                             {sourceLabels[s]}
-                            {typeof count === "number" ? (
-                              <span> ({count})</span>
-                            ) : null}
+                            {showCount ? <span> ({count})</span> : null}
                           </span>
                         </span>
                       );
