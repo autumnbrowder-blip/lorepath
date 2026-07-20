@@ -20,11 +20,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
-/* Solid cream/gold text — avoid nav-dragon-gold clip (washes out over parchment) */
+/* Solid gold on deep-emerald panel — avoid nav-dragon-gold clip (white boxes) */
 const menuItemClass =
-  "flex items-center gap-2 px-3 py-2 font-storybook text-sm font-semibold tracking-wide text-[#f5e8c7] transition-colors hover:bg-[#123229] hover:text-[#fff6d4]";
-const menuItemActiveClass = "bg-[#123229]/90 text-[#fff1c9]";
-const menuIconClass = "h-3.5 w-3.5 shrink-0 text-[#e2c06a]";
+  "flex items-center gap-2 px-3 py-2 font-storybook text-sm font-semibold tracking-wide text-[#e2c06a] transition-colors hover:bg-[#123229] hover:text-[#f0d78a]";
+const menuItemActiveClass = "bg-[#123229]/90 text-[#f0d78a]";
+const menuIconClass = "h-3.5 w-3.5 shrink-0 text-current";
 
 type ProfileNavData = {
   display_name: string | null;
