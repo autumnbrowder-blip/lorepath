@@ -10,6 +10,8 @@ import type { BookDetail, BookSummary } from "@/types/book";
 
 const HARDCOVER_API_URL = "https://api.hardcover.app/v1/graphql";
 export const HARDCOVER_ID_PREFIX = "hardcover-";
+const FETCH_TIMEOUT_MS = 10000;
+const MISSING_DESCRIPTION_FALLBACK = "No description available.";
 
 /**
  * Read token from `.env.local` as `HARDCOVER_API_TOKEN` (no spaces in the name).
@@ -22,6 +24,46 @@ function getHardcoverToken(): string | null {
     token = token.replace(/^Bearer\s+/i, "").trim();
   }
   return token || null;
+}
+
+async function fetchHardcoverGraphql(
+  body: unknown,
+  token: string
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(HARDCOVER_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function hasCover(book: BookSummary): boolean {
+  return Boolean(book.coverUrl?.trim());
+}
+
+function hasDescription(book: BookSummary): boolean {
+  return Boolean(book.description?.trim());
+}
+
+/** Keep search hits that can still merge/display — cover and/or description. */
+function isUsableHardcoverSearchBook(book: BookSummary): boolean {
+  return hasCover(book) || hasDescription(book);
+}
+
+function withDescriptionFallback(book: BookSummary): BookSummary {
+  if (hasDescription(book)) return book;
+  return { ...book, description: MISSING_DESCRIPTION_FALLBACK };
 }
 
 type HardcoverAuthor = {
@@ -204,8 +246,8 @@ export function parseHardcoverBook(book: HardcoverBook): BookSummary | null {
     pageCount: parsePageCount(book.pages),
   };
 
+  // Keep id+title rows so search can hydrate missing description/cover.
   if (isLowQualityBook(summary)) return null;
-  if (!summary.description?.trim() || !summary.coverUrl?.trim()) return null;
   return summary;
 }
 
@@ -228,8 +270,8 @@ function parseHardcoverSearchHit(hit: HardcoverSearchHit): BookSummary | null {
     pageCount: parsePageCount(hit.pages),
   };
 
+  // Do not require description+cover here — hydrate fills gaps next.
   if (isLowQualityBook(summary)) return null;
-  if (!summary.description?.trim() || !summary.coverUrl?.trim()) return null;
   return summary;
 }
 
@@ -297,7 +339,8 @@ const BOOK_FIELDS = `
 /**
  * Search Hardcover.app via the official Typesense `search` query.
  * Searches title + author_names (and ISBNs / series / alt titles).
- * Quality gate: only return rows with both a description and a cover.
+ * Soft quality gate: keep rows with a cover and/or description (stub
+ * missing blurbs so merge/finalize can still use cover-only hits).
  *
  * Important: `_ilike` / `_like` filters are disabled by Hardcover and return errors.
  */
@@ -312,7 +355,7 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
 
   if (!token) {
     console.error(
-      "[Hardcover] HARDCOVER_API_TOKEN is missing. Add it to .env.local with no spaces in the name."
+      "[Hardcover] HARDCOVER_API_TOKEN is missing. Add it to .env.local (and Netlify env) with no spaces in the name. Do not use NEXT_PUBLIC_."
     );
     return [];
   }
@@ -320,13 +363,8 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
   console.info("[Hardcover] searchHardcover start", { query: trimmed });
 
   try {
-    const response = await fetch(HARDCOVER_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    const response = await fetchHardcoverGraphql(
+      {
         query: `
           query SearchBooks($query: String!) {
             search(
@@ -344,9 +382,9 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
           }
         `,
         variables: { query: trimmed },
-      }),
-      cache: "no-store",
-    });
+      },
+      token
+    );
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -377,20 +415,43 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       .map(parseHardcoverSearchHit)
       .filter((book): book is BookSummary => book !== null);
 
-    // Hydrate from books-by-id when Typesense hits are missing/incomplete.
-    // Important: if `results.hits` fails to parse but `ids` is populated,
-    // we must still hydrate — otherwise search always returns [].
-    if (ids.length > 0 && books.length < ids.length) {
+    const incomplete = books.filter((book) => !isUsableHardcoverSearchBook(book));
+
+    // Hydrate when Typesense hits are missing/incomplete, or when hits
+    // failed to parse but `ids` is populated (otherwise search returns []).
+    const needsHydrate =
+      ids.length > 0 &&
+      (books.length < ids.length || incomplete.length > 0);
+
+    if (needsHydrate) {
       console.info("[Hardcover] hydrating for missing desc/cover", {
         ids: ids.length,
         hits: hits.length,
-        completeHits: books.length,
+        parsedHits: books.length,
+        incomplete: incomplete.length,
       });
       const hydrated = await fetchHardcoverBooksByIds(ids.slice(0, 20), token);
       if (hydrated.length > 0) {
         const byId = new Map(books.map((book) => [book.id, book] as const));
         for (const book of hydrated) {
-          if (!byId.has(book.id)) byId.set(book.id, book);
+          const existing = byId.get(book.id);
+          if (!existing) {
+            byId.set(book.id, book);
+            continue;
+          }
+          // Prefer hydrated fields when the Typesense hit was sparse.
+          byId.set(book.id, {
+            ...existing,
+            description:
+              existing.description?.trim() || book.description?.trim() || null,
+            coverUrl: existing.coverUrl?.trim() || book.coverUrl?.trim() || null,
+            authors:
+              existing.authors.length > 0 ? existing.authors : book.authors,
+            genres: existing.genres.length > 0 ? existing.genres : book.genres,
+            publishedYear: existing.publishedYear ?? book.publishedYear,
+            pageCount: existing.pageCount ?? book.pageCount,
+            isbn: existing.isbn ?? book.isbn,
+          });
         }
         // Preserve Typesense ranking
         books = ids
@@ -399,11 +460,25 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       }
     }
 
-    // Hard quality gate: description + cover required
-    books = books.filter(
-      (book) =>
-        Boolean(book.description?.trim()) && Boolean(book.coverUrl?.trim())
-    );
+    const beforeGate = books.length;
+    books = books
+      .filter(isUsableHardcoverSearchBook)
+      .map(withDescriptionFallback);
+
+    if (beforeGate > 0 && books.length === 0) {
+      console.error("[Hardcover] all hits filtered by quality gate", {
+        query: trimmed,
+        ids: ids.length,
+        hits: hits.length,
+        beforeGate,
+      });
+    } else if (ids.length > 0 && books.length === 0) {
+      console.error("[Hardcover] ids present but 0 usable books after hydrate", {
+        query: trimmed,
+        ids: ids.length,
+        hits: hits.length,
+      });
+    }
 
     console.info("[Hardcover] searchHardcover done", {
       query: trimmed,
@@ -420,7 +495,15 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
 
     return books;
   } catch (error) {
-    console.error("[Hardcover] search failed:", error);
+    const aborted =
+      error instanceof Error &&
+      (error.name === "AbortError" || /aborted/i.test(error.message));
+    console.error(
+      aborted
+        ? `[Hardcover] search timed out after ${FETCH_TIMEOUT_MS}ms:`
+        : "[Hardcover] search failed:",
+      error instanceof Error ? { name: error.name, message: error.message } : error
+    );
     return [];
   }
 }
@@ -430,13 +513,8 @@ async function fetchHardcoverBooksByIds(
   token: string
 ): Promise<BookSummary[]> {
   try {
-    const response = await fetch(HARDCOVER_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    const response = await fetchHardcoverGraphql(
+      {
         query: `
           query BooksByIds($ids: [Int!]!) {
             books(where: { id: { _in: $ids } }, limit: 20) {
@@ -445,12 +523,17 @@ async function fetchHardcoverBooksByIds(
           }
         `,
         variables: { ids },
-      }),
-      cache: "no-store",
-    });
+      },
+      token
+    );
 
     if (!response.ok) {
-      console.error("[Hardcover] hydrate HTTP error:", response.status);
+      const body = await response.text().catch(() => "");
+      console.error("[Hardcover] hydrate HTTP error:", {
+        status: response.status,
+        statusText: response.statusText,
+        body: body.slice(0, 500),
+      });
       return [];
     }
 
@@ -471,7 +554,15 @@ async function fetchHardcoverBooksByIds(
       .map((id) => byId.get(toHardcoverId(id)))
       .filter((book): book is BookSummary => Boolean(book));
   } catch (error) {
-    console.error("[Hardcover] hydrate failed:", error);
+    const aborted =
+      error instanceof Error &&
+      (error.name === "AbortError" || /aborted/i.test(error.message));
+    console.error(
+      aborted
+        ? `[Hardcover] hydrate timed out after ${FETCH_TIMEOUT_MS}ms:`
+        : "[Hardcover] hydrate failed:",
+      error instanceof Error ? { name: error.name, message: error.message } : error
+    );
     return [];
   }
 }
@@ -492,13 +583,8 @@ export async function getHardcoverBookById(
   if (!Number.isFinite(numericId)) return null;
 
   try {
-    const response = await fetch(HARDCOVER_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    const response = await fetchHardcoverGraphql(
+      {
         query: `
           query GetBook($id: Int!) {
             books_by_pk(id: $id) {
@@ -507,12 +593,17 @@ export async function getHardcoverBookById(
           }
         `,
         variables: { id: numericId },
-      }),
-      cache: "no-store",
-    });
+      },
+      token
+    );
 
     if (!response.ok) {
-      console.error("[Hardcover] getById HTTP error:", response.status);
+      const body = await response.text().catch(() => "");
+      console.error("[Hardcover] getById HTTP error:", {
+        status: response.status,
+        statusText: response.statusText,
+        body: body.slice(0, 500),
+      });
       return null;
     }
 
@@ -523,9 +614,18 @@ export async function getHardcoverBookById(
 
     const book = payload.data?.books_by_pk;
     if (!book) return null;
-    return parseHardcoverBookDetail(book);
+    const detail = parseHardcoverBookDetail(book);
+    return detail ? withDescriptionFallback(detail) : null;
   } catch (error) {
-    console.error("[Hardcover] getById failed:", error);
+    const aborted =
+      error instanceof Error &&
+      (error.name === "AbortError" || /aborted/i.test(error.message));
+    console.error(
+      aborted
+        ? `[Hardcover] getById timed out after ${FETCH_TIMEOUT_MS}ms:`
+        : "[Hardcover] getById failed:",
+      error instanceof Error ? { name: error.name, message: error.message } : error
+    );
     return null;
   }
 }
