@@ -128,17 +128,18 @@ function formatPreferenceError(
 
 type PreferenceRow = {
   sexual_content: number;
-  romance?: number | null;
+  romance: number | null;
   lgbt: number;
   horror: number;
   ideology: number;
   pacing: number;
 };
 
+/** Upsert payload — romance is required so it always persists to Supabase. */
 type PreferenceWriteRow = {
   user_id: string;
   sexual_content: number;
-  romance?: number;
+  romance: number;
   lgbt: number;
   horror: number;
   ideology: number;
@@ -175,7 +176,7 @@ async function fetchPreferenceRow(
 
     return {
       data: legacy.data
-        ? ({ ...legacy.data, romance: DEFAULT_USER_PREFERENCES.romance } as PreferenceRow)
+        ? ({ ...legacy.data, romance: null } as PreferenceRow)
         : null,
       error: null,
     };
@@ -448,6 +449,8 @@ export async function saveUserPreferences(
   }
 
   // user_id ALWAYS from verified JWT — never from request body.
+  // Always include romance — do not strip it on schema errors (that made saves
+  // appear to succeed while Romance never persisted).
   const fullRow: PreferenceWriteRow = {
     user_id: sessionUserId,
     sexual_content: normalized.sexual_content,
@@ -458,13 +461,7 @@ export async function saveUserPreferences(
     pacing: normalized.pacing,
   };
 
-  let writeError = (await upsertPreferenceRow(supabase, fullRow)).error;
-
-  if (writeError && isMissingRomanceColumn(writeError.message)) {
-    // Keep other categories writable until the romance migration is applied.
-    const { romance: _romance, ...legacyRow } = fullRow;
-    writeError = (await upsertPreferenceRow(supabase, legacyRow)).error;
-  }
+  const writeError = (await upsertPreferenceRow(supabase, fullRow)).error;
 
   if (writeError) {
     return {
@@ -476,7 +473,7 @@ export async function saveUserPreferences(
     };
   }
 
-  // Separate read-back via service role (confirms the row exists).
+  // Separate read-back via service role (confirms the row exists + romance stuck).
   const verify = await fetchPreferenceRow(supabase, sessionUserId);
   if (verify.error) {
     return {
@@ -496,6 +493,17 @@ export async function saveUserPreferences(
   }
 
   const confirmed = normalizePreferences(verify.data);
+
+  // If the romance column is missing, read-back cannot confirm the value we wrote.
+  // Fail loudly instead of returning a defaulted Romance that looks "saved."
+  if (confirmed.romance !== normalized.romance) {
+    return {
+      success: false,
+      error: ROMANCE_MIGRATION_HINT,
+      debug: debugBase(sessionUserId, userIdMatched),
+    };
+  }
+
   revalidatePath("/preferences");
   revalidatePath("/browse");
   return {

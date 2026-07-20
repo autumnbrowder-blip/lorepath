@@ -118,7 +118,17 @@ export async function PUT(request: Request) {
     );
   }
 
-  const saveResult = await saveUserPreferences(body, {
+  // Explicit field map so romance is never dropped before the upsert.
+  const preferences: ContentRating = {
+    sexual_content: body.sexual_content,
+    romance: body.romance,
+    lgbt: body.lgbt,
+    horror: body.horror,
+    ideology: body.ideology,
+    pacing: body.pacing,
+  };
+
+  const saveResult = await saveUserPreferences(preferences, {
     expectedUserId: session.user.id,
     accessToken: session.accessToken,
     bodyUserId,

@@ -63,8 +63,7 @@ export function getMatchStyle(score: number): {
       ring: "stroke-gold-500",
       text: "text-gold-300",
       bar: "bg-gradient-to-r from-gold-500 to-gold-300",
-      badge:
-        "border-gold-600/55 bg-forest-950/55 text-[#f0d78a]",
+      badge: "border-gold-600/55 bg-forest-950/55 nav-dragon-gold",
       gradient: "from-gold-950/20 via-forest-950 to-gold-950/10",
     };
   }
@@ -73,8 +72,7 @@ export function getMatchStyle(score: number): {
       ring: "stroke-forest-500",
       text: "text-forest-300",
       bar: "bg-gradient-to-r from-forest-600 to-forest-400",
-      badge:
-        "border-forest-500/50 bg-forest-950/55 text-[#c8e0cf]",
+      badge: "border-forest-500/50 bg-forest-950/55 nav-dragon-gold",
       gradient: "from-forest-950/20 via-forest-950 to-forest-900/10",
     };
   }
@@ -83,8 +81,7 @@ export function getMatchStyle(score: number): {
       ring: "stroke-gold-600",
       text: "text-gold-400",
       bar: "bg-gradient-to-r from-gold-600 to-gold-400",
-      badge:
-        "border-gold-700/50 bg-forest-950/55 text-[#e2c06a]",
+      badge: "border-gold-700/50 bg-forest-950/55 nav-dragon-gold",
       gradient: "from-gold-950/15 via-forest-950 to-gold-950/10",
     };
   }
@@ -92,8 +89,7 @@ export function getMatchStyle(score: number): {
     ring: "stroke-gold-800",
     text: "text-gold-500",
     bar: "bg-gradient-to-r from-gold-800 to-gold-600",
-    badge:
-      "border-gold-800/60 bg-forest-950/60 text-[#c9a24a]",
+    badge: "border-gold-800/60 bg-forest-950/60 nav-dragon-gold",
     gradient: "from-gold-950/25 via-forest-950 to-gold-950/15",
   };
 }
