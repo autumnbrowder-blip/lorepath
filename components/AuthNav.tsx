@@ -20,9 +20,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
+/* Solid cream/gold text — avoid nav-dragon-gold clip (washes out over parchment) */
 const menuItemClass =
-  "flex items-center gap-2 px-3 py-2 font-storybook text-sm tracking-wide transition-[filter] nav-dragon-gold hover:bg-forest-900/80";
-const menuIconClass = "h-3.5 w-3.5 shrink-0";
+  "flex items-center gap-2 px-3 py-2 font-storybook text-sm font-semibold tracking-wide text-[#f5e8c7] transition-colors hover:bg-[#123229] hover:text-[#fff6d4]";
+const menuItemActiveClass = "bg-[#123229]/90 text-[#fff1c9]";
+const menuIconClass = "h-3.5 w-3.5 shrink-0 text-[#e2c06a]";
 
 type ProfileNavData = {
   display_name: string | null;
@@ -231,13 +233,13 @@ export function AuthNav() {
             id={menuId}
             role="menu"
             aria-label="Account"
-            className="absolute right-0 z-[60] mt-2 min-w-[11rem] overflow-hidden rounded-sm border border-gold-600/40 bg-forest-950/98 py-1 shadow-[0_12px_32px_rgba(0,0,0,0.55)] backdrop-blur-md"
+            className="absolute right-0 z-[60] mt-2 min-w-[11rem] overflow-hidden rounded-sm border border-gold-500/60 bg-[#0a1812] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.65),0_0_0_1px_rgba(166,124,45,0.28),inset_0_1px_0_rgba(240,215,138,0.1)]"
           >
             <Link
               href="/profile"
               role="menuitem"
               className={`${menuItemClass} ${
-                onProfile ? "nav-dragon-gold--active bg-forest-900/50" : ""
+                onProfile ? menuItemActiveClass : ""
               }`}
               onClick={() => setOpen(false)}
             >
@@ -248,7 +250,7 @@ export function AuthNav() {
               href="/preferences"
               role="menuitem"
               className={`${menuItemClass} ${
-                onPreferences ? "nav-dragon-gold--active bg-forest-900/50" : ""
+                onPreferences ? menuItemActiveClass : ""
               }`}
               onClick={() => setOpen(false)}
             >
@@ -259,7 +261,7 @@ export function AuthNav() {
               href="/stats"
               role="menuitem"
               className={`${menuItemClass} ${
-                onStats ? "nav-dragon-gold--active bg-forest-900/50" : ""
+                onStats ? menuItemActiveClass : ""
               }`}
               onClick={() => setOpen(false)}
             >
@@ -270,7 +272,7 @@ export function AuthNav() {
               href="/settings"
               role="menuitem"
               className={`${menuItemClass} ${
-                onSettings ? "nav-dragon-gold--active bg-forest-900/50" : ""
+                onSettings ? menuItemActiveClass : ""
               }`}
               onClick={() => setOpen(false)}
             >
@@ -278,7 +280,7 @@ export function AuthNav() {
               Settings
             </Link>
             <div
-              className="mx-2 my-1 border-t border-gold-600/25"
+              className="mx-2 my-1 border-t border-gold-600/35"
               aria-hidden="true"
             />
             <LogoutButton

@@ -189,13 +189,13 @@ export default async function ReadingStatsPage() {
               }
             />
             <StatTile
-              label="Average mark"
+              label="Your average mark"
               value={
                 stats.overallAverage !== null
                   ? stats.overallAverage.toFixed(1)
                   : "—"
               }
-              hint="Mean across all content categories"
+              hint="Across every content rating you've left — Spice, Romance, Horror, Pacing, and more"
             />
             <StatTile
               label="Most marked"

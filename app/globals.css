@@ -68,8 +68,8 @@
 @layer base {
   html {
     scroll-behavior: smooth;
-    /* Golden quill — tip hotspot at 2,2 (nib near top-left of 32×32 asset) */
-    cursor: url("/cursors/golden-quill.png") 2 2, auto;
+    /* Golden quill — tip hotspot at 2,1 (nib tip near top-left of 48×48 asset) */
+    cursor: url("/cursors/golden-quill.png") 2 1, auto;
   }
 
   body {
@@ -83,7 +83,7 @@
       radial-gradient(ellipse at 15% 0%, var(--vine) 0%, transparent 48%),
       radial-gradient(ellipse at 85% 100%, var(--glow) 0%, transparent 50%);
     background-attachment: fixed;
-    cursor: url("/cursors/golden-quill.png") 2 2, auto;
+    cursor: url("/cursors/golden-quill.png") 2 1, auto;
   }
 
   a,
@@ -94,7 +94,7 @@
   [type="button"],
   [type="submit"],
   [type="reset"] {
-    cursor: url("/cursors/golden-quill.png") 2 2, pointer;
+    cursor: url("/cursors/golden-quill.png") 2 1, pointer;
   }
 
   input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
@@ -987,6 +987,66 @@
     filter: drop-shadow(0 1px 0 rgba(40, 28, 6, 0.7));
   }
 
+  /*
+   * Match Score label badge (“Good match”, etc.).
+   * Explicit antique-gold / deep-forest borders — never white/cream outlines.
+   * Do NOT use nav-dragon-gold on this box: Chromium background-clip cream
+   * gradients paint as a white rectangle around clipped gold text.
+   */
+  .match-score-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 2px;
+    padding: 0.375rem 0.75rem;
+    border: 1px solid rgba(166, 124, 45, 0.7);
+    background: linear-gradient(
+      155deg,
+      #1f513d 0%,
+      #184033 42%,
+      #123229 100%
+    );
+    box-shadow:
+      inset 0 1px 0 rgba(201, 162, 74, 0.14),
+      inset 0 -1px 3px rgba(0, 0, 0, 0.3),
+      0 2px 8px rgba(8, 20, 14, 0.35);
+    outline: none;
+  }
+
+  .match-score-badge--excellent {
+    border-color: rgba(179, 139, 77, 0.9);
+  }
+
+  .match-score-badge--good {
+    border-color: rgba(45, 90, 65, 0.85);
+  }
+
+  .match-score-badge--moderate {
+    border-color: rgba(166, 124, 45, 0.75);
+  }
+
+  .match-score-badge--weak {
+    border-color: rgba(138, 100, 36, 0.7);
+  }
+
+  .match-score-badge-label {
+    font-family: var(--font-storybook), var(--font-display), Georgia, serif;
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.25;
+    /* Solid antique gold — no background-clip white-box risk */
+    color: #f0d78a;
+    -webkit-text-fill-color: #f0d78a;
+    background: none;
+    background-image: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    filter: none;
+    text-shadow:
+      0 1px 0 rgba(40, 28, 6, 0.85),
+      0 0 8px rgba(201, 162, 74, 0.28);
+  }
+
   /* Metadata labels/values — same antique gold as codex tags */
   .antique-gold-text {
     color: #f0d78a;
@@ -1546,6 +1606,6 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
 /* Keep the golden quill on Tailwind cursor-pointer utilities */
 @layer utilities {
   .cursor-pointer {
-    cursor: url("/cursors/golden-quill.png") 2 2, pointer;
+    cursor: url("/cursors/golden-quill.png") 2 1, pointer;
   }
 }

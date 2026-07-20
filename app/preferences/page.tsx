@@ -115,10 +115,10 @@ export default async function PreferencesPage() {
             <div className="min-w-0 sm:pt-1">
               <div className="section-label metallic-emerald-darker justify-center !text-xs !font-bold tracking-[0.32em] sm:justify-start">
                 <Sparkles className="h-3.5 w-3.5 text-[#0a1f18]" />
-                The Preference Codex
+                Comfort Levels
               </div>
               <h1 className="metallic-emerald-deep mt-2 font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
-                {displayName}&apos;s Preferences
+                {displayName}&apos;s Preference Codex
               </h1>
               <div
                 className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent sm:mx-0"

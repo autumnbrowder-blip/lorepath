@@ -63,9 +63,8 @@ export function getMatchStyle(score: number): {
       ring: "stroke-gold-500",
       text: "nav-dragon-gold",
       bar: "bg-gradient-to-r from-gold-500 to-gold-300",
-      // Border/bg only — label text uses nav-dragon-gold on an inner span
-      // so background-clip gold is not overridden by badge fill.
-      badge: "border-gold-600/55 bg-forest-950/55",
+      // Tier modifier for .match-score-badge (globals.css) — antique gold / deep green only
+      badge: "match-score-badge--excellent",
       gradient: "from-gold-950/20 via-forest-950 to-gold-950/10",
     };
   }
@@ -74,7 +73,7 @@ export function getMatchStyle(score: number): {
       ring: "stroke-forest-500",
       text: "nav-dragon-gold",
       bar: "bg-gradient-to-r from-forest-600 to-forest-400",
-      badge: "border-forest-500/50 bg-forest-950/55",
+      badge: "match-score-badge--good",
       gradient: "from-forest-950/20 via-forest-950 to-forest-900/10",
     };
   }
@@ -83,7 +82,7 @@ export function getMatchStyle(score: number): {
       ring: "stroke-gold-600",
       text: "nav-dragon-gold",
       bar: "bg-gradient-to-r from-gold-600 to-gold-400",
-      badge: "border-gold-700/50 bg-forest-950/55",
+      badge: "match-score-badge--moderate",
       gradient: "from-gold-950/15 via-forest-950 to-gold-950/10",
     };
   }
@@ -91,7 +90,7 @@ export function getMatchStyle(score: number): {
     ring: "stroke-gold-800",
     text: "nav-dragon-gold",
     bar: "bg-gradient-to-r from-gold-800 to-gold-600",
-    badge: "border-gold-800/60 bg-forest-950/60",
+    badge: "match-score-badge--weak",
     gradient: "from-gold-950/25 via-forest-950 to-gold-950/15",
   };
 }

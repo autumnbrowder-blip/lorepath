@@ -140,12 +140,8 @@ export function MatchScore({
           textClass={style.text}
         />
         <div className="min-w-0 space-y-2">
-          <span
-            className={`inline-flex rounded-sm border px-2.5 py-1 ${style.badge}`}
-          >
-            <span className="font-storybook text-sm font-bold tracking-wide nav-dragon-gold">
-              {label}
-            </span>
+          <span className={`match-score-badge ${style.badge}`}>
+            <span className="match-score-badge-label">{label}</span>
           </span>
           <p className="font-heading text-xs leading-snug nav-dragon-gold">
             Community ratings vs your preferences.
@@ -157,7 +153,7 @@ export function MatchScore({
         {breakdown.map((item, index) => (
           <div
             key={item.label}
-            className="rounded-sm border border-gold-600/25 bg-forest-950/40 px-2.5 py-2"
+            className="rounded-sm border border-gold-600/35 bg-forest-950/45 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)]"
             style={{ animationDelay: `${index * 40}ms` }}
           >
             <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
@@ -168,7 +164,7 @@ export function MatchScore({
                 {item.score}%
               </span>
             </div>
-            <div className="h-1 overflow-hidden rounded-sm border border-gold-600/20 bg-forest-950/65">
+            <div className="h-1 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/65">
               <div
                 className={`h-full rounded-sm ${style.bar}`}
                 style={{ width: `${item.score}%` }}
