@@ -665,6 +665,8 @@ export async function submitUserRating(
     return { success: false, error: bookResult.error };
   }
 
+  // Always include romance — do not strip it on schema errors (that made saves
+  // appear to succeed while Romance never persisted).
   const row = {
     book_id: bookResult.bookDbId,
     rated_by: sessionUserId,
@@ -677,17 +679,9 @@ export async function submitUserRating(
   };
 
   // Write without .select() so INSERT/UPDATE failures are unambiguous.
-  let { error } = await supabase
+  const { error } = await supabase
     .from("ratings")
     .upsert(row, { onConflict: "book_id,rated_by" });
-
-  if (error && isMissingRomanceColumn(error.message)) {
-    const { romance: _romance, ...legacyRow } = row;
-    const legacy = await supabase
-      .from("ratings")
-      .upsert(legacyRow, { onConflict: "book_id,rated_by" });
-    error = legacy.error;
-  }
 
   if (error) {
     return { success: false, error: formatRatingError(error.message) };
@@ -708,7 +702,14 @@ export async function submitUserRating(
     };
   }
 
+  const expected = normalizeUserRating(ratings);
   const userRating = readBack.data;
+
+  // If the romance column is missing, read-back defaults Romance to 0 and looks
+  // "saved." Fail loudly instead of silently dropping the user's mark.
+  if (userRating.romance !== expected.romance) {
+    return { success: false, error: ROMANCE_HINT };
+  }
 
   const allRatings = await fetchAllRatingsForBook(
     supabase,

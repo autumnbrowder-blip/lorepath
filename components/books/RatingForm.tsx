@@ -75,10 +75,16 @@ export function RatingForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  /** True once a saved rating exists for this book (SSR, GET, or after first save). */
+  const [hasExistingRating, setHasExistingRating] = useState(
+    initialRatings != null
+  );
   /** Keeps confirmed marks across a refresh that temporarily returns null. */
   const confirmedRef = useRef<ContentRating | null>(initialRatings);
   /** True after the user moves a slider; blocks late GET hydrates from clobbering edits. */
   const dirtyRef = useRef(false);
+  /** Distinguishes first inscription vs rewriting marks in success copy. */
+  const wasUpdatingRef = useRef(initialRatings != null);
 
   async function authHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
@@ -105,6 +111,7 @@ export function RatingForm({
   function applyConfirmedRating(next: ContentRating) {
     confirmedRef.current = next;
     dirtyRef.current = false;
+    setHasExistingRating(true);
     setRatings((prev) => (ratingsEqual(prev, next) ? prev : next));
   }
 
@@ -121,6 +128,7 @@ export function RatingForm({
       return;
     }
     if (confirmedRef.current != null) {
+      setHasExistingRating(true);
       setRatings(confirmedRef.current);
     }
   }, [initialRatings]);
@@ -181,6 +189,7 @@ export function RatingForm({
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    wasUpdatingRef.current = hasExistingRating;
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -211,6 +220,7 @@ export function RatingForm({
         applyConfirmedRating(data.userRating);
       } else {
         confirmedRef.current = ratings;
+        setHasExistingRating(true);
       }
 
       if (data.communityRatings) {
@@ -280,10 +290,14 @@ export function RatingForm({
               id="rate-book-heading"
               className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
             >
-              Inscribe Your Rating
+              {hasExistingRating
+                ? "Update Your Rating"
+                : "Inscribe Your Rating"}
             </h2>
             <p className="font-heading text-sm nav-dragon-gold">
-              Mark this tome across each content category
+              {hasExistingRating
+                ? "Revise your marks — changes will rewrite the prior inscription"
+                : "Mark this tome across each content category"}
             </p>
           </div>
         </div>
@@ -325,7 +339,9 @@ export function RatingForm({
                   <div className="alert-success">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#f0d78a]" />
                     <p className="font-heading text-sm nav-dragon-gold">
-                      Your marks have been recorded in the tome.
+                      {wasUpdatingRef.current
+                        ? "Your marks have been rewritten in the tome."
+                        : "Your marks have been recorded in the tome."}
                     </p>
                   </div>
                 ) : null}
@@ -360,7 +376,7 @@ export function RatingForm({
                   ) : (
                     <Send className="h-4 w-4" />
                   )}
-                  Submit Rating
+                  {hasExistingRating ? "Update Rating" : "Submit Rating"}
                 </button>
               </form>
             </>

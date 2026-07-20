@@ -137,13 +137,15 @@ export function MatchScore({
         <ScoreRing
           score={score}
           ringClass={style.ring}
-          textClass="nav-dragon-gold"
+          textClass={style.text}
         />
         <div className="min-w-0 space-y-2">
           <span
-            className={`inline-flex rounded-sm border px-2.5 py-1 font-storybook text-sm font-bold tracking-wide ${style.badge}`}
+            className={`inline-flex rounded-sm border px-2.5 py-1 ${style.badge}`}
           >
-            {label}
+            <span className="font-storybook text-sm font-bold tracking-wide nav-dragon-gold">
+              {label}
+            </span>
           </span>
           <p className="font-heading text-xs leading-snug nav-dragon-gold">
             Community ratings vs your preferences.
