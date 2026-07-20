@@ -162,7 +162,11 @@ export async function searchBooks(
   }
 
   const hardcoverConfigured = Boolean(process.env.HARDCOVER_API_TOKEN?.trim());
-  if (
+  if (!hardcoverConfigured && pageNumber === 1) {
+    console.error(
+      "[searchBooks] HARDCOVER_API_TOKEN not set — Hardcover will contribute 0 results. Set it in .env.local / Netlify (no spaces in the name)."
+    );
+  } else if (
     hardcoverConfigured &&
     pageNumber === 1 &&
     hardcoverSettled.status === "fulfilled" &&
@@ -287,17 +291,23 @@ export const getBookById = cache(async function getBookById(
 
   if (!book) return null;
 
+  // Keep the route/external id stable. NYT and ISBNdb lookups may resolve via
+  // Google Books and temporarily swap `book.id`; ratings are keyed by slug, so
+  // the URL id and save/load id must match or marks vanish on refresh.
+  book = { ...book, id };
+
   const enriched = await enrichBookDetail(book);
   const withIsbndb = await enrichBookDetailWithIsbndb(enriched);
+  const canonical = { ...withIsbndb, id };
 
   let sexualContentAverage: number | null = null;
   try {
     const { getCommunityRatings } = await import("@/lib/ratings");
-    const community = await getCommunityRatings(withIsbndb.id);
+    const community = await getCommunityRatings(id);
     sexualContentAverage = community.averages?.sexual_content ?? null;
   } catch {
     // Ratings are optional for tagging.
   }
 
-  return withFinalizedTags(withIsbndb, { sexualContentAverage });
+  return withFinalizedTags(canonical, { sexualContentAverage });
 });

@@ -390,6 +390,9 @@ export async function getCommunityRatings(
  * Load the signed-in user's rating for a book (by external/slug id).
  * Prefer service-role read so JWT/RLS gaps cannot blank the form after a
  * successful service-role write. Falls back to the session client.
+ *
+ * Identity: `userId` must be the verified auth user id (same value written to
+ * `rated_by` on save). Book slug must match the route id used on POST.
  */
 export async function getUserRatingForBook(
   bookExternalId: string,
@@ -397,7 +400,7 @@ export async function getUserRatingForBook(
 ): Promise<ContentRating | null> {
   noStore();
 
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || !userId || !bookExternalId) {
     return null;
   }
 

@@ -117,7 +117,7 @@ export default async function BookDetailPage({
 
           <div className="book-detail-tome-content relative z-[2]">
             <BookRatingsProvider
-              bookId={book.id}
+              bookId={id}
               initialCommunityRatings={communityRatings}
             >
               <BookInformation
@@ -131,8 +131,8 @@ export default async function BookDetailPage({
                 }
                 ratingForm={
                   <RatingForm
-                    key={book.id}
-                    bookId={book.id}
+                    key={id}
+                    bookId={id}
                     isLoggedIn={!!user}
                     initialRatings={userRating}
                   />

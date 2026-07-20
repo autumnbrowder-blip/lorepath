@@ -77,15 +77,47 @@ export function RatingForm({
   const [success, setSuccess] = useState(false);
   /** Keeps confirmed marks across a refresh that temporarily returns null. */
   const confirmedRef = useRef<ContentRating | null>(initialRatings);
+  /** True after the user moves a slider; blocks late GET hydrates from clobbering edits. */
+  const dirtyRef = useRef(false);
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    try {
+      const supabase = createClient();
+      let {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        const refreshed = await supabase.auth.refreshSession();
+        session = refreshed.data.session;
+      }
+      if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+      }
+    } catch {
+      // Fall back to cookie session on the API.
+    }
+    return headers;
+  }
+
+  function applyConfirmedRating(next: ContentRating) {
+    confirmedRef.current = next;
+    dirtyRef.current = false;
+    setRatings((prev) => (ratingsEqual(prev, next) ? prev : next));
+  }
+
+  function applyCommunityRatings(next: CommunityRatingsSummary) {
+    ratingsCtx?.setCommunityRatings(next);
+    onRatingsUpdated?.(next);
+  }
 
   // Hydrate from server when a saved rating exists. Do not wipe just-saved
   // values if SSR briefly returns null after router.refresh().
   useEffect(() => {
     if (initialRatings != null) {
-      confirmedRef.current = initialRatings;
-      setRatings((prev) =>
-        ratingsEqual(prev, initialRatings) ? prev : initialRatings
-      );
+      applyConfirmedRating(initialRatings);
       return;
     }
     if (confirmedRef.current != null) {
@@ -93,7 +125,55 @@ export function RatingForm({
     }
   }, [initialRatings]);
 
+  // Client re-fetch so a full page load still picks up the latest marks even if
+  // SSR briefly misses them (same source of truth as POST).
+  useEffect(() => {
+    if (!isLoggedIn || !bookId) return;
+
+    let cancelled = false;
+
+    async function hydrateFromApi() {
+      try {
+        const headers = await authHeaders();
+        const response = await fetch(`/api/books/${bookId}/ratings`, {
+          method: "GET",
+          headers,
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok || cancelled) return;
+
+        const data = (await response.json()) as {
+          userRating?: ContentRating | null;
+          averages?: ContentRating | null;
+          count?: number;
+        };
+
+        if (cancelled) return;
+
+        if (data.userRating && !dirtyRef.current) {
+          applyConfirmedRating(data.userRating);
+        }
+
+        if (typeof data.count === "number") {
+          applyCommunityRatings({
+            averages: data.averages ?? null,
+            count: data.count,
+          });
+        }
+      } catch {
+        // SSR props remain the fallback.
+      }
+    }
+
+    void hydrateFromApi();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, isLoggedIn]);
+
   function updateRating(key: keyof ContentRating, value: number) {
+    dirtyRef.current = true;
     setRatings((prev) => ({ ...prev, [key]: value }));
     setSuccess(false);
     setError(null);
@@ -106,24 +186,7 @@ export function RatingForm({
     setSuccess(false);
 
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      try {
-        const supabase = createClient();
-        let {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          const refreshed = await supabase.auth.refreshSession();
-          session = refreshed.data.session;
-        }
-        if (session?.access_token) {
-          headers.Authorization = `Bearer ${session.access_token}`;
-        }
-      } catch {
-        // Fall back to cookie session on the API.
-      }
+      const headers = await authHeaders();
 
       const response = await fetch(`/api/books/${bookId}/ratings`, {
         method: "POST",
@@ -145,15 +208,41 @@ export function RatingForm({
 
       // Prefer confirmed values from the API so remount/refresh cannot blank to zeros.
       if (data.userRating) {
-        confirmedRef.current = data.userRating;
-        setRatings(data.userRating);
+        applyConfirmedRating(data.userRating);
       } else {
         confirmedRef.current = ratings;
       }
 
       if (data.communityRatings) {
-        ratingsCtx?.setCommunityRatings(data.communityRatings);
-        onRatingsUpdated?.(data.communityRatings);
+        applyCommunityRatings(data.communityRatings);
+      }
+
+      // Re-fetch GET so community + user marks match what a refresh will show.
+      try {
+        const refresh = await fetch(`/api/books/${bookId}/ratings`, {
+          method: "GET",
+          headers,
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (refresh.ok) {
+          const latest = (await refresh.json()) as {
+            userRating?: ContentRating | null;
+            averages?: ContentRating | null;
+            count?: number;
+          };
+          if (latest.userRating) {
+            applyConfirmedRating(latest.userRating);
+          }
+          if (typeof latest.count === "number") {
+            applyCommunityRatings({
+              averages: latest.averages ?? null,
+              count: latest.count,
+            });
+          }
+        }
+      } catch {
+        // POST payload already applied above.
       }
 
       setSuccess(true);

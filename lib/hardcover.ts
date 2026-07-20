@@ -61,7 +61,7 @@ function isUsableHardcoverSearchBook(book: BookSummary): boolean {
   return hasCover(book) || hasDescription(book);
 }
 
-function withDescriptionFallback(book: BookSummary): BookSummary {
+function withDescriptionFallback<T extends BookSummary>(book: T): T {
   if (hasDescription(book)) return book;
   return { ...book, description: MISSING_DESCRIPTION_FALLBACK };
 }
