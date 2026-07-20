@@ -68,6 +68,8 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    /* Golden quill — tip hotspot at 2,2 (nib near top-left of 32×32 asset) */
+    cursor: url("/cursors/golden-quill.png") 2 2, auto;
   }
 
   body {
@@ -81,6 +83,29 @@
       radial-gradient(ellipse at 15% 0%, var(--vine) 0%, transparent 48%),
       radial-gradient(ellipse at 85% 100%, var(--glow) 0%, transparent 50%);
     background-attachment: fixed;
+    cursor: url("/cursors/golden-quill.png") 2 2, auto;
+  }
+
+  a,
+  button,
+  label,
+  summary,
+  [role="button"],
+  [type="button"],
+  [type="submit"],
+  [type="reset"] {
+    cursor: url("/cursors/golden-quill.png") 2 2, pointer;
+  }
+
+  input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
+  }
+
+  :disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
   }
 
   .dark body {
@@ -1515,5 +1540,12 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
 
   html {
     scroll-behavior: auto;
+  }
+}
+
+/* Keep the golden quill on Tailwind cursor-pointer utilities */
+@layer utilities {
+  .cursor-pointer {
+    cursor: url("/cursors/golden-quill.png") 2 2, pointer;
   }
 }
