@@ -42,10 +42,11 @@ Set the same variables in **Netlify → Site configuration → Environment varia
 **Hardcover specifically** (if the browse UI shows no Hardcover hits / a config warning):
 
 1. Exact name: `HARDCOVER_API_TOKEN` (no spaces, no `NEXT_PUBLIC_` prefix).
-2. Value: the raw JWT from Hardcover settings — do **not** include a `Bearer ` prefix (the app adds that).
-3. Scopes: enable for **Production** (and Preview if you test deploy previews).
+2. Value: the raw JWT from Hardcover settings — do **not** include a `Bearer ` prefix or wrapping quotes (the app adds `Bearer `).
+3. Scopes: enable for **Production** (and Preview if you test deploy previews), including **Runtime / Functions** — not Builds-only.
 4. Trigger a **new deploy** after saving — changing env alone does not update an already-running site.
-5. Confirm in function logs: you should see `[Hardcover] searchHardcover done` with `books > 0`, not `HARDCOVER_API_TOKEN is missing`.
+5. Confirm in function logs: you should see `[Hardcover] searchHardcover done` with `books > 0`, not `HARDCOVER_API_TOKEN is missing` or `unauthorized`.
+6. Local check: with the token in `.env.local`, restart `npm run dev`, search `dune` on Browse — the source chip should show `Hardcover (N)` with N > 0.
 
 ## Project structure
 

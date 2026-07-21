@@ -53,6 +53,7 @@ export function BookSearch({
   const [hardcoverConfigured, setHardcoverConfigured] = useState<
     boolean | null
   >(null);
+  const [hardcoverHint, setHardcoverHint] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -86,7 +87,11 @@ export function BookSearch({
       source?: BookSource;
       sourceCounts?: Partial<Record<BookSource, number>>;
       providerStatus?: {
-        hardcover?: { configured: boolean };
+        hardcover?: {
+          configured: boolean;
+          failureReason?: string | null;
+          hint?: string | null;
+        };
       };
       hasMore?: boolean;
       page?: number;
@@ -132,6 +137,7 @@ export function BookSearch({
       setHardcoverConfigured(
         data.providerStatus?.hardcover?.configured ?? null
       );
+      setHardcoverHint(data.providerStatus?.hardcover?.hint ?? null);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -139,6 +145,7 @@ export function BookSearch({
       setSources([]);
       setSourceCounts({});
       setHardcoverConfigured(null);
+      setHardcoverHint(null);
       setHasMore(false);
       setError(
         err instanceof Error ? err.message : "Something went wrong. Try again."
@@ -180,6 +187,9 @@ export function BookSearch({
       }));
       if (data.providerStatus?.hardcover) {
         setHardcoverConfigured(data.providerStatus.hardcover.configured);
+        if (data.providerStatus.hardcover.hint) {
+          setHardcoverHint(data.providerStatus.hardcover.hint);
+        }
       }
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
@@ -341,8 +351,8 @@ export function BookSearch({
                 Searching the archives...
               </p>
               <p className="mt-2 font-heading text-base text-[#4a2f0f]/85">
-                Consulting Google Books, Open Library, Project Gutenberg, and
-                ISBNdb together.
+                Consulting Hardcover, Google Books, Open Library, Project
+                Gutenberg, and ISBNdb together.
               </p>
             </div>
           )}
@@ -387,13 +397,26 @@ export function BookSearch({
                   </p>
                   {hardcoverConfigured === false && (
                     <p className="mt-2 font-heading text-xs tracking-wide text-[#c4a35a]/90">
-                      Hardcover is not configured on the server. Set{" "}
-                      <span className="font-storybook tracking-[0.08em]">
-                        HARDCOVER_API_TOKEN
-                      </span>{" "}
-                      in Netlify (or .env.local) and redeploy.
+                      {hardcoverHint ?? (
+                        <>
+                          Hardcover is not configured on the server. Set{" "}
+                          <span className="font-storybook tracking-[0.08em]">
+                            HARDCOVER_API_TOKEN
+                          </span>{" "}
+                          in Netlify (Production + Runtime scopes) or .env.local,
+                          then redeploy / restart.
+                        </>
+                      )}
                     </p>
                   )}
+                  {hardcoverConfigured === true &&
+                    typeof sourceCounts.hardcover === "number" &&
+                    sourceCounts.hardcover === 0 &&
+                    hardcoverHint && (
+                      <p className="mt-2 font-heading text-xs tracking-wide text-[#c4a35a]/90">
+                        Hardcover returned no usable results. {hardcoverHint}
+                      </p>
+                    )}
                 </div>
                 {sources.length > 0 && (
                   <div className="flex flex-wrap gap-2 sm:justify-end">

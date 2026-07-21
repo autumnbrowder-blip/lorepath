@@ -40,7 +40,13 @@ export type BookSearchResult = {
   sourceCounts: Partial<Record<BookSource, number>>;
   /** Non-secret provider readiness (e.g. missing API tokens). */
   providerStatus?: {
-    hardcover?: { configured: boolean };
+    hardcover?: {
+      configured: boolean;
+      /** Machine-readable reason when Hardcover contributed 0 books. */
+      failureReason?: string | null;
+      /** Safe user-facing hint (never includes secrets). */
+      hint?: string | null;
+    };
   };
   /** Summary label for the search (use `sources` for per-provider detail). */
   source: BookSearchSource;

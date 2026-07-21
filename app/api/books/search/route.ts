@@ -3,6 +3,10 @@ import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
 import { NextResponse } from "next/server";
 
+/** Always hit providers at request time (token + live search). */
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 /** Search books via Hardcover, Google Books, Open Library, Gutendex, and ISBNdb. */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -21,7 +25,11 @@ export async function GET(request: Request) {
 
   try {
     const result = await searchBooks(query, page, { mode });
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
   } catch (error) {
     if (error instanceof RateLimitError) {
       return NextResponse.json(

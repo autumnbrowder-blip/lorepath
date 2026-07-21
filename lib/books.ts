@@ -18,6 +18,7 @@ import {
   isHardcoverConfigured,
   isHardcoverId,
   searchHardcover,
+  type HardcoverSearchDiagnostics,
 } from "@/lib/hardcover";
 import {
   enrichBookDetailWithIsbndb,
@@ -86,6 +87,12 @@ export async function searchBooks(
     ? { mode: "genre" }
     : undefined;
 
+  type HardcoverPageResult = {
+    books: BookSummary[];
+    hasMore: boolean;
+    diagnostics: HardcoverSearchDiagnostics | null;
+  };
+
   const [
     hardcoverSettled,
     googleSettled,
@@ -95,14 +102,27 @@ export async function searchBooks(
   ] = await Promise.allSettled([
     // Hardcover has no pagination here — only query page 1.
     pageNumber === 1
-      ? searchHardcover(searchQuery).then((books) => {
-          console.info("[searchBooks] Hardcover settled", {
-            query: searchQuery,
-            count: books.length,
-          });
-          return { books, hasMore: false };
-        })
-      : Promise.resolve({ books: [] as BookSummary[], hasMore: false }),
+      ? searchHardcover(searchQuery).then(
+          (outcome): HardcoverPageResult => {
+            console.info("[searchBooks] Hardcover settled", {
+              query: searchQuery,
+              count: outcome.books.length,
+              failureReason: outcome.diagnostics.failureReason,
+              tokenChars: outcome.diagnostics.tokenChars,
+              httpStatus: outcome.diagnostics.httpStatus,
+            });
+            return {
+              books: outcome.books,
+              hasMore: false,
+              diagnostics: outcome.diagnostics,
+            };
+          }
+        )
+      : Promise.resolve({
+          books: [] as BookSummary[],
+          hasMore: false,
+          diagnostics: null,
+        } satisfies HardcoverPageResult),
     searchGoogleBooks(searchQuery, pageNumber, searchOptions),
     searchOpenLibrary(searchQuery, pageNumber, searchOptions),
     searchGutendex(searchQuery, pageNumber, searchOptions),
@@ -145,6 +165,11 @@ export async function searchBooks(
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
   const isbndbResult = readSettledPage("ISBNdb", isbndbSettled);
 
+  const hardcoverDiagnostics: HardcoverSearchDiagnostics | null =
+    hardcoverSettled.status === "fulfilled"
+      ? hardcoverSettled.value.diagnostics
+      : null;
+
   const hardcoverBooks = hardcoverResult.books;
   const googleBooks = googleResult.books;
   const openLibraryBooks = openLibraryResult.books;
@@ -162,10 +187,11 @@ export async function searchBooks(
     );
   }
 
-  const hardcoverConfigured = isHardcoverConfigured();
+  const hardcoverConfigured =
+    hardcoverDiagnostics?.configured ?? isHardcoverConfigured();
   if (!hardcoverConfigured && pageNumber === 1) {
     console.error(
-      "[searchBooks] HARDCOVER_API_TOKEN not set — Hardcover will contribute 0 results. Set exact name HARDCOVER_API_TOKEN in .env.local and Netlify (raw JWT, no Bearer, no NEXT_PUBLIC_), then redeploy."
+      "[searchBooks] HARDCOVER_API_TOKEN not set — Hardcover will contribute 0 results. Set exact name HARDCOVER_API_TOKEN in .env.local and Netlify (raw JWT, no Bearer, no quotes, no NEXT_PUBLIC_; Production + Runtime scopes), then redeploy."
     );
   } else if (
     hardcoverConfigured &&
@@ -179,6 +205,11 @@ export async function searchBooks(
         query: searchQuery,
         page: pageNumber,
         mode: options?.mode ?? "text",
+        failureReason: hardcoverDiagnostics?.failureReason ?? null,
+        httpStatus: hardcoverDiagnostics?.httpStatus ?? null,
+        idsFound: hardcoverDiagnostics?.idsFound ?? null,
+        hitsFound: hardcoverDiagnostics?.hitsFound ?? null,
+        hint: hardcoverDiagnostics?.hint ?? null,
       }
     );
   }
@@ -241,7 +272,17 @@ export async function searchBooks(
     sources: SEARCH_SOURCES,
     sourceCounts,
     providerStatus: {
-      hardcover: { configured: hardcoverConfigured },
+      hardcover: {
+        configured: hardcoverConfigured,
+        failureReason: hardcoverDiagnostics?.failureReason ?? null,
+        hint:
+          hardcoverBooks.length === 0
+            ? (hardcoverDiagnostics?.hint ??
+              (!hardcoverConfigured
+                ? "Set HARDCOVER_API_TOKEN in Netlify or .env.local and redeploy."
+                : null))
+            : null,
+      },
     },
     source: "multi",
     page: pageNumber,

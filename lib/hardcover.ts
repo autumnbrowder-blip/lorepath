@@ -10,7 +10,8 @@ import type { BookDetail, BookSummary } from "@/types/book";
 
 const HARDCOVER_API_URL = "https://api.hardcover.app/v1/graphql";
 export const HARDCOVER_ID_PREFIX = "hardcover-";
-const FETCH_TIMEOUT_MS = 10000;
+/** Netlify cold starts + search+hydrate can exceed 10s. */
+const FETCH_TIMEOUT_MS = 15000;
 const MISSING_DESCRIPTION_FALLBACK = "No description available.";
 
 /** Common misnamed env keys — log a hint if the real key is missing. */
@@ -21,16 +22,79 @@ const HARDCOVER_TOKEN_ALIASES = [
   "NEXT_PUBLIC_HARDCOVER_API_TOKEN",
 ] as const;
 
+export type HardcoverFailureReason =
+  | "missing_token"
+  | "http_error"
+  | "unauthorized"
+  | "graphql_error"
+  | "search_error"
+  | "empty_response"
+  | "quality_filtered"
+  | "timeout"
+  | "network_error";
+
+export type HardcoverSearchDiagnostics = {
+  configured: boolean;
+  /** Length only — never the secret itself. */
+  tokenChars: number;
+  httpStatus: number | null;
+  idsFound: number;
+  hitsFound: number;
+  booksReturned: number;
+  failureReason: HardcoverFailureReason | null;
+  /** Short, safe, user-facing hint (no secrets). */
+  hint: string | null;
+};
+
+const EMPTY_DIAGNOSTICS: HardcoverSearchDiagnostics = {
+  configured: false,
+  tokenChars: 0,
+  httpStatus: null,
+  idsFound: 0,
+  hitsFound: 0,
+  booksReturned: 0,
+  failureReason: null,
+  hint: null,
+};
+
+/** Bracket access — some host bundlers inline `process.env.NAME` at build time. */
+function readProcessEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Normalize a dashboard-pasted token: BOM, quotes, Bearer prefix, whitespace.
+ * Never log the returned value.
+ */
+function sanitizeHardcoverToken(raw: string): string | null {
+  let token = raw.replace(/^\uFEFF/, "").trim();
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    token = token.slice(1, -1).trim();
+  }
+  if (/^Bearer\s+/i.test(token)) {
+    token = token.replace(/^Bearer\s+/i, "").trim();
+  }
+  // JWTs are base64url — strip accidental newlines/spaces from copy-paste.
+  token = token.replace(/\s+/g, "");
+  return token || null;
+}
+
 /**
  * Read token from `.env.local` / host env as `HARDCOVER_API_TOKEN` (exact name).
- * Server-only — never use `NEXT_PUBLIC_`. Strip an accidental `Bearer ` prefix.
+ * Server-only — never use `NEXT_PUBLIC_`.
  */
 function getHardcoverToken(): string | null {
-  let token = process.env.HARDCOVER_API_TOKEN?.trim();
+  const raw = readProcessEnv("HARDCOVER_API_TOKEN");
+  const token = raw ? sanitizeHardcoverToken(raw) : null;
   if (!token) {
-    const foundAlias = HARDCOVER_TOKEN_ALIASES.find((key) =>
-      Boolean(process.env[key]?.trim())
-    );
+    const foundAlias = HARDCOVER_TOKEN_ALIASES.find((key) => {
+      const aliasRaw = readProcessEnv(key);
+      return Boolean(aliasRaw && sanitizeHardcoverToken(aliasRaw));
+    });
     if (foundAlias) {
       console.error(
         `[Hardcover] Found ${foundAlias} but LorePath reads HARDCOVER_API_TOKEN. Rename the env var (no NEXT_PUBLIC_, no spaces) and redeploy.`
@@ -38,15 +102,40 @@ function getHardcoverToken(): string | null {
     }
     return null;
   }
-  if (/^Bearer\s+/i.test(token)) {
-    token = token.replace(/^Bearer\s+/i, "").trim();
-  }
-  return token || null;
+  return token;
 }
 
 /** Whether a usable HARDCOVER_API_TOKEN is present (server-only). */
 export function isHardcoverConfigured(): boolean {
   return Boolean(getHardcoverToken());
+}
+
+function hintForFailure(
+  reason: HardcoverFailureReason | null,
+  httpStatus: number | null
+): string | null {
+  switch (reason) {
+    case "missing_token":
+      return "Set HARDCOVER_API_TOKEN in Netlify (Production + Runtime scopes) or .env.local, then redeploy / restart dev.";
+    case "unauthorized":
+      return "Hardcover rejected the API token (HTTP 401/403). Paste the raw JWT from hardcover.app/account/api — no Bearer prefix, no quotes — then redeploy.";
+    case "http_error":
+      return `Hardcover HTTP ${httpStatus ?? "error"}. Check Netlify function logs for [Hardcover].`;
+    case "graphql_error":
+      return "Hardcover GraphQL rejected the query. Check server logs for [Hardcover] GraphQL errors.";
+    case "search_error":
+      return "Hardcover search returned an error payload. Check server logs for [Hardcover] search.error.";
+    case "empty_response":
+      return "Hardcover returned no matches for this query.";
+    case "quality_filtered":
+      return "Hardcover returned hits, but none had a usable cover or description after parsing.";
+    case "timeout":
+      return "Hardcover timed out. Try again; cold starts on Netlify can be slow.";
+    case "network_error":
+      return "Could not reach api.hardcover.app. Check outbound network / server logs.";
+    default:
+      return null;
+  }
 }
 
 async function fetchHardcoverGraphql(
@@ -368,7 +457,16 @@ function extractSearchHits(
   const hits = results?.hits;
   if (!Array.isArray(hits)) return [];
   return hits
-    .map((hit) => hit.document)
+    .map((hit) => {
+      if (!hit || typeof hit !== "object") return null;
+      if (hit.document) return hit.document;
+      // Defensive: some payloads put book fields on the hit itself.
+      const loose = hit as HardcoverSearchHit & {
+        document?: HardcoverSearchHit;
+      };
+      if (loose.id != null || loose.title != null) return loose;
+      return null;
+    })
     .filter((doc): doc is HardcoverSearchHit => Boolean(doc));
 }
 
@@ -391,6 +489,11 @@ const BOOK_FIELDS = `
   cached_tags
 `;
 
+export type HardcoverSearchOutcome = {
+  books: BookSummary[];
+  diagnostics: HardcoverSearchDiagnostics;
+};
+
 /**
  * Search Hardcover.app via the official Typesense `search` query.
  * Uses API defaults for fields/weights (same as hardcover.app book search).
@@ -398,27 +501,53 @@ const BOOK_FIELDS = `
  * missing blurbs so merge/finalize can still use cover-only hits).
  *
  * Important: `_ilike` / `_like` filters are disabled by Hardcover and return errors.
+ * Auth: `Authorization: Bearer <raw JWT>` to https://api.hardcover.app/v1/graphql
  */
-export async function searchHardcover(query: string): Promise<BookSummary[]> {
+export async function searchHardcover(
+  query: string
+): Promise<HardcoverSearchOutcome> {
   const trimmed = query.trim();
   const token = getHardcoverToken();
 
   if (!trimmed) {
     console.warn("[Hardcover] searchHardcover skipped: empty query");
-    return [];
+    return { books: [], diagnostics: { ...EMPTY_DIAGNOSTICS } };
   }
 
   if (!token) {
     console.error(
-      "[Hardcover] HARDCOVER_API_TOKEN is missing. Add it to .env.local and Netlify → Site configuration → Environment variables (exact name, raw JWT, no Bearer prefix, no NEXT_PUBLIC_). Redeploy after saving."
+      "[Hardcover] HARDCOVER_API_TOKEN is missing. Add it to .env.local and Netlify → Site configuration → Environment variables (exact name, raw JWT, no Bearer prefix, no quotes, no NEXT_PUBLIC_). Enable Production (+ Preview if needed) and Runtime/Functions scopes. Redeploy after saving."
     );
-    return [];
+    const failureReason: HardcoverFailureReason = "missing_token";
+    return {
+      books: [],
+      diagnostics: {
+        ...EMPTY_DIAGNOSTICS,
+        failureReason,
+        hint: hintForFailure(failureReason, null),
+      },
+    };
   }
 
+  const jwtParts = token.split(".").length;
   console.info("[Hardcover] searchHardcover start", {
     query: trimmed,
     tokenChars: token.length,
+    jwtLike: jwtParts === 3,
+    authHeader: "Authorization: Bearer <redacted>",
+    endpoint: HARDCOVER_API_URL,
   });
+
+  const baseDiag: HardcoverSearchDiagnostics = {
+    configured: true,
+    tokenChars: token.length,
+    httpStatus: null,
+    idsFound: 0,
+    hitsFound: 0,
+    booksReturned: 0,
+    failureReason: null,
+    hint: null,
+  };
 
   try {
     // Omit custom fields/weights so Typesense uses Hardcover's book defaults.
@@ -443,36 +572,71 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       token
     );
 
+    baseDiag.httpStatus = response.status;
+
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       console.error("[Hardcover] HTTP error:", {
         status: response.status,
         statusText: response.statusText,
         body: body.slice(0, 500),
+        tokenChars: token.length,
       });
-      return [];
+      const failureReason: HardcoverFailureReason =
+        response.status === 401 || response.status === 403
+          ? "unauthorized"
+          : "http_error";
+      return {
+        books: [],
+        diagnostics: {
+          ...baseDiag,
+          failureReason,
+          hint: hintForFailure(failureReason, response.status),
+        },
+      };
     }
 
     const payload = (await response.json()) as HardcoverSearchResponse;
 
     if (payload.errors?.length) {
       console.error("[Hardcover] GraphQL errors:", payload.errors);
-      return [];
+      const failureReason: HardcoverFailureReason = "graphql_error";
+      return {
+        books: [],
+        diagnostics: {
+          ...baseDiag,
+          failureReason,
+          hint: hintForFailure(failureReason, response.status),
+        },
+      };
     }
 
     const searchError = payload.data?.search?.error;
     if (searchError) {
       console.error("[Hardcover] search.error:", searchError);
-      return [];
+      const failureReason: HardcoverFailureReason = "search_error";
+      return {
+        books: [],
+        diagnostics: {
+          ...baseDiag,
+          failureReason,
+          hint: hintForFailure(failureReason, response.status),
+        },
+      };
     }
 
     const ids = extractSearchIds(payload);
     const hits = extractSearchHits(payload);
+    baseDiag.idsFound = ids.length;
+    baseDiag.hitsFound = hits.length;
+
     let books = hits
       .map(parseHardcoverSearchHit)
       .filter((book): book is BookSummary => book !== null);
 
-    const incomplete = books.filter((book) => !isUsableHardcoverSearchBook(book));
+    const incomplete = books.filter(
+      (book) => !isUsableHardcoverSearchBook(book)
+    );
 
     // Hydrate when Typesense hits are missing/incomplete, or when hits
     // failed to parse but `ids` is populated (otherwise search returns []).
@@ -501,7 +665,8 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
             ...existing,
             description:
               existing.description?.trim() || book.description?.trim() || null,
-            coverUrl: existing.coverUrl?.trim() || book.coverUrl?.trim() || null,
+            coverUrl:
+              existing.coverUrl?.trim() || book.coverUrl?.trim() || null,
             authors:
               existing.authors.length > 0 ? existing.authors : book.authors,
             genres: existing.genres.length > 0 ? existing.genres : book.genres,
@@ -522,7 +687,9 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       .filter(isUsableHardcoverSearchBook)
       .map(withDescriptionFallback);
 
+    let failureReason: HardcoverFailureReason | null = null;
     if (beforeGate > 0 && books.length === 0) {
+      failureReason = "quality_filtered";
       console.error("[Hardcover] all hits filtered by quality gate", {
         query: trimmed,
         ids: ids.length,
@@ -531,23 +698,32 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
         sampleHit: summarizeHitForLog(hits[0]),
       });
     } else if (ids.length > 0 && books.length === 0) {
+      failureReason = "quality_filtered";
       console.error("[Hardcover] ids present but 0 usable books after hydrate", {
         query: trimmed,
         ids: ids.length,
         hits: hits.length,
-        resultsType: payload.data?.search?.results == null
-          ? "null"
-          : Array.isArray(payload.data.search.results)
-            ? "array"
-            : typeof payload.data.search.results,
+        resultsType:
+          payload.data?.search?.results == null
+            ? "null"
+            : Array.isArray(payload.data.search.results)
+              ? "array"
+              : typeof payload.data.search.results,
         sampleHit: summarizeHitForLog(hits[0]),
         sampleIds: ids.slice(0, 5),
       });
     } else if (ids.length === 0 && hits.length === 0) {
+      failureReason = "empty_response";
       console.warn("[Hardcover] empty Typesense response", {
         query: trimmed,
         hasSearchNode: Boolean(payload.data?.search),
         resultsPresent: payload.data?.search?.results != null,
+        resultsType:
+          payload.data?.search?.results == null
+            ? "null"
+            : Array.isArray(payload.data.search.results)
+              ? "array"
+              : typeof payload.data.search.results,
       });
     }
 
@@ -556,6 +732,7 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       ids: ids.length,
       hits: hits.length,
       books: books.length,
+      failureReason,
       sample: books.slice(0, 5).map((book) => ({
         title: book.title,
         authors: book.authors,
@@ -564,7 +741,15 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       })),
     });
 
-    return books;
+    return {
+      books,
+      diagnostics: {
+        ...baseDiag,
+        booksReturned: books.length,
+        failureReason,
+        hint: hintForFailure(failureReason, response.status),
+      },
+    };
   } catch (error) {
     const aborted =
       error instanceof Error &&
@@ -573,9 +758,21 @@ export async function searchHardcover(query: string): Promise<BookSummary[]> {
       aborted
         ? `[Hardcover] search timed out after ${FETCH_TIMEOUT_MS}ms:`
         : "[Hardcover] search failed:",
-      error instanceof Error ? { name: error.name, message: error.message } : error
+      error instanceof Error
+        ? { name: error.name, message: error.message }
+        : error
     );
-    return [];
+    const failureReason: HardcoverFailureReason = aborted
+      ? "timeout"
+      : "network_error";
+    return {
+      books: [],
+      diagnostics: {
+        ...baseDiag,
+        failureReason,
+        hint: hintForFailure(failureReason, null),
+      },
+    };
   }
 }
 
