@@ -3,9 +3,9 @@ import { getBookDedupeKey, pickPublishedYear } from "@/lib/book-utils";
 import type { BookSource, BookSummary } from "@/types/book";
 
 const SOURCE_PRIORITY: Record<BookSource, number> = {
-  hardcover: 5,
-  isbndb: 4,
-  google: 3,
+  isbndb: 5,
+  google: 4,
+  bigbook: 3,
   openlibrary: 2,
   nyt: 2,
   gutendex: 1,
@@ -25,82 +25,56 @@ function isGoodAuthors(authors: string[] | null | undefined): boolean {
   );
 }
 
-function pickHardcoverBook(
-  a: BookSummary,
-  b: BookSummary
-): BookSummary | null {
-  if (a.source === "hardcover") return a;
-  if (b.source === "hardcover") return b;
-  return null;
-}
-
 /**
- * When merging provider rows, prefer Hardcover for title, description, cover,
- * published year, page count, and authors whenever those fields are present.
- * Identity (id/source) stays on the preferred duplicate; metadata still takes Hardcover.
+ * When merging provider rows, keep the identity (id/source) of the preferred
+ * duplicate and fill each metadata field from whichever record has it:
+ * identity first, then the longer/better values from the other rows.
  */
-export function mergeFieldsPreferringHardcover(
+export function mergePreferredBookFields(
   identity: BookSummary,
   a: BookSummary,
   b: BookSummary
 ): BookSummary {
-  const hardcover = pickHardcoverBook(a, b);
-
   const title =
-    (hardcover && isGoodTitle(hardcover.title) ? hardcover.title : null) ||
     (isGoodTitle(identity.title) ? identity.title : null) ||
     (isGoodTitle(a.title) ? a.title : null) ||
     (isGoodTitle(b.title) ? b.title : null) ||
     "Untitled";
 
   const authors =
-    (hardcover && isGoodAuthors(hardcover.authors)
-      ? hardcover.authors
-      : null) ||
     (isGoodAuthors(identity.authors) ? identity.authors : null) ||
     (isGoodAuthors(a.authors) ? a.authors : null) ||
-    (isGoodAuthors(b.authors) ? b.authors : null) ||
-    ["Unknown author"];
+    (isGoodAuthors(b.authors) ? b.authors : null) || ["Unknown author"];
 
+  // Prefer the longest description — providers often ship truncated blurbs.
+  const descriptions = [identity.description, a.description, b.description]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean);
   const description =
-    hardcover?.description?.trim() ||
-    identity.description?.trim() ||
-    a.description?.trim() ||
-    b.description?.trim() ||
-    null;
+    descriptions.sort((x, y) => y.length - x.length)[0] ?? null;
 
   const coverUrl =
-    hardcover?.coverUrl?.trim() ||
     identity.coverUrl?.trim() ||
     a.coverUrl?.trim() ||
     b.coverUrl?.trim() ||
     null;
 
   const publishedYear =
-    hardcover?.publishedYear ??
     identity.publishedYear ??
     pickPublishedYear(a.publishedYear, b.publishedYear);
 
   const pageCount =
-    hardcover?.pageCount ??
-    identity.pageCount ??
-    a.pageCount ??
-    b.pageCount ??
-    null;
+    identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;
 
-  // Hardcover categories first so tag finalizer can prefer them exclusively.
   const genreEvidence = [
-    ...(hardcover
-      ? [{ source: hardcover.source, categories: hardcover.genres }]
-      : []),
+    { source: identity.source, categories: identity.genres },
     { source: a.source, categories: a.genres },
     { source: b.source, categories: b.genres },
   ];
 
   return {
-    // Prefer Hardcover id/source when present so detail pages stay on HC.
-    id: hardcover?.id ?? identity.id,
-    source: hardcover?.source ?? identity.source,
+    id: identity.id,
+    source: identity.source,
     title,
     authors,
     coverUrl,
@@ -112,9 +86,9 @@ export function mergeFieldsPreferringHardcover(
       title,
       description,
       publishedYear,
-      source: hardcover?.source ?? identity.source,
+      source: identity.source,
     }),
-    isbn: hardcover?.isbn ?? identity.isbn ?? a.isbn ?? b.isbn ?? null,
+    isbn: identity.isbn ?? a.isbn ?? b.isbn ?? null,
     downloadCount:
       identity.downloadCount ?? a.downloadCount ?? b.downloadCount ?? null,
   };
@@ -128,7 +102,7 @@ export function mergeBookPair(
   const primary =
     sourceRank(a.source) >= sourceRank(b.source) ? a : b;
 
-  return mergeFieldsPreferringHardcover(primary, a, b);
+  return mergePreferredBookFields(primary, a, b);
 }
 
 function mergeIntoMap(
@@ -147,7 +121,7 @@ function mergeIntoMap(
 
 /**
  * Merge results from Google, Open Library, and Gutendex.
- * Field priority on overlaps: Hardcover > other sources for core metadata.
+ * On overlaps, each field keeps the best available value across sources.
  */
 export function mergeMultiSourceResults(
   googleBooks: BookSummary[],

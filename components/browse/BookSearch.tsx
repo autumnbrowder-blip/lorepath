@@ -10,12 +10,12 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const sourceLabels: Record<BookSource | "multi", string> = {
-  hardcover: "Hardcover",
   google: "Google Books",
   openlibrary: "Open Library",
   gutendex: "Project Gutenberg",
   nyt: "New York Times",
   isbndb: "ISBNdb",
+  bigbook: "Big Book",
   multi: "Multiple sources",
 };
 
@@ -50,10 +50,6 @@ export function BookSearch({
   const [sourceCounts, setSourceCounts] = useState<
     Partial<Record<BookSource, number>>
   >({});
-  const [hardcoverConfigured, setHardcoverConfigured] = useState<
-    boolean | null
-  >(null);
-  const [hardcoverHint, setHardcoverHint] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -86,13 +82,6 @@ export function BookSearch({
       sources?: BookSource[];
       source?: BookSource;
       sourceCounts?: Partial<Record<BookSource, number>>;
-      providerStatus?: {
-        hardcover?: {
-          configured: boolean;
-          failureReason?: string | null;
-          hint?: string | null;
-        };
-      };
       hasMore?: boolean;
       page?: number;
     };
@@ -134,18 +123,12 @@ export function BookSearch({
             : [];
       setSources(nextSources);
       setSourceCounts(data.sourceCounts ?? {});
-      setHardcoverConfigured(
-        data.providerStatus?.hardcover?.configured ?? null
-      );
-      setHardcoverHint(data.providerStatus?.hardcover?.hint ?? null);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
       setBooks([]);
       setSources([]);
       setSourceCounts({});
-      setHardcoverConfigured(null);
-      setHardcoverHint(null);
       setHasMore(false);
       setError(
         err instanceof Error ? err.message : "Something went wrong. Try again."
@@ -179,18 +162,16 @@ export function BookSearch({
           (current.openlibrary ?? 0) + (data.sourceCounts?.openlibrary ?? 0),
         gutendex: (current.gutendex ?? 0) + (data.sourceCounts?.gutendex ?? 0),
         isbndb: (current.isbndb ?? 0) + (data.sourceCounts?.isbndb ?? 0),
-        // Hardcover only contributes on page 1 — preserve its count across pages.
-        hardcover:
-          typeof current.hardcover === "number"
-            ? current.hardcover
-            : data.sourceCounts?.hardcover,
+        // Big Book count is omitted server-side when unconfigured — only sum
+        // when the provider actually reported a number.
+        ...(typeof data.sourceCounts?.bigbook === "number" ||
+        typeof current.bigbook === "number"
+          ? {
+              bigbook:
+                (current.bigbook ?? 0) + (data.sourceCounts?.bigbook ?? 0),
+            }
+          : {}),
       }));
-      if (data.providerStatus?.hardcover) {
-        setHardcoverConfigured(data.providerStatus.hardcover.configured);
-        if (data.providerStatus.hardcover.hint) {
-          setHardcoverHint(data.providerStatus.hardcover.hint);
-        }
-      }
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -351,8 +332,8 @@ export function BookSearch({
                 Searching the archives...
               </p>
               <p className="mt-2 font-heading text-base text-[#4a2f0f]/85">
-                Consulting Hardcover, Google Books, Open Library, Project
-                Gutenberg, and ISBNdb together.
+                Consulting Google Books, Open Library, Project Gutenberg,
+                ISBNdb, and Big Book together.
               </p>
             </div>
           )}
@@ -395,40 +376,14 @@ export function BookSearch({
                   <p className="mt-1.5 font-heading text-sm font-medium tracking-wide nav-dragon-gold">
                     Drawn from multiple archives at once
                   </p>
-                  {hardcoverConfigured === false && (
-                    <p className="mt-2 font-heading text-xs tracking-wide text-[#c4a35a]/90">
-                      {hardcoverHint ?? (
-                        <>
-                          Hardcover is not configured on the server. Set{" "}
-                          <span className="font-storybook tracking-[0.08em]">
-                            HARDCOVER_API_TOKEN
-                          </span>{" "}
-                          in Netlify (Production + Runtime scopes) or .env.local,
-                          then redeploy / restart.
-                        </>
-                      )}
-                    </p>
-                  )}
-                  {hardcoverConfigured === true &&
-                    typeof sourceCounts.hardcover === "number" &&
-                    sourceCounts.hardcover === 0 &&
-                    hardcoverHint && (
-                      <p className="mt-2 font-heading text-xs tracking-wide text-[#c4a35a]/90">
-                        Hardcover returned no usable results. {hardcoverHint}
-                      </p>
-                    )}
                 </div>
                 {sources.length > 0 && (
                   <div className="flex flex-wrap gap-2 sm:justify-end">
                     {sources.map((s) => {
                       const count = sourceCounts[s];
                       const showCount = typeof count === "number";
-                      // Skip a bare "Hardcover" chip when unconfigured (no count).
-                      if (
-                        s === "hardcover" &&
-                        hardcoverConfigured === false &&
-                        !showCount
-                      ) {
+                      // Skip a bare "Big Book" chip when unconfigured (no count).
+                      if (s === "bigbook" && !showCount) {
                         return null;
                       }
                       return (

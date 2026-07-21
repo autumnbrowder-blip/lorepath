@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Search books via Hardcover, Google Books, Open Library, Gutendex, and ISBNdb. */
+/** Search books via Google Books, Open Library, Gutendex, ISBNdb, and Big Book. */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();

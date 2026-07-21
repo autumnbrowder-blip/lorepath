@@ -1,5 +1,5 @@
 import { withFinalizedTags } from "@/lib/book-tags";
-import { mergeFieldsPreferringHardcover } from "@/lib/book-merge";
+import { mergePreferredBookFields } from "@/lib/book-merge";
 import {
   getBookDedupeKey,
   getBookIsbnKey,
@@ -8,11 +8,11 @@ import {
 } from "@/lib/book-utils";
 import type { BookSource, BookSummary } from "@/types/book";
 
-/** Hardcover wins identity ties — field merging also prefers its metadata. */
+/** Richer-metadata sources win identity ties during dedupe. */
 const SOURCE_DEDUP_BONUS: Record<BookSource, number> = {
-  hardcover: 12,
   isbndb: 4,
   google: 4,
+  bigbook: 3,
   nyt: 2,
   openlibrary: 1,
   gutendex: 0,
@@ -78,7 +78,7 @@ function bookQualityScore(book: BookSummary): number {
 
 /**
  * Keep the stronger record when duplicates collide.
- * Prefer Hardcover whenever it has a cover (merge fills description gaps).
+ * Prefer complete records, then covers, then overall quality score.
  */
 export function pickPreferredDuplicate(
   a: BookSummary,
@@ -86,22 +86,6 @@ export function pickPreferredDuplicate(
 ): BookSummary {
   const aHasBoth = hasDescriptionAndCover(a);
   const bHasBoth = hasDescriptionAndCover(b);
-
-  // Prefer Hardcover identity when it has a cover (or is fully complete).
-  if (
-    a.source === "hardcover" &&
-    b.source !== "hardcover" &&
-    (aHasBoth || hasCover(a))
-  ) {
-    return a;
-  }
-  if (
-    b.source === "hardcover" &&
-    a.source !== "hardcover" &&
-    (bHasBoth || hasCover(b))
-  ) {
-    return b;
-  }
 
   if (aHasBoth !== bHasBoth) return bHasBoth ? b : a;
 
@@ -135,13 +119,13 @@ function mergePreferredFields(
   winner: BookSummary,
   other: BookSummary
 ): BookSummary {
-  return mergeFieldsPreferringHardcover(winner, winner, other);
+  return mergePreferredBookFields(winner, winner, other);
 }
 
 /**
  * 1) Keep books with a description and/or cover (exclude empty stubs)
  * 2) Deduplicate by ISBN (strongest) then normalized title + author
- * 3) Prefer Hardcover identity + metadata on overlaps
+ * 3) Keep the strongest record's identity; merge the best fields on overlaps
  * 4) Prefer fully complete records; fall back to cover/description if needed
  * 5) Sort by published year, newest first (stable)
  */

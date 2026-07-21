@@ -1,10 +1,10 @@
 export type BookSource =
-  | "hardcover"
   | "google"
   | "openlibrary"
   | "gutendex"
   | "nyt"
-  | "isbndb";
+  | "isbndb"
+  | "bigbook";
 
 /** Label for a whole search response (may be multi-source). */
 export type BookSearchSource = BookSource | "multi";
@@ -21,7 +21,7 @@ export type BookSummary = {
   downloadCount?: number | null;
   /** ISBN-10 or ISBN-13 when known (used for search dedupe). */
   isbn?: string | null;
-  /** Page count when known (Hardcover preferred on merge). */
+  /** Page count when known. */
   pageCount?: number | null;
 };
 
@@ -34,20 +34,10 @@ export type BookDetail = BookSummary & {
 
 export type BookSearchResult = {
   books: BookSummary[];
-  /** All providers queried together via Promise.all. */
+  /** All providers queried together via Promise.allSettled. */
   sources: BookSource[];
   /** Raw hit counts from each provider for this page. */
   sourceCounts: Partial<Record<BookSource, number>>;
-  /** Non-secret provider readiness (e.g. missing API tokens). */
-  providerStatus?: {
-    hardcover?: {
-      configured: boolean;
-      /** Machine-readable reason when Hardcover contributed 0 books. */
-      failureReason?: string | null;
-      /** Safe user-facing hint (never includes secrets). */
-      hint?: string | null;
-    };
-  };
   /** Summary label for the search (use `sources` for per-provider detail). */
   source: BookSearchSource;
   /** 1-based page that was fetched. */

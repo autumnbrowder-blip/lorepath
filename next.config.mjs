@@ -32,11 +32,24 @@ const nextConfig = {
       },
       {
         protocol: "https",
-        hostname: "assets.hardcover.app",
+        hostname: "wsrv.nl",
+      },
+      // BookCover API (bookcover.longitood.com) returns Goodreads-hosted covers.
+      {
+        protocol: "https",
+        hostname: "i.gr-assets.com",
       },
       {
         protocol: "https",
-        hostname: "wsrv.nl",
+        hostname: "images.gr-assets.com",
+      },
+      {
+        protocol: "https",
+        hostname: "m.media-amazon.com",
+      },
+      {
+        protocol: "https",
+        hostname: "images-na.ssl-images-amazon.com",
       },
     ],
   },

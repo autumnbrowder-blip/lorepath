@@ -93,11 +93,8 @@ const TAG_SPECIFICITY: Record<CanonicalTag, number> = {
 /** Default cap — enough room for specific genres without flooding the UI. */
 export const DEFAULT_MAX_TAGS = 5;
 
-/** Minimum mapped non-Fiction tags for Hardcover to be considered sufficient alone. */
-const HARDCOVER_MIN_GOOD_TAGS = 1;
-
-/** Only Hardcover, Google Books, and ISBNdb may contribute genre votes. */
-const TRUSTED_SOURCES = new Set<BookSource>(["hardcover", "google", "isbndb"]);
+/** Only Google Books, ISBNdb, and Big Book may contribute genre votes. */
+const TRUSTED_SOURCES = new Set<BookSource>(["google", "isbndb", "bigbook"]);
 
 const STRICT_TAGS = new Set<CanonicalTag>([
   "Young Adult",
@@ -519,83 +516,16 @@ function isTrustedTagSource(
   );
 }
 
-const BROAD_FALLBACK_PARENTS = new Set<CanonicalTag>([
-  "Fantasy",
-  "Science Fiction",
-  "Thriller",
-  "Romance",
-  "Adventure",
-  "Fiction",
-]);
-
-const SPECIFIC_SUBGENRE_TAGS = new Set<CanonicalTag>(
-  CANONICAL_TAGS.filter((tag) => Boolean(PARENT_OF[tag]))
-);
-
 /**
- * Prefer Hardcover subjects when they map to clear, useful genres.
- * Otherwise fall back to Google Books + ISBNdb only.
+ * Only trusted sources (Google Books, ISBNdb, Big Book) contribute genre votes.
  * Open Library / Gutendex / NYT never contribute.
- * When Hardcover is enough but only broad, still allow specific
- * sub-genre subjects from Google/ISBNdb (never broad/YA fillers).
  */
 function selectTagEvidence(evidence: GenreEvidence[]): GenreEvidence[] {
-  const trusted = evidence.filter(
+  return evidence.filter(
     (entry) =>
       isTrustedTagSource(entry.source) &&
       splitRawCategories(entry.categories).length > 0
   );
-
-  const hardcover = trusted.filter((entry) => entry.source === "hardcover");
-  if (hardcover.length > 0 && hardcoverHasSufficientTags(hardcover)) {
-    const mappedHc = mapEvidenceToTags(hardcover);
-    const needsSpecificEnrichment = mappedHc.every(
-      (tag) => BROAD_FALLBACK_PARENTS.has(tag) || tag === "Young Adult"
-    );
-
-    if (!needsSpecificEnrichment) {
-      return hardcover;
-    }
-
-    const secondary = trusted.filter(
-      (entry) => entry.source === "google" || entry.source === "isbndb"
-    );
-    const specificOnly = secondary
-      .map((entry) => ({
-        ...entry,
-        categories: splitRawCategories(entry.categories).filter((subject) => {
-          const tag = mapSubjectToTag(subject);
-          return tag != null && SPECIFIC_SUBGENRE_TAGS.has(tag);
-        }),
-      }))
-      .filter((entry) => entry.categories.length > 0);
-
-    return [...hardcover, ...specificOnly];
-  }
-
-  return trusted.filter(
-    (entry) => entry.source === "google" || entry.source === "isbndb"
-  );
-}
-
-function mapEvidenceToTags(evidence: GenreEvidence[]): CanonicalTag[] {
-  const mapped = new Set<CanonicalTag>();
-  for (const entry of evidence) {
-    for (const subject of splitRawCategories(entry.categories)) {
-      if (WEAK_YA_SUBJECT.test(subject) && !STRONG_YA_SUBJECT.test(subject)) {
-        continue;
-      }
-      const tag = mapSubjectToTag(subject);
-      if (!tag || tag === "Fiction") continue;
-      mapped.add(tag);
-    }
-  }
-  return preferSpecificOverBroad(Array.from(mapped));
-}
-
-/** Hardcover is usable alone when it yields enough non-Fiction canonical tags. */
-function hardcoverHasSufficientTags(evidence: GenreEvidence[]): boolean {
-  return mapEvidenceToTags(evidence).length >= HARDCOVER_MIN_GOOD_TAGS;
 }
 
 /**
@@ -827,7 +757,7 @@ function refineBroadFiction(
 }
 
 /**
- * Tags from Hardcover (preferred when good), else Google Books / ISBNdb.
+ * Tags from trusted sources (Google Books, ISBNdb, Big Book).
  * Never Open Library. Prefer specific sub-genres; max DEFAULT_MAX_TAGS.
  */
 export function finalizeBookTags(input: FinalizeBookTagsInput): string[] {

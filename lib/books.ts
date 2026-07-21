@@ -1,5 +1,12 @@
+import {
+  getBigBookBookById,
+  isBigBookConfigured,
+  isBigBookId,
+  searchBigBook,
+} from "@/lib/big-book";
 import { enrichBookDetail } from "@/lib/book-enrichment";
 import { withFinalizedTags } from "@/lib/book-tags";
+import { enrichBooksWithCovers } from "@/lib/bookcover";
 import {
   isGenreSearchMode,
   normalizeGenreQuery,
@@ -13,13 +20,6 @@ import {
   RateLimitError,
   searchGoogleBooks,
 } from "@/lib/google-books";
-import {
-  getHardcoverBookById,
-  isHardcoverConfigured,
-  isHardcoverId,
-  searchHardcover,
-  type HardcoverSearchDiagnostics,
-} from "@/lib/hardcover";
 import {
   enrichBookDetailWithIsbndb,
   fetchIsbndbByIsbn,
@@ -51,11 +51,11 @@ export { finalizeSearchBooks } from "@/lib/search-finalize";
 const EMPTY_PAGE = { books: [] as BookSummary[], hasMore: false };
 
 const SEARCH_SOURCES: BookSource[] = [
-  "hardcover",
   "google",
   "openlibrary",
   "gutendex",
   "isbndb",
+  "bigbook",
 ];
 
 function readSettledPage(
@@ -71,9 +71,10 @@ function readSettledPage(
 }
 
 /**
- * Queries Hardcover, Google Books, Open Library, Gutendex, and ISBNdb in parallel.
+ * Queries Google Books, Open Library, Gutendex, ISBNdb, and Big Book in parallel.
  * Pass `{ mode: "genre" }` for subject/topic searches from genre tags.
  * Provider failures are isolated via Promise.allSettled.
+ * Missing covers are backfilled via the BookCover API (bounded, best-effort).
  */
 export async function searchBooks(
   query: string,
@@ -87,56 +88,19 @@ export async function searchBooks(
     ? { mode: "genre" }
     : undefined;
 
-  type HardcoverPageResult = {
-    books: BookSummary[];
-    hasMore: boolean;
-    diagnostics: HardcoverSearchDiagnostics | null;
-  };
-
   const [
-    hardcoverSettled,
     googleSettled,
     openLibrarySettled,
     gutendexSettled,
     isbndbSettled,
+    bigBookSettled,
   ] = await Promise.allSettled([
-    // Hardcover has no pagination here — only query page 1.
-    pageNumber === 1
-      ? searchHardcover(searchQuery).then(
-          (outcome): HardcoverPageResult => {
-            console.info("[searchBooks] Hardcover settled", {
-              query: searchQuery,
-              count: outcome.books.length,
-              failureReason: outcome.diagnostics.failureReason,
-              tokenChars: outcome.diagnostics.tokenChars,
-              httpStatus: outcome.diagnostics.httpStatus,
-            });
-            return {
-              books: outcome.books,
-              hasMore: false,
-              diagnostics: outcome.diagnostics,
-            };
-          }
-        )
-      : Promise.resolve({
-          books: [] as BookSummary[],
-          hasMore: false,
-          diagnostics: null,
-        } satisfies HardcoverPageResult),
     searchGoogleBooks(searchQuery, pageNumber, searchOptions),
     searchOpenLibrary(searchQuery, pageNumber, searchOptions),
     searchGutendex(searchQuery, pageNumber, searchOptions),
     searchIsbndb(searchQuery, pageNumber, searchOptions),
+    searchBigBook(searchQuery, pageNumber, searchOptions),
   ]);
-
-  if (hardcoverSettled.status === "rejected") {
-    console.error("[searchBooks] Hardcover failed:", {
-      query: searchQuery,
-      page: pageNumber,
-      mode: options?.mode ?? "text",
-      reason: hardcoverSettled.reason,
-    });
-  }
 
   if (googleSettled.status === "rejected") {
     console.error("[searchBooks] Google Books failed:", {
@@ -156,7 +120,15 @@ export async function searchBooks(
     });
   }
 
-  const hardcoverResult = readSettledPage("Hardcover", hardcoverSettled);
+  if (bigBookSettled.status === "rejected") {
+    console.error("[searchBooks] Big Book failed:", {
+      query: searchQuery,
+      page: pageNumber,
+      mode: options?.mode ?? "text",
+      reason: bigBookSettled.reason,
+    });
+  }
+
   const googleResult = readSettledPage("Google Books", googleSettled);
   const openLibraryResult = readSettledPage(
     "Open Library",
@@ -164,17 +136,13 @@ export async function searchBooks(
   );
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
   const isbndbResult = readSettledPage("ISBNdb", isbndbSettled);
+  const bigBookResult = readSettledPage("Big Book", bigBookSettled);
 
-  const hardcoverDiagnostics: HardcoverSearchDiagnostics | null =
-    hardcoverSettled.status === "fulfilled"
-      ? hardcoverSettled.value.diagnostics
-      : null;
-
-  const hardcoverBooks = hardcoverResult.books;
   const googleBooks = googleResult.books;
   const openLibraryBooks = openLibraryResult.books;
   const gutendexBooks = gutendexResult.books;
   const isbndbBooks = isbndbResult.books;
+  const bigBookBooks = bigBookResult.books;
 
   if (googleSettled.status === "fulfilled" && googleBooks.length === 0) {
     console.error(
@@ -183,33 +151,6 @@ export async function searchBooks(
         query: searchQuery,
         page: pageNumber,
         mode: options?.mode ?? "text",
-      }
-    );
-  }
-
-  const hardcoverConfigured =
-    hardcoverDiagnostics?.configured ?? isHardcoverConfigured();
-  if (!hardcoverConfigured && pageNumber === 1) {
-    console.error(
-      "[searchBooks] HARDCOVER_API_TOKEN not set — Hardcover will contribute 0 results. Set exact name HARDCOVER_API_TOKEN in .env.local and Netlify (raw JWT, no Bearer, no quotes, no NEXT_PUBLIC_; Production + Runtime scopes), then redeploy."
-    );
-  } else if (
-    hardcoverConfigured &&
-    pageNumber === 1 &&
-    hardcoverSettled.status === "fulfilled" &&
-    hardcoverBooks.length === 0
-  ) {
-    console.error(
-      "[searchBooks] Hardcover returned 0 usable books (not silently ignored).",
-      {
-        query: searchQuery,
-        page: pageNumber,
-        mode: options?.mode ?? "text",
-        failureReason: hardcoverDiagnostics?.failureReason ?? null,
-        httpStatus: hardcoverDiagnostics?.httpStatus ?? null,
-        idsFound: hardcoverDiagnostics?.idsFound ?? null,
-        hitsFound: hardcoverDiagnostics?.hitsFound ?? null,
-        hint: hardcoverDiagnostics?.hint ?? null,
       }
     );
   }
@@ -230,68 +171,64 @@ export async function searchBooks(
     );
   }
 
+  const bigBookConfigured = isBigBookConfigured();
+  if (!bigBookConfigured && pageNumber === 1) {
+    console.warn(
+      "[searchBooks] BIG_BOOK_API_KEY not set — Big Book will contribute 0 results. Get a free key at https://bigbookapi.com and set BIG_BOOK_API_KEY in .env.local (and your host env), then restart / redeploy."
+    );
+  }
+
   console.info("[searchBooks] raw provider counts", {
     query: searchQuery,
     page: pageNumber,
     mode: genreMode ? "genre" : "text",
-    hardcoverConfigured,
-    hardcover: hardcoverBooks.length,
     google: googleBooks.length,
     openlibrary: openLibraryBooks.length,
     gutendex: gutendexBooks.length,
     isbndb: isbndbBooks.length,
+    bigbook: bigBookBooks.length,
+    bigBookConfigured,
   });
 
-  // Hardcover first so merge/dedupe prefer its id + metadata on ties.
   let books = finalizeSearchBooks([
-    ...hardcoverBooks,
     ...googleBooks,
     ...openLibraryBooks,
     ...gutendexBooks,
     ...isbndbBooks,
+    ...bigBookBooks,
   ]);
+
+  // Best-effort cover fallback for the survivors that still lack one.
+  books = await enrichBooksWithCovers(books);
 
   if (genreMode) {
     books = preferMatchingGenreTags(books, searchQuery);
   }
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
-    // Omit Hardcover from counts when unconfigured so the UI does not show a
-    // permanent "(0)" as if the provider ran and failed.
-    ...(hardcoverConfigured || hardcoverBooks.length > 0
-      ? { hardcover: hardcoverBooks.length }
-      : {}),
     google: googleBooks.length,
     openlibrary: openLibraryBooks.length,
     gutendex: gutendexBooks.length,
     isbndb: isbndbBooks.length,
+    // Omit Big Book from counts when unconfigured so the UI does not show a
+    // permanent "(0)" as if the provider ran and failed.
+    ...(bigBookConfigured || bigBookBooks.length > 0
+      ? { bigbook: bigBookBooks.length }
+      : {}),
   };
 
   return {
     books,
     sources: SEARCH_SOURCES,
     sourceCounts,
-    providerStatus: {
-      hardcover: {
-        configured: hardcoverConfigured,
-        failureReason: hardcoverDiagnostics?.failureReason ?? null,
-        hint:
-          hardcoverBooks.length === 0
-            ? (hardcoverDiagnostics?.hint ??
-              (!hardcoverConfigured
-                ? "Set HARDCOVER_API_TOKEN in Netlify or .env.local and redeploy."
-                : null))
-            : null,
-      },
-    },
     source: "multi",
     page: pageNumber,
     hasMore:
-      hardcoverResult.hasMore ||
       googleResult.hasMore ||
       openLibraryResult.hasMore ||
       gutendexResult.hasMore ||
-      isbndbResult.hasMore,
+      isbndbResult.hasMore ||
+      bigBookResult.hasMore,
   };
 }
 
@@ -300,8 +237,8 @@ export const getBookById = cache(async function getBookById(
 ): Promise<BookDetail | null> {
   let book: BookDetail | null = null;
 
-  if (isHardcoverId(id)) {
-    book = await getHardcoverBookById(id);
+  if (isBigBookId(id)) {
+    book = await getBigBookBookById(id);
   } else if (isOpenLibraryId(id)) {
     book = await getOpenLibraryBookById(id);
   } else if (isIsbndbId(id)) {

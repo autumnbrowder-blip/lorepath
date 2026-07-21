@@ -324,8 +324,8 @@ function dedupeQualityScore(book: BookSummary): number {
   if (description) score += 3;
   if (book.coverUrl?.trim()) score += 3;
   if (description && book.coverUrl?.trim()) score += 4;
-  if (book.source === "hardcover") score += 12;
-  else if (book.source === "isbndb" || book.source === "google") score += 4;
+  if (book.source === "isbndb" || book.source === "google") score += 4;
+  else if (book.source === "bigbook") score += 3;
   else if (book.source === "nyt" || book.source === "openlibrary") score += 1;
   if (getBookIsbnKey(book)) score += 1;
   if (book.authors[0] && book.authors[0] !== "Unknown author") score += 1;
@@ -338,11 +338,6 @@ function pickBetterDuplicate<T extends BookSummary>(a: T, b: T): T {
   const bBoth = Boolean(b.description?.trim()) && Boolean(b.coverUrl?.trim());
   if (aBoth !== bBoth) return bBoth ? b : a;
 
-  if (aBoth && bBoth) {
-    if (a.source === "hardcover" && b.source !== "hardcover") return a;
-    if (b.source === "hardcover" && a.source !== "hardcover") return b;
-  }
-
   const aScore = dedupeQualityScore(a);
   const bScore = dedupeQualityScore(b);
   if (aScore !== bScore) return bScore > aScore ? b : a;
@@ -351,7 +346,7 @@ function pickBetterDuplicate<T extends BookSummary>(a: T, b: T): T {
 
 /**
  * Collapse duplicates by title+author (and identical ids).
- * Keeps the best record (prefer description+cover, then Hardcover).
+ * Keeps the best record (prefer description+cover, then quality score).
  */
 export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
   const byId = new Map<string, T>();
