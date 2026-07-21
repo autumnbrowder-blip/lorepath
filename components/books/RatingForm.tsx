@@ -85,6 +85,21 @@ export function RatingForm({
   const dirtyRef = useRef(false);
   /** Distinguishes first inscription vs rewriting marks in success copy. */
   const wasUpdatingRef = useRef(initialRatings != null);
+  /** Status container; scrolled into view when a save succeeds. */
+  const statusRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll only on success (never on error), after the message has rendered.
+  // scroll-margin-top on the container keeps it clear of the sticky navbar.
+  useEffect(() => {
+    if (!success || !statusRef.current) return;
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    statusRef.current.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
+  }, [success]);
 
   async function authHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
@@ -326,7 +341,8 @@ export function RatingForm({
               </p>
 
               <div
-                className="rating-form-status mb-3 shrink-0 overflow-hidden"
+                ref={statusRef}
+                className="rating-form-status mb-3 shrink-0 scroll-mb-4 scroll-mt-20 overflow-hidden"
                 role="status"
                 aria-live="polite"
               >

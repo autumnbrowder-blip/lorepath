@@ -59,9 +59,12 @@ export function mergePreferredBookFields(
     b.coverUrl?.trim() ||
     null;
 
-  const publishedYear =
-    identity.publishedYear ??
-    pickPublishedYear(a.publishedYear, b.publishedYear);
+  // Newest known year across editions (missing years never win).
+  const publishedYear = pickPublishedYear(
+    identity.publishedYear,
+    a.publishedYear,
+    b.publishedYear
+  );
 
   const pageCount =
     identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;

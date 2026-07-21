@@ -3,20 +3,10 @@ import { mergePreferredBookFields } from "@/lib/book-merge";
 import {
   getBookDedupeKey,
   getBookIsbnKey,
-  normalizePublishedYear,
+  pickPreferredDuplicate,
   sortByPublishedYearDesc,
 } from "@/lib/book-utils";
-import type { BookSource, BookSummary } from "@/types/book";
-
-/** Richer-metadata sources win identity ties during dedupe. */
-const SOURCE_DEDUP_BONUS: Record<BookSource, number> = {
-  isbndb: 4,
-  google: 4,
-  bigbook: 3,
-  nyt: 2,
-  openlibrary: 1,
-  gutendex: 0,
-};
+import type { BookSummary } from "@/types/book";
 
 const MISSING_DESCRIPTION_FALLBACK = "No description available.";
 
@@ -56,65 +46,10 @@ function selectQualityBooks(books: BookSummary[]): BookSummary[] {
   return books.filter(hasDescription);
 }
 
-/** Higher = cleaner / more complete record to keep during dedupe. */
-function bookQualityScore(book: BookSummary): number {
-  const description = book.description?.trim() ?? "";
-  let score = 0;
-
-  if (description) score += 3;
-  if (hasCover(book)) score += 3;
-  if (description && hasCover(book)) score += 4;
-  if (getBookIsbnKey(book)) score += 1;
-  if (normalizePublishedYear(book.publishedYear) != null) score += 1;
-  if (book.pageCount && book.pageCount > 0) score += 1;
-  if (book.authors.length > 0 && book.authors[0] !== "Unknown author") {
-    score += 1;
-  }
-  score += Math.min(description.length / 200, 2);
-  score += SOURCE_DEDUP_BONUS[book.source] ?? 0;
-
-  return score;
-}
-
 /**
- * Keep the stronger record when duplicates collide.
- * Prefer complete records, then covers, then overall quality score.
+ * Winner keeps its identity; missing/better fields fill in from the loser
+ * (longest description, any cover, newest year, page count, genres, ISBN).
  */
-export function pickPreferredDuplicate(
-  a: BookSummary,
-  b: BookSummary
-): BookSummary {
-  const aHasBoth = hasDescriptionAndCover(a);
-  const bHasBoth = hasDescriptionAndCover(b);
-
-  if (aHasBoth !== bHasBoth) return bHasBoth ? b : a;
-
-  // Prefer a cover over description-only when completeness differs.
-  const aCover = hasCover(a);
-  const bCover = hasCover(b);
-  if (aCover !== bCover) return bCover ? b : a;
-
-  const aScore = bookQualityScore(a);
-  const bScore = bookQualityScore(b);
-  if (aScore !== bScore) return bScore > aScore ? b : a;
-
-  const aDesc = a.description?.trim() ?? "";
-  const bDesc = b.description?.trim() ?? "";
-  if (aDesc.length !== bDesc.length) {
-    return bDesc.length > aDesc.length ? b : a;
-  }
-
-  const aYear = normalizePublishedYear(a.publishedYear);
-  const bYear = normalizePublishedYear(b.publishedYear);
-  if (aYear != null && bYear != null && aYear !== bYear) {
-    return bYear > aYear ? b : a;
-  }
-  if (aYear == null && bYear != null) return b;
-  if (bYear == null && aYear != null) return a;
-
-  return a.id.localeCompare(b.id) <= 0 ? a : b;
-}
-
 function mergePreferredFields(
   winner: BookSummary,
   other: BookSummary
@@ -124,8 +59,10 @@ function mergePreferredFields(
 
 /**
  * 1) Keep books with a description and/or cover (exclude empty stubs)
- * 2) Deduplicate by ISBN (strongest) then normalized title + author
- * 3) Keep the strongest record's identity; merge the best fields on overlaps
+ * 2) Deduplicate by ISBN (strongest) then normalized title + first author
+ *    (shared key from getBookDedupeKey — same on server and client)
+ * 3) Winner per pickPreferredDuplicate keeps its identity; merge the best
+ *    fields from the losing edition
  * 4) Prefer fully complete records; fall back to cover/description if needed
  * 5) Sort by published year, newest first (stable)
  */
@@ -152,7 +89,8 @@ export function finalizeSearchBooks(books: BookSummary[]): BookSummary[] {
     byIsbn.set(isbnKey, mergePreferredFields(preferred, other));
   }
 
-  // Pass 2: title + author for the rest (and against ISBN survivors)
+  // Pass 2: normalized title + author for the rest (and against ISBN
+  // survivors) — distinct ISBNs of the same work collapse here.
   const byTitleAuthor = new Map<string, BookSummary>();
 
   for (const book of [...Array.from(byIsbn.values()), ...withoutIsbn]) {

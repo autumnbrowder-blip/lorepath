@@ -1,5 +1,5 @@
 import { cleanRawSubjects, normalizeBookTags } from "@/lib/book-tags";
-import type { BookSummary } from "@/types/book";
+import type { BookSource, BookSummary } from "@/types/book";
 
 export function dedupeStrings(items: string[]): string[] {
   const seen = new Set<string>();
@@ -170,11 +170,20 @@ export function normalizeIsbn(isbn: string | null | undefined): string | null {
 }
 
 /**
- * Aggressive title key for dedupe: lowercase, drop subtitles / edition fluff,
- * strip series numbering, punctuation.
+ * Fold diacritics deterministically ("Brontë" → "Bronte", "Café" → "Cafe")
+ * so accented and unaccented provider spellings produce the same key.
+ */
+function foldDiacritics(text: string): string {
+  return text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Aggressive title key for dedupe: lowercase, fold diacritics, drop
+ * subtitles / edition fluff, strip series numbering and punctuation,
+ * then drop a leading article ("The Wren…" === "Wren…").
  */
 export function normalizeTitleForDedupe(title: string): string {
-  let text = title.toLowerCase().trim();
+  let text = foldDiacritics(title).toLowerCase().trim();
 
   // Drop parenthetical / bracketed edition notes
   text = text.replace(/\([^)]*\)/g, " ");
@@ -243,10 +252,16 @@ export function normalizeTitleForDedupe(title: string): string {
     text = text.replace(pattern, " ");
   }
 
-  return text
+  text = text
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  // Leading articles never distinguish editions: "The Wren in the Holly
+  // Library" and "Wren in the Holly Library" are the same book. Only strip
+  // when something remains, so titles like "It" or "The The" stay keyable.
+  const withoutArticle = text.replace(/^(?:the|a|an)\s+/, "");
+  return withoutArticle || text;
 }
 
 /**
@@ -254,7 +269,7 @@ export function normalizeTitleForDedupe(title: string): string {
  * punctuation, case.
  */
 export function normalizeAuthorForDedupe(author: string): string {
-  let text = author.toLowerCase().trim();
+  let text = foldDiacritics(author).toLowerCase().trim();
   if (!text || text === "unknown author") return "";
 
   if (text.includes(",")) {
@@ -304,12 +319,22 @@ export function getBookIsbnKey(
   return null;
 }
 
+/**
+ * Stable dedupe key: normalized title + "::" + normalized first author.
+ *
+ * Unknown-author fallback: two same-title records without an author could be
+ * different works, so we only collapse them when a stronger signal (shared
+ * ISBN, or literally the same record id) says they are the same edition.
+ */
 function bookDedupeKey(
   book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
 ): string {
   const title = normalizeTitleForDedupe(book.title);
   const author = normalizeAuthorKeyForDedupe(book.authors[0] ?? "");
-  return `${title}::${author}`;
+  if (author) return `${title}::${author}`;
+
+  const isbn = getBookIsbnKey(book);
+  return `${title}::unknown:${isbn ?? book.id}`;
 }
 
 export function getBookDedupeKey(
@@ -318,35 +343,70 @@ export function getBookDedupeKey(
   return bookDedupeKey(book);
 }
 
-function dedupeQualityScore(book: BookSummary): number {
-  const description = book.description?.trim() ?? "";
+/** Richer-metadata sources break exact ties during dedupe. */
+const SOURCE_DEDUP_BONUS: Record<BookSource, number> = {
+  isbndb: 4,
+  google: 4,
+  bigbook: 3,
+  nyt: 2,
+  openlibrary: 1,
+  gutendex: 0,
+};
+
+/**
+ * How complete a record's remaining metadata is (page count, genres, ISBN,
+ * real author, description length, source richness). Used as the last
+ * winner-priority tier, after description / cover / published year.
+ */
+export function metadataCompletenessScore(book: BookSummary): number {
   let score = 0;
-  if (description) score += 3;
-  if (book.coverUrl?.trim()) score += 3;
-  if (description && book.coverUrl?.trim()) score += 4;
-  if (book.source === "isbndb" || book.source === "google") score += 4;
-  else if (book.source === "bigbook") score += 3;
-  else if (book.source === "nyt" || book.source === "openlibrary") score += 1;
-  if (getBookIsbnKey(book)) score += 1;
-  if (book.authors[0] && book.authors[0] !== "Unknown author") score += 1;
-  score += Math.min(description.length / 200, 2);
+  if (book.pageCount && book.pageCount > 0) score += 2;
+  if (book.genres.length > 0) score += 2;
+  if (getBookIsbnKey(book)) score += 2;
+  if (book.authors.length > 0 && book.authors[0] !== "Unknown author") {
+    score += 1;
+  }
+  score += Math.min((book.description?.trim().length ?? 0) / 200, 2);
+  score += SOURCE_DEDUP_BONUS[book.source] ?? 0;
   return score;
 }
 
-function pickBetterDuplicate<T extends BookSummary>(a: T, b: T): T {
-  const aBoth = Boolean(a.description?.trim()) && Boolean(a.coverUrl?.trim());
-  const bBoth = Boolean(b.description?.trim()) && Boolean(b.coverUrl?.trim());
-  if (aBoth !== bBoth) return bBoth ? b : a;
+/**
+ * Keep the stronger record when duplicates collide. Priority, in order:
+ * 1. has a description
+ * 2. has a cover image
+ * 3. more recent published year (a known year beats an unknown one)
+ * 4. more complete metadata (page count, genres, ISBN, author, source)
+ * Ties fall back to a stable id comparison so results are deterministic.
+ */
+export function pickPreferredDuplicate<T extends BookSummary>(a: T, b: T): T {
+  const aDesc = Boolean(a.description?.trim());
+  const bDesc = Boolean(b.description?.trim());
+  if (aDesc !== bDesc) return bDesc ? b : a;
 
-  const aScore = dedupeQualityScore(a);
-  const bScore = dedupeQualityScore(b);
+  const aCover = Boolean(a.coverUrl?.trim());
+  const bCover = Boolean(b.coverUrl?.trim());
+  if (aCover !== bCover) return bCover ? b : a;
+
+  const aYear = normalizePublishedYear(a.publishedYear);
+  const bYear = normalizePublishedYear(b.publishedYear);
+  if (aYear != null && bYear != null && aYear !== bYear) {
+    return bYear > aYear ? b : a;
+  }
+  if (aYear == null && bYear != null) return b;
+  if (bYear == null && aYear != null) return a;
+
+  const aScore = metadataCompletenessScore(a);
+  const bScore = metadataCompletenessScore(b);
   if (aScore !== bScore) return bScore > aScore ? b : a;
-  return a;
+
+  return a.id.localeCompare(b.id) <= 0 ? a : b;
 }
 
 /**
  * Collapse duplicates by title+author (and identical ids).
- * Keeps the best record (prefer description+cover, then quality score).
+ * Keeps the winner per pickPreferredDuplicate; field merging happens in
+ * finalizeSearchBooks so provider-level and final dedupe agree on identity.
  */
 export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
   const byId = new Map<string, T>();
@@ -354,7 +414,9 @@ export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
 
   for (const book of books) {
     const existingId = byId.get(book.id);
-    const candidate = existingId ? pickBetterDuplicate(existingId, book) : book;
+    const candidate = existingId
+      ? pickPreferredDuplicate(existingId, book)
+      : book;
     byId.set(book.id, candidate);
   }
 
@@ -365,7 +427,7 @@ export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
       byKey.set(key, book);
       continue;
     }
-    byKey.set(key, pickBetterDuplicate(existing, book));
+    byKey.set(key, pickPreferredDuplicate(existing, book));
   }
 
   return Array.from(byKey.values());
