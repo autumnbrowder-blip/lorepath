@@ -35,6 +35,7 @@ create table public.profiles (
   avatar_url    text,
   avatar_key    text,
   is_subscriber boolean not null default false,
+  is_admin      boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
 
@@ -93,10 +94,43 @@ create table public.profiles (
 );
 
 create index profiles_is_subscriber_idx on public.profiles (is_subscriber);
+create index profiles_is_admin_idx on public.profiles (is_admin)
+  where is_admin = true;
 
 create trigger profiles_set_updated_at
   before update on public.profiles
   for each row execute function public.set_updated_at();
+
+-- Block client self-promotion of is_admin (SQL editor / service_role may set it)
+create or replace function public.protect_profiles_is_admin()
+returns trigger
+language plpgsql
+as $$
+declare
+  jwt_role text := coalesce(auth.jwt() ->> 'role', '');
+begin
+  if tg_op = 'INSERT' then
+    if new.is_admin = true
+       and auth.uid() is not null
+       and jwt_role <> 'service_role' then
+      new.is_admin := false;
+    end if;
+    return new;
+  end if;
+
+  if new.is_admin is distinct from old.is_admin then
+    if auth.uid() is not null and jwt_role <> 'service_role' then
+      new.is_admin := old.is_admin;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger profiles_protect_is_admin
+  before insert or update on public.profiles
+  for each row execute function public.protect_profiles_is_admin();
 
 -- Auto-create a profile when a new auth user signs up
 create or replace function public.handle_new_user()

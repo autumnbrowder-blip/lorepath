@@ -6,6 +6,8 @@ export type Profile = {
   /** Fantasy avatar filename under /avatars/ (e.g. dragon.jpg); see lib/avatars.ts */
   avatar_key: string | null;
   is_subscriber: boolean;
+  /** Server-gated access to /admin; never set from the browser client. */
+  is_admin: boolean;
   created_at: string;
   updated_at: string;
 };

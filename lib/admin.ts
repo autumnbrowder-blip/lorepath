@@ -1,0 +1,130 @@
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
+import type { ContentRating } from "@/types";
+import type { User } from "@supabase/supabase-js";
+import { unstable_noStore as noStore } from "next/cache";
+import { redirect } from "next/navigation";
+
+export type AdminRecentRating = ContentRating & {
+  id: string;
+  created_at: string;
+  book_title: string;
+};
+
+export type AdminDashboardStats = {
+  totalUsers: number;
+  totalRatings: number;
+  booksWithRatings: number;
+  recentRatings: AdminRecentRating[];
+};
+
+/**
+ * Server-only gate for /admin.
+ * Non-admins (and logged-out users) are sent home — never to /login —
+ * so the admin surface stays unadvertised.
+ */
+export async function requireAdmin(): Promise<{ user: User }> {
+  noStore();
+
+  if (!isSupabaseConfigured()) {
+    redirect("/");
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/");
+  }
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error || !profile?.is_admin) {
+    redirect("/");
+  }
+
+  return { user };
+}
+
+/**
+ * Admin dashboard payload. Always runs requireAdmin first so stats are never
+ * loaded for non-admin callers (including accidental imports from other pages).
+ */
+export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
+  await requireAdmin();
+  noStore();
+
+  const supabase = await createClient();
+
+  const [usersResult, ratingsResult, recentResult, ratedBookRowsResult] =
+    await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("ratings").select("id", { count: "exact", head: true }),
+      supabase
+        .from("ratings")
+        .select(
+          `
+          id,
+          created_at,
+          sexual_content,
+          romance,
+          lgbt,
+          horror,
+          ideology,
+          pacing,
+          books (
+            title
+          )
+        `
+        )
+        .order("created_at", { ascending: false })
+        .limit(20),
+      // Distinct books with ≥1 rating (PostgREST has no COUNT DISTINCT).
+      supabase.from("ratings").select("book_id"),
+    ]);
+
+  const booksWithRatings = new Set(
+    (ratedBookRowsResult.data ?? [])
+      .map((row) => row.book_id as string | null)
+      .filter((id): id is string => Boolean(id))
+  ).size;
+
+  const recentRatings: AdminRecentRating[] = (recentResult.data ?? []).map(
+    (row) => {
+      const bookRelation = row.books as
+        | { title?: string | null }
+        | { title?: string | null }[]
+        | null;
+      const book = Array.isArray(bookRelation)
+        ? bookRelation[0]
+        : bookRelation;
+      const title = book?.title;
+
+      return {
+        id: row.id as string,
+        created_at: row.created_at as string,
+        sexual_content: Number(row.sexual_content) || 0,
+        romance: Number(row.romance) || 0,
+        lgbt: Number(row.lgbt) || 0,
+        horror: Number(row.horror) || 0,
+        ideology: Number(row.ideology) || 0,
+        pacing: Number(row.pacing) || 0,
+        book_title:
+          typeof title === "string" && title.trim() ? title : "Untitled tome",
+      };
+    }
+  );
+
+  return {
+    totalUsers: usersResult.count ?? 0,
+    totalRatings: ratingsResult.count ?? 0,
+    booksWithRatings,
+    recentRatings,
+  };
+}
