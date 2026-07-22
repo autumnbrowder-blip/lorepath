@@ -1,3 +1,4 @@
+import { getAvatarOption } from "@/lib/avatars";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
@@ -15,11 +16,25 @@ export type AdminRecentRating = ContentRating & {
   book_title: string;
 };
 
+export type AdminUserRow = {
+  id: string;
+  name: string;
+  email: string | null;
+  emailNote: string | null;
+  avatarKey: string | null;
+  avatarLabel: string;
+  clan: string;
+  isSubscriber: boolean;
+  isAdmin: boolean;
+  createdAt: string;
+};
+
 export type AdminDashboardStats = {
   totalUsers: number;
   totalRatings: number;
   booksWithRatings: number;
   recentRatings: AdminRecentRating[];
+  users: AdminUserRow[];
 };
 
 function coerceIsAdmin(value: unknown): boolean {
@@ -159,7 +174,7 @@ function mapRecentRating(row: {
 
 /**
  * Admin dashboard payload. Always runs requireAdmin first.
- * Stats are loaded with the service role when available.
+ * Stats + user directory are loaded with the service role when available.
  */
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   await requireAdmin();
@@ -172,14 +187,19 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     supabase = await createClient();
   }
 
-  const [usersResult, ratingsResult, recentResult, ratedBookRowsResult] =
-    await Promise.all([
-      supabase.from("profiles").select("id", { count: "exact", head: true }),
-      supabase.from("ratings").select("id", { count: "exact", head: true }),
-      supabase
-        .from("ratings")
-        .select(
-          `
+  const [
+    usersResult,
+    ratingsResult,
+    recentResult,
+    ratedBookRowsResult,
+    profilesResult,
+  ] = await Promise.all([
+    supabase.from("profiles").select("id", { count: "exact", head: true }),
+    supabase.from("ratings").select("id", { count: "exact", head: true }),
+    supabase
+      .from("ratings")
+      .select(
+        `
           id,
           created_at,
           sexual_content,
@@ -192,11 +212,18 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
             title
           )
         `
-        )
-        .order("created_at", { ascending: false })
-        .limit(20),
-      supabase.from("ratings").select("book_id"),
-    ]);
+      )
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase.from("ratings").select("book_id"),
+    // Registered users — newest first (emails joined from auth.admin below).
+    supabase
+      .from("profiles")
+      .select(
+        "id, display_name, username, avatar_key, is_subscriber, is_admin, created_at"
+      )
+      .order("created_at", { ascending: false }),
+  ]);
 
   const booksWithRatings = new Set(
     (ratedBookRowsResult.data ?? [])
@@ -204,10 +231,86 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
       .filter((id): id is string => Boolean(id))
   ).size;
 
+  const emailById = await loadAuthEmailMap(supabase);
+
+  const users: AdminUserRow[] = (profilesResult.data ?? []).map((row) => {
+    const displayName =
+      typeof row.display_name === "string" ? row.display_name.trim() : "";
+    const username =
+      typeof row.username === "string" ? row.username.trim() : "";
+    const name = displayName || username || "Unnamed traveler";
+
+    const avatarKey =
+      typeof row.avatar_key === "string" && row.avatar_key.trim()
+        ? row.avatar_key.trim()
+        : null;
+    const avatar = getAvatarOption(avatarKey);
+
+    const email = emailById.get(String(row.id)) ?? null;
+    const isSubscriber =
+      row.is_subscriber === true ||
+      String(row.is_subscriber).toLowerCase() === "true";
+
+    return {
+      id: String(row.id),
+      name,
+      email,
+      emailNote: email
+        ? null
+        : "Email not accessible (auth.users requires service role)",
+      avatarKey,
+      avatarLabel: avatar.label,
+      clan: avatar.clan,
+      isSubscriber,
+      isAdmin: coerceIsAdmin(row.is_admin),
+      createdAt: String(row.created_at ?? ""),
+    };
+  });
+
   return {
-    totalUsers: usersResult.count ?? 0,
+    totalUsers: usersResult.count ?? users.length,
     totalRatings: ratingsResult.count ?? 0,
     booksWithRatings,
     recentRatings: (recentResult.data ?? []).map(mapRecentRating),
+    users,
   };
+}
+
+/**
+ * Page through auth.users via the Admin API (service role only).
+ * Returns an empty map when the service role key is missing.
+ */
+async function loadAuthEmailMap(
+  supabase: SupabaseClient
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+
+  // auth.admin only works with the service role client.
+  if (typeof supabase.auth.admin?.listUsers !== "function") {
+    return map;
+  }
+
+  const perPage = 200;
+  for (let page = 1; page <= 50; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+
+    if (error || !data?.users?.length) {
+      break;
+    }
+
+    for (const authUser of data.users) {
+      if (authUser.id && authUser.email) {
+        map.set(authUser.id, authUser.email);
+      }
+    }
+
+    if (data.users.length < perPage) {
+      break;
+    }
+  }
+
+  return map;
 }
