@@ -23,8 +23,12 @@ function mergeSearchResults(
   existing: BookSummary[],
   incoming: BookSummary[]
 ): BookSummary[] {
-  // Same cleanup path as the server (quality filter, dedupe, year sort)
-  return finalizeSearchBooks([...existing, ...incoming]);
+  // Same cleanup path as the server. Prefer identities already on screen so
+  // load-more cannot swap a rated/DB slug for a different provider edition.
+  return finalizeSearchBooks([...existing, ...incoming], {
+    ratedIds: new Set(existing.map((book) => book.id)),
+    debug: false,
+  });
 }
 
 type BookSearchProps = {

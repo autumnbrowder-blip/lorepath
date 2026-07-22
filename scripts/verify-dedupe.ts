@@ -82,7 +82,7 @@ check(
   getBookDedupeKey(wrenB)
 );
 
-console.log("2. Winner priority (description > cover > year > metadata)");
+console.log("2. Winner priority (rated > description > cover > year > metadata)");
 const noDesc = book({ id: "a", coverUrl: "x.jpg", publishedYear: 2024 });
 const withDesc = book({ id: "b", description: "A story." });
 check("description wins over cover+year", pickPreferredDuplicate(noDesc, withDesc).id, "b");
@@ -184,6 +184,192 @@ const providerDupes = dedupeBooks([
   book({ id: "p2", title: "Wren in the Holly Library", authors: ["K.A. Linde"], description: "d" }),
 ]);
 check("dedupeBooks collapses article variants, description wins", providerDupes.map((b) => b.id), ["p2"]);
+
+console.log("7. Real-world ISBNdb Wren / Sandworms cases (empirical repro)");
+const wrenPlain = "wren in the holly library";
+check(
+  "marketing tail stripped (Sunday Times)",
+  normalizeTitleForDedupe(
+    "The Wren in the Holly Library The No. 1 Sunday Times Bestseller and start of an addictive Urban Romantasy Series"
+  ),
+  wrenPlain
+);
+check(
+  "exclusive edition fluff stripped",
+  normalizeTitleForDedupe("The Wren in the Holly Library Exclusive Edition"),
+  wrenPlain
+);
+check(
+  "parenthesized series label stripped",
+  normalizeTitleForDedupe(
+    "The Wren in the Holly Library (The Oak and Holly Cycle)"
+  ),
+  wrenPlain
+);
+check(
+  "deluxe limited edition (parens + fluff)",
+  normalizeTitleForDedupe(
+    "The Wren in the Holly Library (Deluxe Limited Edition)"
+  ),
+  wrenPlain
+);
+check(
+  "House of Dragons marketing does NOT collapse into Wren",
+  normalizeTitleForDedupe(
+    "House of Dragons From the number one Sunday Times bestselling author of The Wren in the Holly Library"
+  ),
+  "house of dragons"
+);
+
+const wrenEditions = finalizeSearchBooks([
+  book({
+    id: "isbndb-plain",
+    title: "The Wren in the Holly Library",
+    authors: ["K. A. Linde"],
+    description: "A fantasy.",
+    isbn: "9781035044863",
+    source: "isbndb",
+  }),
+  book({
+    id: "isbndb-exclusive",
+    title: "The Wren in the Holly Library Exclusive Edition",
+    authors: ["K. A. Linde"],
+    coverUrl: "https://covers.example/exclusive.jpg",
+    isbn: "9781035051946",
+    source: "isbndb",
+  }),
+  book({
+    id: "isbndb-marketing",
+    title:
+      "The Wren in the Holly Library The No. 1 Sunday Times Bestseller and start of an addictive Urban Romantasy Series",
+    authors: ["K. A. Linde"],
+    description: "A longer fantasy blurb with more detail.",
+    isbn: "9781035044870",
+    source: "isbndb",
+  }),
+  book({
+    id: "isbndb-series",
+    title: "The Wren in the Holly Library (The Oak and Holly Cycle)",
+    authors: ["K. A. Linde"],
+    isbn: "9798212889636",
+    coverUrl: "https://covers.example/series.jpg",
+    source: "isbndb",
+  }),
+]);
+check("Wren ISBNdb edition variants collapse to one", wrenEditions.length, 1);
+check(
+  "Wren survivor keeps plain short title",
+  wrenEditions[0]?.title,
+  "The Wren in the Holly Library"
+);
+
+const sandworms = finalizeSearchBooks([
+  book({
+    id: "TeZJPgAACAAJ",
+    title: "Sandworms of Dune",
+    authors: ["Kevin J. Anderson", "Brian Herbert"],
+    description: "Google edition.",
+    coverUrl: "g.jpg",
+    isbn: "9780340837528",
+  }),
+  book({
+    id: "isbndb-9781429917964",
+    title: "Sandworms of Dune",
+    authors: ["Brian Herbert", "Kevin J. Anderson"],
+    description: "ISBNdb edition with more text here.",
+    coverUrl: "i.jpg",
+    isbn: "9781429917964",
+    source: "isbndb",
+  }),
+]);
+check(
+  "Sandworms: co-author order swap collapses to one",
+  sandworms.length,
+  1
+);
+check(
+  "Sandworms keys match across author order",
+  getBookDedupeKey(
+    book({
+      id: "a",
+      title: "Sandworms of Dune",
+      authors: ["Kevin J. Anderson", "Brian Herbert"],
+    })
+  ),
+  getBookDedupeKey(
+    book({
+      id: "b",
+      title: "Sandworms of Dune",
+      authors: ["Brian Herbert", "Kevin J. Anderson"],
+    })
+  )
+);
+
+console.log("8. Rated books win identity + stay protected");
+const ratedApi = book({
+  id: "google-rated-slug",
+  title: "The Wren in the Holly Library",
+  authors: ["K.A. Linde"],
+  description: "Short.",
+  publishedYear: 2023,
+});
+const richerUnrated = book({
+  id: "isbndb-other",
+  title: "Wren in the Holly Library",
+  authors: ["K. A. Linde"],
+  description: "A much longer description from ISBNdb.",
+  coverUrl: "https://covers.example/wren.jpg",
+  publishedYear: 2024,
+  isbn: "9781035044863",
+  source: "isbndb",
+});
+const ratedWins = pickPreferredDuplicate(richerUnrated, ratedApi, {
+  ratedIds: new Set(["google-rated-slug"]),
+});
+check("rated id wins over richer unrated metadata", ratedWins.id, "google-rated-slug");
+
+const protectedFinalize = finalizeSearchBooks([richerUnrated], {
+  ratedIds: new Set(["google-rated-slug"]),
+  protectedBooks: [ratedApi],
+  debug: false,
+});
+check("protected rated book forced into results", protectedFinalize.length, 1);
+check(
+  "protected rated book keeps DB identity",
+  protectedFinalize[0]?.id,
+  "google-rated-slug"
+);
+check(
+  "protected rated book still merges richer cover",
+  Boolean(protectedFinalize[0]?.coverUrl),
+  true
+);
+
+const coverOnlyRated = book({
+  id: "user-rated-cover-only",
+  title: "Obscure Rated Novella",
+  authors: ["Jane Doe"],
+  coverUrl: "https://covers.example/obscure.jpg",
+  publishedYear: 2021,
+});
+const completeUnrelated = book({
+  id: "other-complete",
+  title: "Completely Different Book",
+  authors: ["Someone Else"],
+  description: "Has both fields.",
+  coverUrl: "https://covers.example/other.jpg",
+  publishedYear: 2022,
+});
+const forcedObscure = finalizeSearchBooks([completeUnrelated], {
+  ratedIds: new Set(["user-rated-cover-only"]),
+  protectedBooks: [coverOnlyRated],
+  debug: false,
+});
+check(
+  "cover-only rated book survives when other results are complete",
+  forcedObscure.some((b) => b.id === "user-rated-cover-only"),
+  true
+);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

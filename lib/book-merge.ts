@@ -35,11 +35,11 @@ export function mergePreferredBookFields(
   a: BookSummary,
   b: BookSummary
 ): BookSummary {
+  // Prefer a shorter clean title — marketing-bloated ISBNdb strings lose to
+  // the plain edition title when both are otherwise good.
+  const titleCandidates = [identity.title, a.title, b.title].filter(isGoodTitle);
   const title =
-    (isGoodTitle(identity.title) ? identity.title : null) ||
-    (isGoodTitle(a.title) ? a.title : null) ||
-    (isGoodTitle(b.title) ? b.title : null) ||
-    "Untitled";
+    titleCandidates.sort((x, y) => x!.length - y!.length)[0] ?? "Untitled";
 
   const authors =
     (isGoodAuthors(identity.authors) ? identity.authors : null) ||

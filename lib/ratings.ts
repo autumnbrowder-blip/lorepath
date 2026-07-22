@@ -1,6 +1,11 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { getBookById } from "@/lib/books";
 import {
+  normalizeAuthorForDedupe,
+  normalizeTitleForDedupe,
+  parsePublishedYear,
+} from "@/lib/book-utils";
+import {
   DEFAULT_RATINGS,
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
@@ -11,7 +16,7 @@ import {
   createServiceRoleClient,
 } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
-import type { BookDetail } from "@/types/book";
+import type { BookDetail, BookSource, BookSummary } from "@/types/book";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
@@ -598,6 +603,216 @@ export async function getUserReadingStats(
 ): Promise<UserReadingStats> {
   const ratedBooks = await getUserRatedBooks(userId);
   return computeUserReadingStats(ratedBooks);
+}
+
+function sourceFromSlug(slug: string): BookSource {
+  if (slug.startsWith("openlibrary-")) return "openlibrary";
+  if (slug.startsWith("gutendex-")) return "gutendex";
+  if (slug.startsWith("isbndb-")) return "isbndb";
+  if (slug.startsWith("bigbook-")) return "bigbook";
+  if (slug.startsWith("nyt-")) return "nyt";
+  return "google";
+}
+
+function sanitizeIlikeToken(token: string): string {
+  return token.replace(/[%_,.()"'\\]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+type RatedDbBookRow = {
+  slug: string;
+  title: string;
+  author: string | null;
+  isbn: string | null;
+  cover_image_url: string | null;
+  description: string | null;
+  published_year: number | null;
+  genre: string | null;
+  page_count: number | null;
+};
+
+function dbBookToSummary(row: RatedDbBookRow): BookSummary {
+  return {
+    id: row.slug,
+    title: row.title,
+    authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
+    coverUrl: row.cover_image_url,
+    description: row.description,
+    genres: row.genre?.trim() ? [row.genre.trim()] : [],
+    publishedYear: parsePublishedYear(row.published_year),
+    source: sourceFromSlug(row.slug),
+    isbn: row.isbn,
+    pageCount: row.page_count,
+  };
+}
+
+/** True when a stored book reasonably matches the browse search query. */
+export function ratedBookMatchesQuery(
+  title: string,
+  author: string | null,
+  query: string,
+  options?: { mode?: "text" | "genre"; genre?: string | null }
+): boolean {
+  const raw = query.trim();
+  if (!raw) return false;
+
+  if (options?.mode === "genre") {
+    const genreHaystack = (options.genre ?? "").toLowerCase();
+    const genreQuery = raw.toLowerCase();
+    if (genreHaystack && genreHaystack.includes(genreQuery)) return true;
+  }
+
+  const normalizedQuery = normalizeTitleForDedupe(raw);
+  const normalizedTitle = normalizeTitleForDedupe(title);
+  const normalizedAuthor = normalizeAuthorForDedupe(author ?? "");
+
+  if (!normalizedQuery) return false;
+  if (
+    normalizedTitle.includes(normalizedQuery) ||
+    normalizedAuthor.includes(normalizedQuery)
+  ) {
+    return true;
+  }
+
+  const tokens = normalizedQuery.split(" ").filter((token) => token.length > 1);
+  if (tokens.length === 0) return false;
+  const haystack = `${normalizedTitle} ${normalizedAuthor}`.trim();
+  return tokens.every((token) => haystack.includes(token));
+}
+
+export type RatedBooksForSearch = {
+  /** DB versions of rated books that match the query (use these identities). */
+  books: BookSummary[];
+  /** Slugs that have at least one rating — win dedupe identity. */
+  ratedSlugs: string[];
+};
+
+/**
+ * Find books in our database that already have ratings (user or community)
+ * and match the search query. Used to keep rated books visible in browse
+ * search and to prefer their stored slug/identity during dedupe.
+ */
+export async function findRatedBooksMatchingQuery(
+  query: string,
+  options?: { mode?: "text" | "genre"; userId?: string | null }
+): Promise<RatedBooksForSearch> {
+  noStore();
+
+  const empty: RatedBooksForSearch = { books: [], ratedSlugs: [] };
+  if (!isSupabaseConfigured() || !query.trim()) {
+    return empty;
+  }
+
+  try {
+    const supabase = resolveRatingsReadClient();
+    if (!supabase) return empty;
+
+    const tokens = query
+      .trim()
+      .split(/\s+/)
+      .map(sanitizeIlikeToken)
+      .filter((token) => token.length >= 2);
+    const primary =
+      tokens.find((token) => token.length >= 3) ?? tokens[0] ?? null;
+
+    // Prefer books the signed-in user has rated; also include any community-
+    // rated titles so ratings stay discoverable for everyone.
+    let rows: RatedDbBookRow[] = [];
+
+    if (options?.userId) {
+      const userRated = await supabase
+        .from("ratings")
+        .select(
+          `
+          books!inner (
+            slug,
+            title,
+            author,
+            isbn,
+            cover_image_url,
+            description,
+            published_year,
+            genre,
+            page_count
+          )
+        `
+        )
+        .eq("rated_by", options.userId)
+        .limit(200);
+
+      if (!userRated.error && userRated.data) {
+        rows = userRated.data.flatMap((row) => {
+          const book = Array.isArray(row.books) ? row.books[0] : row.books;
+          return book ? [book as RatedDbBookRow] : [];
+        });
+      }
+    }
+
+    // Community-rated books filtered by a cheap ilike token when possible.
+    let communityQuery = supabase
+      .from("books")
+      .select(
+        `
+        slug,
+        title,
+        author,
+        isbn,
+        cover_image_url,
+        description,
+        published_year,
+        genre,
+        page_count,
+        ratings!inner ( id )
+      `
+      )
+      .limit(80);
+
+    if (primary && options?.mode !== "genre") {
+      communityQuery = communityQuery.or(
+        `title.ilike.%${primary}%,author.ilike.%${primary}%`
+      );
+    } else if (primary && options?.mode === "genre") {
+      communityQuery = communityQuery.or(
+        `genre.ilike.%${primary}%,title.ilike.%${primary}%`
+      );
+    }
+
+    const community = await communityQuery;
+    if (!community.error && community.data) {
+      const communityRows = community.data.map((row) => ({
+        slug: row.slug as string,
+        title: row.title as string,
+        author: (row.author as string | null) ?? null,
+        isbn: (row.isbn as string | null) ?? null,
+        cover_image_url: (row.cover_image_url as string | null) ?? null,
+        description: (row.description as string | null) ?? null,
+        published_year: (row.published_year as number | null) ?? null,
+        genre: (row.genre as string | null) ?? null,
+        page_count: (row.page_count as number | null) ?? null,
+      }));
+      rows = [...rows, ...communityRows];
+    }
+
+    const bySlug = new Map<string, RatedDbBookRow>();
+    for (const row of rows) {
+      if (!row?.slug || !row?.title) continue;
+      if (!bySlug.has(row.slug)) bySlug.set(row.slug, row);
+    }
+
+    const matched = Array.from(bySlug.values()).filter((row) =>
+      ratedBookMatchesQuery(row.title, row.author, query, {
+        mode: options?.mode,
+        genre: row.genre,
+      })
+    );
+
+    const books = matched.map(dbBookToSummary);
+    return {
+      books,
+      ratedSlugs: books.map((book) => book.id),
+    };
+  } catch {
+    return empty;
+  }
 }
 
 type SubmitRatingOptions = {

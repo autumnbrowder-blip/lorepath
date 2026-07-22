@@ -136,7 +136,9 @@ export function normalizeIsbndbBook(
   book: IsbndbBook,
   options?: { id?: string; source?: BookSummary["source"] }
 ): BookDetail | null {
-  const title = cleanTitle(book.title_long || book.title);
+  // Prefer the catalog `title` over `title_long` — the long form often
+  // appends "From the #1 Sunday Times…" marketing that is not the book title.
+  const title = cleanTitle(book.title) || cleanTitle(book.title_long);
   if (!title || title === "Untitled") return null;
 
   const isbn =

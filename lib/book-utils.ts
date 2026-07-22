@@ -211,11 +211,27 @@ export function normalizeTitleForDedupe(title: string): string {
   text = text.replace(/\s+[—–]\s+.*$/, "");
   text = text.replace(/\s+-\s+.*$/, "");
 
+  // ISBNdb (UK feeds especially) appends unpunctuated marketing clauses:
+  //   "<Title> From the number one Sunday Times bestselling author of <Other>"
+  //   "<Title> The No. 1 Sunday Times Bestseller and start of an addictive…"
+  // Strip from the clause to the end, but never down to an empty title.
+  const marketingTails = [
+    /\bfrom\s+the\s+.{0,60}?\bbestselling\s+(?:\w+\s+)?author\s+of\b.*$/,
+    /\b(?:the\s+)?(?:no\.?\s*\d+\s+|number\s+one\s+|#\s*\d+\s+)?(?:sunday|new\s+york)\s+times\s+bestseller\b.*$/,
+  ];
+  for (const pattern of marketingTails) {
+    const stripped = text.replace(pattern, " ").trim();
+    if (stripped) text = stripped;
+  }
+
   const editionFluff = [
     /\ba\s+novel\b/g,
     /\bthe\s+novel\b/g,
+    /\bdeluxe\s+limited\s+edition\b/g,
     /\bdeluxe\s+edition\b/g,
     /\bspecial\s+edition\b/g,
+    /\bexclusive\s+edition\b/g,
+    /\bstandard\s+edition\b/g,
     /\bcollector'?s?\s+edition\b/g,
     /\blimited\s+edition\b/g,
     /\bexpanded\s+edition\b/g,
@@ -320,7 +336,22 @@ export function getBookIsbnKey(
 }
 
 /**
- * Stable dedupe key: normalized title + "::" + normalized first author.
+ * Author component of the dedupe key. Normalize the first author (and any
+ * co-authors) the same way as titles: lowercase, strip punctuation, collapse
+ * spaces. Providers order co-authors differently (Google: "Anderson; Herbert",
+ * ISBNdb: "Herbert; Anderson"), so the canonical token is the lexicographically
+ * smallest normalized last-name+initial — deterministic and order-independent.
+ */
+function authorKeyPart(authors: string[]): string {
+  const keys = authors
+    .map((author) => normalizeAuthorKeyForDedupe(author))
+    .filter(Boolean)
+    .sort();
+  return keys[0] ?? "";
+}
+
+/**
+ * Stable dedupe key: normalized title + "::" + normalized author token.
  *
  * Unknown-author fallback: two same-title records without an author could be
  * different works, so we only collapse them when a stronger signal (shared
@@ -330,7 +361,7 @@ function bookDedupeKey(
   book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
 ): string {
   const title = normalizeTitleForDedupe(book.title);
-  const author = normalizeAuthorKeyForDedupe(book.authors[0] ?? "");
+  const author = authorKeyPart(book.authors);
   if (author) return `${title}::${author}`;
 
   const isbn = getBookIsbnKey(book);
@@ -371,15 +402,35 @@ export function metadataCompletenessScore(book: BookSummary): number {
   return score;
 }
 
+export type PickPreferredOptions = {
+  /**
+   * External ids/slugs that already have community (or user) ratings in our
+   * database. These win identity so ratings stay attached after merge.
+   */
+  ratedIds?: ReadonlySet<string>;
+};
+
 /**
  * Keep the stronger record when duplicates collide. Priority, in order:
- * 1. has a description
- * 2. has a cover image
- * 3. more recent published year (a known year beats an unknown one)
- * 4. more complete metadata (page count, genres, ISBN, author, source)
+ * 1. book that already has ratings in our database
+ * 2. has a description
+ * 3. has a cover image
+ * 4. more recent published year (a known year beats an unknown one)
+ * 5. more complete metadata (page count, genres, ISBN, author, source)
  * Ties fall back to a stable id comparison so results are deterministic.
  */
-export function pickPreferredDuplicate<T extends BookSummary>(a: T, b: T): T {
+export function pickPreferredDuplicate<T extends BookSummary>(
+  a: T,
+  b: T,
+  options?: PickPreferredOptions
+): T {
+  const ratedIds = options?.ratedIds;
+  if (ratedIds && ratedIds.size > 0) {
+    const aRated = ratedIds.has(a.id);
+    const bRated = ratedIds.has(b.id);
+    if (aRated !== bRated) return aRated ? a : b;
+  }
+
   const aDesc = Boolean(a.description?.trim());
   const bDesc = Boolean(b.description?.trim());
   if (aDesc !== bDesc) return bDesc ? b : a;
@@ -408,14 +459,17 @@ export function pickPreferredDuplicate<T extends BookSummary>(a: T, b: T): T {
  * Keeps the winner per pickPreferredDuplicate; field merging happens in
  * finalizeSearchBooks so provider-level and final dedupe agree on identity.
  */
-export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
+export function dedupeBooks<T extends BookSummary>(
+  books: T[],
+  options?: PickPreferredOptions
+): T[] {
   const byId = new Map<string, T>();
   const byKey = new Map<string, T>();
 
   for (const book of books) {
     const existingId = byId.get(book.id);
     const candidate = existingId
-      ? pickPreferredDuplicate(existingId, book)
+      ? pickPreferredDuplicate(existingId, book, options)
       : book;
     byId.set(book.id, candidate);
   }
@@ -427,7 +481,7 @@ export function dedupeBooks<T extends BookSummary>(books: T[]): T[] {
       byKey.set(key, book);
       continue;
     }
-    byKey.set(key, pickPreferredDuplicate(existing, book));
+    byKey.set(key, pickPreferredDuplicate(existing, book, options));
   }
 
   return Array.from(byKey.values());
@@ -556,7 +610,7 @@ function hasDescription(book: BookSummary): boolean {
 
 /**
  * Primary: newest publication year first (missing years last).
- * Then: cover+description completeness, then stable title / id.
+ * Then: books with descriptions, then the rest. Stable title / id tiebreak.
  */
 export function sortByPublishedYearDesc(books: BookSummary[]): BookSummary[] {
   return [...books].sort((a, b) => {
@@ -569,11 +623,9 @@ export function sortByPublishedYearDesc(books: BookSummary[]): BookSummary[] {
       return bYear - aYear; // newest first
     }
 
-    const aComplete =
-      (hasDescription(a) ? 2 : 0) + (a.coverUrl?.trim() ? 1 : 0);
-    const bComplete =
-      (hasDescription(b) ? 2 : 0) + (b.coverUrl?.trim() ? 1 : 0);
-    if (aComplete !== bComplete) return bComplete - aComplete;
+    const aDesc = hasDescription(a);
+    const bDesc = hasDescription(b);
+    if (aDesc !== bDesc) return aDesc ? -1 : 1;
 
     const titleCmp = a.title.localeCompare(b.title, "en", {
       sensitivity: "base",

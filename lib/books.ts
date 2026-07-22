@@ -38,6 +38,7 @@ import {
   searchOpenLibrary,
 } from "@/lib/open-library";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
+import { createAuthenticatedClient } from "@/lib/supabase/server";
 import type {
   BookDetail,
   BookSearchResult,
@@ -70,11 +71,22 @@ function readSettledPage(
   return EMPTY_PAGE;
 }
 
+async function resolveSearchUserId(): Promise<string | null> {
+  try {
+    const auth = await createAuthenticatedClient();
+    if ("error" in auth) return null;
+    return auth.user.id;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Queries Google Books, Open Library, Gutendex, ISBNdb, and Big Book in parallel.
  * Pass `{ mode: "genre" }` for subject/topic searches from genre tags.
  * Provider failures are isolated via Promise.allSettled.
  * Missing covers are backfilled via the BookCover API (bounded, best-effort).
+ * Rated books from Supabase that match the query are always included.
  */
 export async function searchBooks(
   query: string,
@@ -87,6 +99,8 @@ export async function searchBooks(
   const searchOptions: SearchBooksOptions | undefined = genreMode
     ? { mode: "genre" }
     : undefined;
+
+  const userIdPromise = resolveSearchUserId();
 
   const [
     googleSettled,
@@ -178,6 +192,13 @@ export async function searchBooks(
     );
   }
 
+  const providerRawCount =
+    googleBooks.length +
+    openLibraryBooks.length +
+    gutendexBooks.length +
+    isbndbBooks.length +
+    bigBookBooks.length;
+
   console.info("[searchBooks] raw provider counts", {
     query: searchQuery,
     page: pageNumber,
@@ -187,16 +208,59 @@ export async function searchBooks(
     gutendex: gutendexBooks.length,
     isbndb: isbndbBooks.length,
     bigbook: bigBookBooks.length,
+    totalRaw: providerRawCount,
     bigBookConfigured,
   });
 
-  let books = finalizeSearchBooks([
+  // Rated books that match this query — always surface them on page 1,
+  // prefer DB identity so ratings stay attached after dedupe.
+  let ratedBooks: BookSummary[] = [];
+  let ratedSlugs: string[] = [];
+  if (pageNumber === 1) {
+    try {
+      const userId = await userIdPromise;
+      const { findRatedBooksMatchingQuery } = await import("@/lib/ratings");
+      const rated = await findRatedBooksMatchingQuery(searchQuery, {
+        mode: genreMode ? "genre" : "text",
+        userId,
+      });
+      ratedBooks = rated.books;
+      ratedSlugs = rated.ratedSlugs;
+    } catch (error) {
+      console.error("[searchBooks] rated-book lookup failed:", error);
+    }
+  }
+
+  console.info("[searchBooks] rated books matching query", {
+    query: searchQuery,
+    page: pageNumber,
+    ratedMatches: ratedBooks.length,
+    ratedSlugs: ratedSlugs.slice(0, 20),
+  });
+
+  const rawCombined = [
     ...googleBooks,
     ...openLibraryBooks,
     ...gutendexBooks,
     ...isbndbBooks,
     ...bigBookBooks,
-  ]);
+    ...ratedBooks,
+  ];
+
+  let books = finalizeSearchBooks(rawCombined, {
+    ratedIds: new Set(ratedSlugs),
+    protectedBooks: ratedBooks,
+    debug: true,
+  });
+
+  console.info("[searchBooks] after finalize", {
+    query: searchQuery,
+    page: pageNumber,
+    rawCombined: rawCombined.length,
+    afterFinalize: books.length,
+    removedByDedupeApprox: Math.max(0, rawCombined.length - books.length),
+    ratedProtected: ratedBooks.length,
+  });
 
   // Best-effort cover fallback for the survivors that still lack one.
   books = await enrichBooksWithCovers(books);
