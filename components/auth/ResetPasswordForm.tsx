@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -9,6 +10,11 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 const missingConfigMessage =
   "Supabase is not configured. Add real NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart the dev server.";
+
+const SUCCESS_MESSAGE = "Your password has been updated. Returning you to sign in…";
+const FALLBACK_ERROR = "Unable to update password. Please try again.";
+const SESSION_MISSING_ERROR =
+  "This reset link is missing or expired. Request a new password reset email.";
 
 const storybookFont =
   "var(--font-storybook), var(--font-display), Georgia, serif";
@@ -36,13 +42,32 @@ const parchmentButtonStyle: CSSProperties = {
     "0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,248,230,0.5), inset 0 -2px 4px rgba(90,60,20,0.18)",
 };
 
+function readErrorMessage(err: unknown, fallback = FALLBACK_ERROR): string {
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string") {
+      const trimmed = message.trim();
+      if (trimmed && trimmed !== "{}") return trimmed;
+    }
+  }
+  return fallback;
+}
+
 function readAuthParams(): {
   accessToken: string | null;
   refreshToken: string | null;
   code: string | null;
+  tokenHash: string | null;
+  type: string | null;
 } {
   if (typeof window === "undefined") {
-    return { accessToken: null, refreshToken: null, code: null };
+    return {
+      accessToken: null,
+      refreshToken: null,
+      code: null,
+      tokenHash: null,
+      type: null,
+    };
   }
 
   const query = new URLSearchParams(window.location.search);
@@ -54,19 +79,29 @@ function readAuthParams(): {
     refreshToken:
       query.get("refresh_token") ?? hash.get("refresh_token") ?? null,
     code: query.get("code") ?? hash.get("code") ?? null,
+    tokenHash: query.get("token_hash") ?? hash.get("token_hash") ?? null,
+    type: query.get("type") ?? hash.get("type") ?? null,
   };
 }
 
 function clearAuthParamsFromUrl() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  url.searchParams.delete("access_token");
-  url.searchParams.delete("refresh_token");
-  url.searchParams.delete("code");
-  url.searchParams.delete("type");
-  url.searchParams.delete("expires_in");
-  url.searchParams.delete("expires_at");
-  url.searchParams.delete("token_type");
+  for (const key of [
+    "access_token",
+    "refresh_token",
+    "code",
+    "token_hash",
+    "type",
+    "expires_in",
+    "expires_at",
+    "token_type",
+    "error",
+    "error_code",
+    "error_description",
+  ]) {
+    url.searchParams.delete(key);
+  }
   url.hash = "";
   window.history.replaceState({}, "", `${url.pathname}${url.search}`);
 }
@@ -90,11 +125,24 @@ export function ResetPasswordForm() {
     }
 
     let cancelled = false;
+    const supabase = createClient();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
+        setSessionReady(true);
+        setCheckingSession(false);
+        setError(null);
+        clearAuthParamsFromUrl();
+      }
+    });
 
     async function ensureRecoverySession() {
       try {
-        const supabase = createClient();
-        const { accessToken, refreshToken, code } = readAuthParams();
+        const { accessToken, refreshToken, code, tokenHash, type } =
+          readAuthParams();
 
         // Implicit / hash (or query) recovery tokens
         if (accessToken && refreshToken) {
@@ -103,54 +151,80 @@ export function ResetPasswordForm() {
             refresh_token: refreshToken,
           });
 
-          if (!cancelled) {
-            if (sessionError) {
-              setSessionReady(false);
-              setError(sessionError.message);
-            } else {
-              clearAuthParamsFromUrl();
-              setSessionReady(true);
-            }
-            setCheckingSession(false);
+          if (cancelled) return;
+
+          if (sessionError) {
+            console.error("[reset-password] setSession failed:", sessionError);
+            setSessionReady(false);
+            setError(readErrorMessage(sessionError, SESSION_MISSING_ERROR));
+          } else {
+            clearAuthParamsFromUrl();
+            setSessionReady(true);
           }
+          setCheckingSession(false);
           return;
         }
 
-        // PKCE code landed on this page (normally goes through /auth/callback)
+        // Email link token_hash flow (type=recovery)
+        if (tokenHash && type) {
+          const { error: otpError } = await supabase.auth.verifyOtp({
+            type: type as EmailOtpType,
+            token_hash: tokenHash,
+          });
+
+          if (cancelled) return;
+
+          if (otpError) {
+            console.error("[reset-password] verifyOtp failed:", otpError);
+            setSessionReady(false);
+            setError(readErrorMessage(otpError, SESSION_MISSING_ERROR));
+          } else {
+            clearAuthParamsFromUrl();
+            setSessionReady(true);
+          }
+          setCheckingSession(false);
+          return;
+        }
+
+        // PKCE code landed on this page
         if (code) {
           const { error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(code);
 
-          if (!cancelled) {
-            if (exchangeError) {
-              setSessionReady(false);
-              setError(exchangeError.message);
-            } else {
-              clearAuthParamsFromUrl();
-              setSessionReady(true);
-            }
-            setCheckingSession(false);
+          if (cancelled) return;
+
+          if (exchangeError) {
+            console.error(
+              "[reset-password] exchangeCodeForSession failed:",
+              exchangeError
+            );
+            setSessionReady(false);
+            setError(readErrorMessage(exchangeError, SESSION_MISSING_ERROR));
+          } else {
+            clearAuthParamsFromUrl();
+            setSessionReady(true);
           }
+          setCheckingSession(false);
           return;
         }
 
-        // Callback already exchanged the code and redirected here with a session
+        // Session may already exist (callback exchanged earlier, or client auto-detected hash)
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (!cancelled) {
-          setSessionReady(Boolean(session));
-          setCheckingSession(false);
+        if (cancelled) return;
+
+        setSessionReady(Boolean(session));
+        if (!session) {
+          setError(SESSION_MISSING_ERROR);
         }
+        setCheckingSession(false);
       } catch (err) {
+        console.error("[reset-password] unexpected session error:", err);
         if (!cancelled) {
           setSessionReady(false);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Could not establish a recovery session."
-          );
+          setError(readErrorMessage(err, SESSION_MISSING_ERROR));
           setCheckingSession(false);
         }
       }
@@ -160,6 +234,7 @@ export function ResetPasswordForm() {
 
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
   }, [configured]);
 
@@ -173,9 +248,7 @@ export function ResetPasswordForm() {
     }
 
     if (!sessionReady) {
-      setError(
-        "This reset link is missing or expired. Request a new password reset email."
-      );
+      setError(SESSION_MISSING_ERROR);
       return;
     }
 
@@ -198,19 +271,21 @@ export function ResetPasswordForm() {
       });
 
       if (updateError) {
-        setError(updateError.message);
+        console.error("[reset-password] updateUser failed:", updateError);
+        setError(readErrorMessage(updateError));
         setLoading(false);
         return;
       }
 
       setSuccess(true);
       setLoading(false);
-      router.push("/login?message=password_updated");
-      router.refresh();
+      window.setTimeout(() => {
+        router.push("/login?message=password_updated");
+        router.refresh();
+      }, 1200);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not update password."
-      );
+      console.error("[reset-password] unexpected update error:", err);
+      setError(readErrorMessage(err));
       setLoading(false);
     }
   }
@@ -253,7 +328,7 @@ export function ResetPasswordForm() {
           Password updated
         </h1>
         <p className="mb-6 text-lg leading-relaxed text-[#0f2a22]">
-          Your new password is set. Returning you to the sign-in portal…
+          {SUCCESS_MESSAGE}
         </p>
         <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#a67c2d]" />
       </div>
@@ -273,7 +348,9 @@ export function ResetPasswordForm() {
           This password reset link is missing or no longer valid. Request a new
           one from the forgot password page.
         </p>
-        {error && <div className="alert-error mb-4 text-left">{error}</div>}
+        {typeof error === "string" && error.length > 0 ? (
+          <div className="alert-error mb-4 text-left">{error}</div>
+        ) : null}
         <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
           <Link
             href="/forgot-password"
@@ -312,7 +389,9 @@ export function ResetPasswordForm() {
         archives.
       </p>
 
-      {error && <div className="alert-error mb-4">{error}</div>}
+      {typeof error === "string" && error.length > 0 ? (
+        <div className="alert-error mb-4">{error}</div>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

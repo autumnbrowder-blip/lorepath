@@ -1,6 +1,5 @@
 "use client";
 
-import { getPasswordResetRedirectUrl } from "@/lib/auth-url";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
@@ -9,6 +8,15 @@ import { useState, type CSSProperties } from "react";
 
 const missingConfigMessage =
   "Supabase is not configured. Add real NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart the dev server.";
+
+const SUCCESS_MESSAGE =
+  "If an account exists for that email, a recovery link has been sent.";
+
+const FALLBACK_ERROR =
+  "Unable to send recovery email. Please try again.";
+
+/** Production reset page — never localhost. */
+const RESET_PASSWORD_REDIRECT = "https://lorepath.net/reset-password";
 
 const storybookFont =
   "var(--font-storybook), var(--font-display), Georgia, serif";
@@ -36,6 +44,18 @@ const parchmentButtonStyle: CSSProperties = {
     "0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,248,230,0.5), inset 0 -2px 4px rgba(90,60,20,0.18)",
 };
 
+function readErrorMessage(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string") {
+      const trimmed = message.trim();
+      // Supabase sometimes surfaces empty JSON bodies as the literal "{}"
+      if (trimmed && trimmed !== "{}") return trimmed;
+    }
+  }
+  return FALLBACK_ERROR;
+}
+
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,9 +66,16 @@ export function ForgotPasswordForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccess(false);
 
     if (!configured) {
       setError(missingConfigMessage);
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Please enter your email address.");
       return;
     }
 
@@ -57,24 +84,23 @@ export function ForgotPasswordForm() {
     try {
       const supabase = createClient();
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email,
+        trimmedEmail,
         {
-          redirectTo: getPasswordResetRedirectUrl(),
+          redirectTo: RESET_PASSWORD_REDIRECT,
         }
       );
 
       if (resetError) {
-        setError(resetError.message);
-        setLoading(false);
+        console.error("[forgot-password] resetPasswordForEmail failed:", resetError);
+        setError(readErrorMessage(resetError));
         return;
       }
 
       setSuccess(true);
-      setLoading(false);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not send reset email."
-      );
+      console.error("[forgot-password] unexpected error:", err);
+      setError(readErrorMessage(err));
+    } finally {
       setLoading(false);
     }
   }
@@ -89,10 +115,7 @@ export function ForgotPasswordForm() {
           Check your email
         </h1>
         <p className="mb-6 text-lg leading-relaxed text-[#0f2a22]">
-          If an account exists for{" "}
-          <strong className="font-semibold">{email}</strong>, we sent a link to
-          choose a new password. Open that email and follow the link to set a
-          new password on LorePath.
+          {SUCCESS_MESSAGE}
         </p>
         <Link
           href="/login"
@@ -127,7 +150,9 @@ export function ForgotPasswordForm() {
       {!configured && (
         <div className="alert-error mb-4">{missingConfigMessage}</div>
       )}
-      {error && <div className="alert-error mb-4">{error}</div>}
+      {typeof error === "string" && error.length > 0 ? (
+        <div className="alert-error mb-4">{error}</div>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

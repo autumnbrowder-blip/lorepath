@@ -42,7 +42,7 @@ export function getSiteOrigin(): string {
 }
 
 /** Allowlisted callback path — keep this exact string in Supabase Redirect URLs.
- * Used for OAuth, email confirmation, and password-reset recovery (`next=/reset-password`).
+ * Used for OAuth and email confirmation. Password reset uses /reset-password directly.
  */
 export function getAuthCallbackUrl(nextPath = "/profile"): string {
   const origin = getSiteOrigin();
@@ -55,10 +55,9 @@ export function getAuthCallbackUrl(nextPath = "/profile"): string {
 }
 
 /**
- * Password-reset emails always land on the live site via the auth callback,
- * which exchanges the recovery code then redirects to /reset-password.
- * Never uses localhost or NEXT_PUBLIC_SITE_URL.
+ * Password-reset emails always open the live reset page.
+ * Prefer importing this constant; ForgotPasswordForm also hardcodes the same URL.
  */
 export function getPasswordResetRedirectUrl(): string {
-  return `${PRODUCTION_SITE_ORIGIN}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
+  return `${PRODUCTION_SITE_ORIGIN}/reset-password`;
 }
