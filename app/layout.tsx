@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cinzel, Cinzel_Decorative, Cormorant_Garamond, Inter } from "next/font/google";
+import { BackToTop } from "@/components/BackToTop";
 import { Navbar } from "@/components/Navbar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
@@ -47,6 +48,7 @@ export default function RootLayout({
             <Navbar />
             <main className="flex-1">{children}</main>
           </div>
+          <BackToTop />
         </ThemeProvider>
       </body>
     </html>
