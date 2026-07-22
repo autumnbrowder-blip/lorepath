@@ -55,8 +55,9 @@ export function getAuthCallbackUrl(nextPath = "/profile"): string {
 }
 
 /**
- * Password-reset emails always open the live reset page.
- * Prefer importing this constant; ForgotPasswordForm also hardcodes the same URL.
+ * Password-reset redirect for the live site.
+ * ForgotPasswordForm prefers `${window.location.origin}/reset-password`
+ * (and never emits localhost).
  */
 export function getPasswordResetRedirectUrl(): string {
   return `${PRODUCTION_SITE_ORIGIN}/reset-password`;

@@ -12,11 +12,7 @@ const missingConfigMessage =
 const SUCCESS_MESSAGE =
   "If an account exists for that email, a recovery link has been sent.";
 
-const FALLBACK_ERROR =
-  "Unable to send recovery email. Please try again.";
-
-/** Production reset page — never localhost. */
-const RESET_PASSWORD_REDIRECT = "https://lorepath.net/reset-password";
+const FALLBACK_ERROR = "Unable to send recovery email. Please try again.";
 
 const storybookFont =
   "var(--font-storybook), var(--font-display), Georgia, serif";
@@ -44,13 +40,55 @@ const parchmentButtonStyle: CSSProperties = {
     "0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,248,230,0.5), inset 0 -2px 4px rgba(90,60,20,0.18)",
 };
 
-function readErrorMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === "string") {
-      const trimmed = message.trim();
-      // Supabase sometimes surfaces empty JSON bodies as the literal "{}"
+function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "[::1]" ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Live-site origin only — never localhost in reset email links. */
+function getResetPasswordRedirectTo(): string {
+  const origin = window.location.origin;
+  if (isLocalhostOrigin(origin)) {
+    return "https://lorepath.net/reset-password";
+  }
+  // Keep apex host so www/non-www both hit the same allowlisted redirect.
+  if (
+    origin === "https://www.lorepath.net" ||
+    origin === "http://www.lorepath.net"
+  ) {
+    return "https://lorepath.net/reset-password";
+  }
+  return `${origin}/reset-password`;
+}
+
+function toDisplayError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const record = err as {
+      message?: unknown;
+      code?: unknown;
+      status?: unknown;
+    };
+    if (typeof record.message === "string") {
+      const trimmed = record.message.trim();
       if (trimmed && trimmed !== "{}") return trimmed;
+    }
+    // Empty AuthApiError bodies often leave message as "{}" — surface code/status.
+    const code = typeof record.code === "string" ? record.code : null;
+    const status =
+      typeof record.status === "number" ? String(record.status) : null;
+    if (code || status) {
+      return `Unable to send recovery email${code ? ` (${code})` : ""}${
+        status ? ` [${status}]` : ""
+      }. Please try again.`;
     }
   }
   return FALLBACK_ERROR;
@@ -83,23 +121,38 @@ export function ForgotPasswordForm() {
 
     try {
       const supabase = createClient();
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        trimmedEmail,
+      const redirectTo = getResetPasswordRedirectTo();
+
+      // Exact browser-client recovery send (redirect never uses localhost).
+      const { data, error } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
         {
-          redirectTo: RESET_PASSWORD_REDIRECT,
+          redirectTo,
         }
       );
 
-      if (resetError) {
-        console.error("[forgot-password] resetPasswordForEmail failed:", resetError);
-        setError(readErrorMessage(resetError));
+      console.log("[forgot-password] resetPasswordForEmail result:", {
+        data,
+        error,
+        redirectTo,
+      });
+
+      if (error) {
+        console.log("[forgot-password] full error object:", error);
+        setError(
+          typeof error.message === "string" &&
+            error.message.trim() &&
+            error.message.trim() !== "{}"
+            ? error.message.trim()
+            : toDisplayError(error)
+        );
         return;
       }
 
       setSuccess(true);
     } catch (err) {
-      console.error("[forgot-password] unexpected error:", err);
-      setError(readErrorMessage(err));
+      console.log("[forgot-password] full error object:", err);
+      setError(toDisplayError(err));
     } finally {
       setLoading(false);
     }
