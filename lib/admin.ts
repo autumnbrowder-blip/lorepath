@@ -51,16 +51,29 @@ function dbClientForAdminReads(): SupabaseClient {
 
 /**
  * Resolve whether this auth user is an admin.
- * Primary: profiles.is_admin. Bootstrap: ADMIN_EMAILS env (then sync flag when possible).
+ * Allow if profiles.is_admin OR email is in ADMIN_EMAILS.
  */
 export async function userIsAdmin(user: User): Promise<boolean> {
-  const bootstrap = emailIsBootstrapAdmin(user.email);
+  // Fast path: env bootstrap (works even if the is_admin column is missing).
+  if (emailIsBootstrapAdmin(user.email)) {
+    let db: SupabaseClient | null = null;
+    try {
+      db = dbClientForAdminReads();
+    } catch {
+      const auth = await createAuthenticatedClient();
+      db = "error" in auth ? await createClient() : auth.supabase;
+    }
+    // Best-effort: stamp the DB flag for next time.
+    void Promise.resolve(
+      db.from("profiles").update({ is_admin: true }).eq("id", user.id)
+    ).catch(() => undefined);
+    return true;
+  }
 
   let db: SupabaseClient;
   try {
     db = dbClientForAdminReads();
   } catch {
-    // No service role — read with cookie/JWT client.
     const auth = await createAuthenticatedClient();
     db = "error" in auth ? await createClient() : auth.supabase;
   }
@@ -71,22 +84,11 @@ export async function userIsAdmin(user: User): Promise<boolean> {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!error && coerceIsAdmin(profile?.is_admin)) {
-    return true;
+  if (error) {
+    return false;
   }
 
-  // Column missing / read failed / flag false — allow bootstrap emails.
-  if (bootstrap) {
-    if (!error) {
-      // Best-effort: stamp is_admin so future checks use the DB flag.
-      void Promise.resolve(
-        db.from("profiles").update({ is_admin: true }).eq("id", user.id)
-      ).catch(() => undefined);
-    }
-    return true;
-  }
-
-  return false;
+  return coerceIsAdmin(profile?.is_admin);
 }
 
 /**
