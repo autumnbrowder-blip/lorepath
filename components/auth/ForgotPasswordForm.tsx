@@ -1,6 +1,6 @@
 "use client";
 
-import { getAuthCallbackUrl } from "@/lib/auth-url";
+import { getPasswordResetRedirectUrl } from "@/lib/auth-url";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
@@ -59,7 +59,7 @@ export function ForgotPasswordForm() {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         email,
         {
-          redirectTo: getAuthCallbackUrl("/reset-password"),
+          redirectTo: getPasswordResetRedirectUrl(),
         }
       );
 
@@ -91,9 +91,8 @@ export function ForgotPasswordForm() {
         <p className="mb-6 text-lg leading-relaxed text-[#0f2a22]">
           If an account exists for{" "}
           <strong className="font-semibold">{email}</strong>, we sent a link to
-          choose a new password. Open it on this computer while LorePath is
-          running at{" "}
-          <strong className="font-semibold">http://localhost:3000</strong>.
+          choose a new password. Open that email and follow the link to set a
+          new password on LorePath.
         </p>
         <Link
           href="/login"

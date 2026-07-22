@@ -1,15 +1,42 @@
+/** Canonical live site — password-reset emails always redirect here. */
+export const PRODUCTION_SITE_ORIGIN = "https://lorepath.net";
+
+function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "[::1]" ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Stable origin for auth email / OAuth redirects.
- * Prefer NEXT_PUBLIC_SITE_URL so links always hit the running server
- * (avoids broken links when a second Next process landed on :3001).
+ * Prefer a non-localhost NEXT_PUBLIC_SITE_URL, then the browser origin when
+ * not on localhost (so a mis-set env cannot send production users to :3000).
  */
 export function getSiteOrigin(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
+
+  if (fromEnv && !isLocalhostOrigin(fromEnv)) {
+    return fromEnv;
+  }
 
   if (typeof window !== "undefined") {
-    return window.location.origin;
+    const browserOrigin = window.location.origin;
+    if (!isLocalhostOrigin(browserOrigin)) {
+      return browserOrigin;
+    }
   }
+
+  // Local development only — never used for password-reset emails.
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") return window.location.origin;
 
   return "http://localhost:3000";
 }
@@ -25,4 +52,13 @@ export function getAuthCallbackUrl(nextPath = "/profile"): string {
     return `${origin}/auth/callback`;
   }
   return `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+}
+
+/**
+ * Password-reset emails always land on the live site via the auth callback,
+ * which exchanges the recovery code then redirects to /reset-password.
+ * Never uses localhost or NEXT_PUBLIC_SITE_URL.
+ */
+export function getPasswordResetRedirectUrl(): string {
+  return `${PRODUCTION_SITE_ORIGIN}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
 }
