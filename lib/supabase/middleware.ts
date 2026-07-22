@@ -53,6 +53,38 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // /admin stays unadvertised: everyone who isn't an admin goes home (not /login).
+  if (pathname.startsWith("/admin")) {
+    const home = new URL("/", request.url);
+
+    if (!user) {
+      return NextResponse.redirect(home);
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const flagAdmin =
+      profile?.is_admin === true ||
+      // PostgREST / drivers occasionally surface booleans as strings
+      String(profile?.is_admin).toLowerCase() === "true";
+
+    const adminEmails = (process.env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean);
+    const bootstrapAdmin =
+      Boolean(user.email) &&
+      adminEmails.includes(String(user.email).trim().toLowerCase());
+
+    if (!flagAdmin && !bootstrapAdmin) {
+      return NextResponse.redirect(home);
+    }
+  }
+
   const isProtected = protectedRoutes.some((route) =>
     pathname.startsWith(route)
   );

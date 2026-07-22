@@ -1,7 +1,11 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createAuthenticatedClient,
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
-import type { User } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -18,10 +22,76 @@ export type AdminDashboardStats = {
   recentRatings: AdminRecentRating[];
 };
 
+function coerceIsAdmin(value: unknown): boolean {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+/** Comma-separated emails in ADMIN_EMAILS (server-only) may access /admin. */
+function emailIsBootstrapAdmin(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const raw = process.env.ADMIN_EMAILS?.trim() ?? "";
+  if (!raw) return false;
+  const needle = email.trim().toLowerCase();
+  return raw
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(needle);
+}
+
+function dbClientForAdminReads(): SupabaseClient {
+  const admin = createServiceRoleClient();
+  // Prefer service role so is_admin / aggregates are not blocked by RLS quirks.
+  if (!("error" in admin)) {
+    return admin.supabase;
+  }
+  // Fallback: caller must already have a session-scoped client available.
+  throw new Error("SERVICE_ROLE_UNAVAILABLE");
+}
+
+/**
+ * Resolve whether this auth user is an admin.
+ * Primary: profiles.is_admin. Bootstrap: ADMIN_EMAILS env (then sync flag when possible).
+ */
+export async function userIsAdmin(user: User): Promise<boolean> {
+  const bootstrap = emailIsBootstrapAdmin(user.email);
+
+  let db: SupabaseClient;
+  try {
+    db = dbClientForAdminReads();
+  } catch {
+    // No service role — read with cookie/JWT client.
+    const auth = await createAuthenticatedClient();
+    db = "error" in auth ? await createClient() : auth.supabase;
+  }
+
+  const { data: profile, error } = await db
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!error && coerceIsAdmin(profile?.is_admin)) {
+    return true;
+  }
+
+  // Column missing / read failed / flag false — allow bootstrap emails.
+  if (bootstrap) {
+    if (!error) {
+      // Best-effort: stamp is_admin so future checks use the DB flag.
+      void Promise.resolve(
+        db.from("profiles").update({ is_admin: true }).eq("id", user.id)
+      ).catch(() => undefined);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Server-only gate for /admin.
- * Non-admins (and logged-out users) are sent home — never to /login —
- * so the admin surface stays unadvertised.
+ * Non-admins and logged-out users go to "/" (never /login) so the route stays hidden.
  */
 export async function requireAdmin(): Promise<{ user: User }> {
   noStore();
@@ -30,37 +100,75 @@ export async function requireAdmin(): Promise<{ user: User }> {
     redirect("/");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const auth = await createAuthenticatedClient();
+  if ("error" in auth) {
+    // Cookie-only fallback (same pattern as other portal pages).
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      redirect("/");
+    }
+    if (!(await userIsAdmin(user))) {
+      redirect("/");
+    }
+    return { user };
+  }
 
-  if (!user) {
+  if (!(await userIsAdmin(auth.user))) {
     redirect("/");
   }
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("is_admin")
-    .eq("id", user.id)
-    .maybeSingle();
+  return { user: auth.user };
+}
 
-  if (error || !profile?.is_admin) {
-    redirect("/");
-  }
+function mapRecentRating(row: {
+  id: unknown;
+  created_at: unknown;
+  sexual_content: unknown;
+  romance: unknown;
+  lgbt: unknown;
+  horror: unknown;
+  ideology: unknown;
+  pacing: unknown;
+  books: unknown;
+}): AdminRecentRating {
+  const bookRelation = row.books as
+    | { title?: string | null }
+    | { title?: string | null }[]
+    | null;
+  const book = Array.isArray(bookRelation) ? bookRelation[0] : bookRelation;
+  const title = book?.title;
 
-  return { user };
+  return {
+    id: String(row.id),
+    created_at: String(row.created_at),
+    sexual_content: Number(row.sexual_content) || 0,
+    romance: Number(row.romance) || 0,
+    lgbt: Number(row.lgbt) || 0,
+    horror: Number(row.horror) || 0,
+    ideology: Number(row.ideology) || 0,
+    pacing: Number(row.pacing) || 0,
+    book_title:
+      typeof title === "string" && title.trim() ? title : "Untitled tome",
+  };
 }
 
 /**
- * Admin dashboard payload. Always runs requireAdmin first so stats are never
- * loaded for non-admin callers (including accidental imports from other pages).
+ * Admin dashboard payload. Always runs requireAdmin first.
+ * Stats are loaded with the service role when available.
  */
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   await requireAdmin();
   noStore();
 
-  const supabase = await createClient();
+  let supabase: SupabaseClient;
+  try {
+    supabase = dbClientForAdminReads();
+  } catch {
+    supabase = await createClient();
+  }
 
   const [usersResult, ratingsResult, recentResult, ratedBookRowsResult] =
     await Promise.all([
@@ -85,7 +193,6 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
         )
         .order("created_at", { ascending: false })
         .limit(20),
-      // Distinct books with ≥1 rating (PostgREST has no COUNT DISTINCT).
       supabase.from("ratings").select("book_id"),
     ]);
 
@@ -95,36 +202,10 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
       .filter((id): id is string => Boolean(id))
   ).size;
 
-  const recentRatings: AdminRecentRating[] = (recentResult.data ?? []).map(
-    (row) => {
-      const bookRelation = row.books as
-        | { title?: string | null }
-        | { title?: string | null }[]
-        | null;
-      const book = Array.isArray(bookRelation)
-        ? bookRelation[0]
-        : bookRelation;
-      const title = book?.title;
-
-      return {
-        id: row.id as string,
-        created_at: row.created_at as string,
-        sexual_content: Number(row.sexual_content) || 0,
-        romance: Number(row.romance) || 0,
-        lgbt: Number(row.lgbt) || 0,
-        horror: Number(row.horror) || 0,
-        ideology: Number(row.ideology) || 0,
-        pacing: Number(row.pacing) || 0,
-        book_title:
-          typeof title === "string" && title.trim() ? title : "Untitled tome",
-      };
-    }
-  );
-
   return {
     totalUsers: usersResult.count ?? 0,
     totalRatings: ratingsResult.count ?? 0,
     booksWithRatings,
-    recentRatings,
+    recentRatings: (recentResult.data ?? []).map(mapRecentRating),
   };
 }

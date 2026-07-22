@@ -1,6 +1,7 @@
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import {
   getAdminDashboardStats,
+  requireAdmin,
   type AdminRecentRating,
 } from "@/lib/admin";
 import { RATING_CATEGORIES } from "@/lib/rating-categories";
@@ -13,6 +14,7 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function StatTile({
   label,
@@ -86,6 +88,8 @@ function RecentRatingRow({ rating }: { rating: AdminRecentRating }) {
 }
 
 export default async function AdminPage() {
+  // Defense in depth with middleware: session + profiles.is_admin (or ADMIN_EMAILS).
+  await requireAdmin();
   const stats = await getAdminDashboardStats();
 
   return (
@@ -138,8 +142,8 @@ export default async function AdminPage() {
                   Most recent ratings
                 </h2>
                 <p className="font-heading text-sm nav-dragon-gold">
-                  The last {Math.min(20, stats.recentRatings.length)} marks left
-                  across the archives
+                  The last {stats.recentRatings.length} marks left across the
+                  archives
                 </p>
               </div>
             </div>
