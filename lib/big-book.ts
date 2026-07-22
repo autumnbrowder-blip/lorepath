@@ -251,13 +251,15 @@ export async function searchBigBook(
     const available = typeof data.available === "number" ? data.available : 0;
     const hasMore = offset + PAGE_SIZE < available;
 
-    console.info("[bigbook] search done", {
-      query: trimmed,
-      page: pageNumber,
-      available,
-      rows: rows.length,
-      books: books.length,
-    });
+    if (process.env.SEARCH_DEBUG === "1") {
+      console.info("[bigbook] search done", {
+        query: trimmed,
+        page: pageNumber,
+        available,
+        rows: rows.length,
+        books: books.length,
+      });
+    }
 
     return { books, hasMore };
   } catch (error) {

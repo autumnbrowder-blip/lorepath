@@ -3,6 +3,7 @@
 import { BestsellersSection } from "@/components/browse/BestsellersSection";
 import { BookCard } from "@/components/browse/BookCard";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
+import { rankSearchResults } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import type { BookSource, BookSummary } from "@/types/book";
 import { AlertCircle, Loader2, Search } from "lucide-react";
@@ -19,16 +20,41 @@ const sourceLabels: Record<BookSource | "multi", string> = {
   multi: "Multiple sources",
 };
 
+type SearchPagePayload = {
+  books?: BookSummary[];
+  sources?: BookSource[];
+  source?: BookSource;
+  sourceCounts?: Partial<Record<BookSource, number>>;
+  hasMore?: boolean;
+  page?: number;
+};
+
+const CLIENT_SEARCH_CACHE_TTL_MS = 90_000;
+const clientSearchCache = new Map<
+  string,
+  { expires: number; data: SearchPagePayload }
+>();
+
+function searchCacheKey(
+  searchQuery: string,
+  pageNumber: number,
+  mode: "text" | "genre"
+) {
+  return `${mode}|${pageNumber}|${searchQuery.trim().toLowerCase()}`;
+}
+
 function mergeSearchResults(
   existing: BookSummary[],
-  incoming: BookSummary[]
+  incoming: BookSummary[],
+  query: string
 ): BookSummary[] {
   // Same cleanup path as the server. Prefer identities already on screen so
   // load-more cannot swap a rated/DB slug for a different provider edition.
-  return finalizeSearchBooks([...existing, ...incoming], {
+  const merged = finalizeSearchBooks([...existing, ...incoming], {
     ratedIds: new Set(existing.map((book) => book.id)),
     debug: false,
   });
+  return query.trim() ? rankSearchResults(merged, query) : merged;
 }
 
 type BookSearchProps = {
@@ -62,12 +88,23 @@ export function BookSearch({
   const [hasSearched, setHasSearched] = useState(false);
   const initialSearchDone = useRef(false);
   const searchModeRef = useRef<"text" | "genre">(initialMode);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function fetchSearchPage(
     searchQuery: string,
     pageNumber: number,
     mode: "text" | "genre"
   ) {
+    const key = searchCacheKey(searchQuery, pageNumber, mode);
+    const cached = clientSearchCache.get(key);
+    if (cached && cached.expires > Date.now()) {
+      return cached.data;
+    }
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const params = new URLSearchParams({
       q: searchQuery,
       page: String(pageNumber),
@@ -76,19 +113,19 @@ export function BookSearch({
       params.set("mode", "genre");
     }
 
-    const response = await fetch(`/api/books/search?${params.toString()}`);
+    const response = await fetch(`/api/books/search?${params.toString()}`, {
+      signal: controller.signal,
+    });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error ?? "Search failed.");
     }
-    return data as {
-      books?: BookSummary[];
-      sources?: BookSource[];
-      source?: BookSource;
-      sourceCounts?: Partial<Record<BookSource, number>>;
-      hasMore?: boolean;
-      page?: number;
-    };
+    const payload = data as SearchPagePayload;
+    clientSearchCache.set(key, {
+      expires: Date.now() + CLIENT_SEARCH_CACHE_TTL_MS,
+      data: payload,
+    });
+    return payload;
   }
 
   async function runSearch(
@@ -130,6 +167,9 @@ export function BookSearch({
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
       setBooks([]);
       setSources([]);
       setSourceCounts({});
@@ -158,7 +198,7 @@ export function BookSearch({
       );
       const incoming = data.books ?? [];
 
-      setBooks((current) => mergeSearchResults(current, incoming));
+      setBooks((current) => mergeSearchResults(current, incoming, trimmed));
       setSourceCounts((current) => ({
         ...current,
         google: (current.google ?? 0) + (data.sourceCounts?.google ?? 0),
@@ -179,6 +219,9 @@ export function BookSearch({
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
       setError(
         err instanceof Error
           ? err.message

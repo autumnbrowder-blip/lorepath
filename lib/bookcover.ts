@@ -155,10 +155,12 @@ export async function enrichBooksWithCovers(
 
   if (found.size === 0) return books;
 
-  console.info("[bookcover] enriched covers", {
-    candidates: candidates.length,
-    found: found.size,
-  });
+  if (process.env.SEARCH_DEBUG === "1") {
+    console.info("[bookcover] enriched covers", {
+      candidates: candidates.length,
+      found: found.size,
+    });
+  }
 
   return books.map((book) => {
     const cover = found.get(book.id);

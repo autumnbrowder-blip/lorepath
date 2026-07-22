@@ -140,7 +140,7 @@ export function AuthNav() {
     } catch {
       setLoading(false);
     }
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -171,7 +171,7 @@ export function AuthNav() {
   }, [pathname]);
 
   if (loading) {
-    return <div className="h-8 w-16 shrink-0" aria-hidden="true" />;
+    return <div className="h-10 w-[7.5rem] shrink-0 sm:w-[9rem]" aria-hidden="true" />;
   }
 
   if (user) {

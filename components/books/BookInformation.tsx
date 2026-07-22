@@ -120,7 +120,6 @@ export function BookInformation({
                   className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                   sizes="(max-width: 1024px) 280px, 280px"
                   priority
-                  unoptimized
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 nav-dragon-gold">

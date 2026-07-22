@@ -3,6 +3,8 @@ import { mergePreferredBookFields } from "@/lib/book-merge";
 import {
   getBookDedupeKey,
   getBookIsbnKey,
+  isMerchandiseOrCompanion,
+  isWeakDescription,
   pickPreferredDuplicate,
   sortByPublishedYearDesc,
   type PickPreferredOptions,
@@ -12,6 +14,10 @@ import type { BookSummary } from "@/types/book";
 const MISSING_DESCRIPTION_FALLBACK = "No description available.";
 
 function hasDescription(book: BookSummary): boolean {
+  return Boolean(book.description?.trim()) && !isWeakDescription(book.description);
+}
+
+function hasAnyDescription(book: BookSummary): boolean {
   return Boolean(book.description?.trim());
 }
 
@@ -25,11 +31,11 @@ function hasDescriptionAndCover(book: BookSummary): boolean {
 
 /** Eligible for merge — need at least one of description or cover. */
 function hasUsableSearchFields(book: BookSummary): boolean {
-  return hasDescription(book) || hasCover(book);
+  return hasAnyDescription(book) || hasCover(book);
 }
 
 function withDescriptionFallback(book: BookSummary): BookSummary {
-  if (hasDescription(book)) return book;
+  if (hasAnyDescription(book)) return book;
   return { ...book, description: MISSING_DESCRIPTION_FALLBACK };
 }
 
@@ -44,7 +50,7 @@ function selectQualityBooks(books: BookSummary[]): BookSummary[] {
   const withCover = books.filter(hasCover).map(withDescriptionFallback);
   if (withCover.length > 0) return withCover;
 
-  return books.filter(hasDescription);
+  return books.filter(hasAnyDescription);
 }
 
 /**
@@ -179,7 +185,7 @@ function forceProtectedBooks(
 
     // Not in API / quality results — force it back in.
     const stub = withFinalizedTags(
-      hasDescription(protectedBook)
+      hasAnyDescription(protectedBook)
         ? protectedBook
         : withDescriptionFallback(protectedBook)
     );
@@ -214,12 +220,13 @@ export function finalizeSearchBooks(
   const debug = options?.debug ?? false;
 
   const inputCount = books.length;
-  const candidates = books.filter(
-    (book) =>
-      hasUsableSearchFields(book) ||
-      (ratedIds?.has(book.id) ?? false) ||
-      protectedIds.has(book.id)
-  );
+  const candidates = books.filter((book) => {
+    const protectedHit =
+      (ratedIds?.has(book.id) ?? false) || protectedIds.has(book.id);
+    if (protectedHit) return true;
+    if (isMerchandiseOrCompanion(book)) return false;
+    return hasUsableSearchFields(book);
+  });
   const droppedAsUnusable = inputCount - candidates.length;
 
   const {

@@ -91,12 +91,9 @@ export function PreferenceSlider({
         </div>
       </div>
 
-      {levelDescription && (
-        <p className="relative z-[3] mb-3 px-1 font-heading text-base leading-relaxed nav-dragon-gold">
-          {levelDescription}
-        </p>
-      )}
-
+      <p className="relative z-[3] mb-3 min-h-[3rem] overflow-hidden px-1 font-heading text-base leading-relaxed nav-dragon-gold">
+        {levelDescription ?? "\u00a0"}
+      </p>
       <div className="relative z-[3] mb-2 px-1 py-2">
         <div className="h-2.5 overflow-hidden rounded-sm border border-gold-600/35 bg-forest-950/65">
           <div

@@ -62,6 +62,8 @@ export function AvatarCrest({
       alt=""
       width={size}
       height={size}
+      loading={variant === "display" ? "eager" : "lazy"}
+      decoding="async"
       title={title ?? option.label}
       aria-hidden="true"
       onError={() => setFailed(true)}

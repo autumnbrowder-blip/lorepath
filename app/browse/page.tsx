@@ -9,20 +9,24 @@ type BrowsePageProps = {
 export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   const { q, mode } = await searchParams;
   const initialMode = isGenreSearchMode(mode) ? "genre" : "text";
+  const hasQuery = Boolean(q?.trim());
 
   // Fail softly — never let NYT errors take down Browse / search.
+  // Skip NYT work when the user already has a search query (results hide bestsellers).
   let bestsellers: Awaited<ReturnType<typeof fetchNytBestsellers>> = {
     books: [],
   };
-  try {
-    bestsellers = await fetchNytBestsellers();
-  } catch (error) {
-    console.error("Browse: NYT bestsellers unavailable:", error);
-    bestsellers = {
-      books: [],
-      error:
-        "The bestsellers archive is resting for now. Try searching below for any tome.",
-    };
+  if (!hasQuery) {
+    try {
+      bestsellers = await fetchNytBestsellers();
+    } catch (error) {
+      console.error("Browse: NYT bestsellers unavailable:", error);
+      bestsellers = {
+        books: [],
+        error:
+          "The bestsellers archive is resting for now. Try searching below for any tome.",
+      };
+    }
   }
 
   return (

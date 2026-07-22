@@ -56,7 +56,6 @@ export function HomeHero() {
                 width={917}
                 height={1024}
                 priority
-                unoptimized
                 className="relative mx-auto h-auto w-full drop-shadow-[0_0_40px_rgba(212,175,55,0.5)]"
               />
             </div>

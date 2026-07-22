@@ -148,10 +148,10 @@ export function RatingForm({
     }
   }, [initialRatings]);
 
-  // Client re-fetch so a full page load still picks up the latest marks even if
-  // SSR briefly misses them (same source of truth as POST).
+  // Only hydrate from the API when SSR did not provide a rating — avoids a
+  // duplicate GET on every book detail visit for logged-in users.
   useEffect(() => {
-    if (!isLoggedIn || !bookId) return;
+    if (!isLoggedIn || !bookId || initialRatings != null) return;
 
     let cancelled = false;
 
@@ -193,7 +193,7 @@ export function RatingForm({
     return () => {
       cancelled = true;
     };
-  }, [bookId, isLoggedIn]);
+  }, [bookId, isLoggedIn, initialRatings]);
 
   function updateRating(key: keyof ContentRating, value: number) {
     dirtyRef.current = true;
@@ -242,34 +242,8 @@ export function RatingForm({
         applyCommunityRatings(data.communityRatings);
       }
 
-      // Re-fetch GET so community + user marks match what a refresh will show.
-      try {
-        const refresh = await fetch(`/api/books/${bookId}/ratings`, {
-          method: "GET",
-          headers,
-          credentials: "same-origin",
-          cache: "no-store",
-        });
-        if (refresh.ok) {
-          const latest = (await refresh.json()) as {
-            userRating?: ContentRating | null;
-            averages?: ContentRating | null;
-            count?: number;
-          };
-          if (latest.userRating) {
-            applyConfirmedRating(latest.userRating);
-          }
-          if (typeof latest.count === "number") {
-            applyCommunityRatings({
-              averages: latest.averages ?? null,
-              count: latest.count,
-            });
-          }
-        }
-      } catch {
-        // POST payload already applied above.
-      }
-
+      // POST already returned confirmed user + community marks — skip a
+      // redundant GET. Refresh RSC islands (match score / rated lists).
       setSuccess(true);
       router.refresh();
     } catch (submitError) {

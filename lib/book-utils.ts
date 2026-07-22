@@ -101,6 +101,30 @@ export function isLowQualityBook(book: BookSummary): boolean {
   return false;
 }
 
+/**
+ * Companion merch / activity books that muddy popular-title searches
+ * (e.g. Fourth Wing tarot, crochet, journals, word-search kits).
+ */
+export function isMerchandiseOrCompanion(book: BookSummary): boolean {
+  const title = book.title.toLowerCase();
+  return /tarot|crochet|knitting|coloring book|\bjournal\b|word[\s-]?search|pencil|activity book|sticker|workbook|puzzle book|boxed?\s+set|collection set|official companion|parody|unofficial|cookbook|recipe|calendar|planner|diary|\bkit\b/i.test(
+    title
+  );
+}
+
+/** Thin or subject-list blurbs that should lose to a real synopsis. */
+export function isWeakDescription(description?: string | null): boolean {
+  const text = description?.trim() ?? "";
+  if (!text) return true;
+  if (/^no description available\.?$/i.test(text)) return true;
+  if (text.length < 40) return true;
+  // Gutendex-style subject strings: "Fiction, Science fiction, Adventure, ..."
+  if (text.split(",").length >= 4 && text.length < 140 && !/[.!?].{20}/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
 export function countQualityBooks(books: BookSummary[]): number {
   return books.filter(
     (book) =>
@@ -556,22 +580,39 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   // Strong boost for well-known novel titles
   if (/^the three[- ]body problem$/i.test(book.title.trim())) score += 45;
   if (/^the hunger games$/i.test(book.title.trim())) score += 45;
+  if (/^fourth wing$/i.test(book.title.trim())) score += 45;
+  if (/^dune$/i.test(book.title.trim())) score += 40;
 
   if (!authorSearch) {
     if (normalizedTitle === normalizedQuery) score += 50;
+    else if (normalizedTitle.startsWith(normalizedQuery)) score += 38;
     else if (normalizedTitle.includes(normalizedQuery)) score += 30;
 
     const matchedTokens = queryTokens.filter((token) =>
       normalizedTitle.includes(token)
     );
     score += matchedTokens.length * 5;
+
+    // Prefer compact titles that match the query over long marketing titles.
+    if (
+      normalizedTitle === normalizedQuery ||
+      normalizedTitle.startsWith(`${normalizedQuery} `)
+    ) {
+      score += 12;
+    }
   }
 
-  if (book.description) score += 4;
+  if (book.description && !isWeakDescription(book.description)) score += 8;
+  else if (book.description) score += 1;
   if (book.coverUrl) score += 3;
   if (book.authors[0]?.toLowerCase() !== "unknown author") score += 3;
   if (book.publishedYear && book.publishedYear >= 1900) score += 1;
   if (book.genres.length > 0) score += 2;
+
+  // Prefer commercial catalog sources over Gutenberg keyword noise for text search.
+  if (book.source === "google" || book.source === "isbndb") score += 6;
+  else if (book.source === "bigbook") score += 3;
+  else if (book.source === "gutendex") score -= 18;
 
   // Deprioritize sequel volumes when searching for the main title
   if (
@@ -582,6 +623,7 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
     score -= 20;
   }
 
+  if (isMerchandiseOrCompanion(book)) score -= 80;
   if (isAcademicNoise(book)) score -= 50;
   if (isLowQualityBook(book)) score -= 100;
 

@@ -39,6 +39,7 @@ import {
 } from "@/lib/open-library";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createAuthenticatedClient } from "@/lib/supabase/server";
+import { rankSearchResults } from "@/lib/book-utils";
 import type {
   BookDetail,
   BookSearchResult,
@@ -50,6 +51,7 @@ import { cache } from "react";
 export { finalizeSearchBooks } from "@/lib/search-finalize";
 
 const EMPTY_PAGE = { books: [] as BookSummary[], hasMore: false };
+const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
 
 const SEARCH_SOURCES: BookSource[] = [
   "google",
@@ -111,12 +113,16 @@ export async function searchBooks(
   ] = await Promise.allSettled([
     searchGoogleBooks(searchQuery, pageNumber, searchOptions),
     searchOpenLibrary(searchQuery, pageNumber, searchOptions),
-    searchGutendex(searchQuery, pageNumber, searchOptions),
+    // Gutenberg keyword search adds noise for modern titles; keep for genre
+    // discovery and page-1 text (ranked down), skip on later pages.
+    genreMode || pageNumber === 1
+      ? searchGutendex(searchQuery, pageNumber, searchOptions)
+      : Promise.resolve(EMPTY_PAGE),
     searchIsbndb(searchQuery, pageNumber, searchOptions),
     searchBigBook(searchQuery, pageNumber, searchOptions),
   ]);
 
-  if (googleSettled.status === "rejected") {
+  if (SEARCH_DEBUG && googleSettled.status === "rejected") {
     console.error("[searchBooks] Google Books failed:", {
       query: searchQuery,
       page: pageNumber,
@@ -125,7 +131,7 @@ export async function searchBooks(
     });
   }
 
-  if (isbndbSettled.status === "rejected") {
+  if (SEARCH_DEBUG && isbndbSettled.status === "rejected") {
     console.error("[searchBooks] ISBNdb failed:", {
       query: searchQuery,
       page: pageNumber,
@@ -134,7 +140,7 @@ export async function searchBooks(
     });
   }
 
-  if (bigBookSettled.status === "rejected") {
+  if (SEARCH_DEBUG && bigBookSettled.status === "rejected") {
     console.error("[searchBooks] Big Book failed:", {
       query: searchQuery,
       page: pageNumber,
@@ -158,37 +164,11 @@ export async function searchBooks(
   const isbndbBooks = isbndbResult.books;
   const bigBookBooks = bigBookResult.books;
 
-  if (googleSettled.status === "fulfilled" && googleBooks.length === 0) {
-    console.error(
-      "[searchBooks] Google Books returned 0 usable books (not silently ignored).",
-      {
-        query: searchQuery,
-        page: pageNumber,
-        mode: options?.mode ?? "text",
-      }
-    );
-  }
-
   const isbndbConfigured = Boolean(process.env.ISBNDB_API_KEY?.trim());
-  if (
-    isbndbConfigured &&
-    isbndbSettled.status === "fulfilled" &&
-    isbndbBooks.length === 0
-  ) {
-    console.error(
-      "[searchBooks] ISBNdb returned 0 usable books (not silently ignored).",
-      {
-        query: searchQuery,
-        page: pageNumber,
-        mode: options?.mode ?? "text",
-      }
-    );
-  }
-
   const bigBookConfigured = isBigBookConfigured();
-  if (!bigBookConfigured && pageNumber === 1) {
+  if (!bigBookConfigured && pageNumber === 1 && SEARCH_DEBUG) {
     console.warn(
-      "[searchBooks] BIG_BOOK_API_KEY not set — Big Book will contribute 0 results. Get a free key at https://bigbookapi.com and set BIG_BOOK_API_KEY in .env.local (and your host env), then restart / redeploy."
+      "[searchBooks] BIG_BOOK_API_KEY not set — Big Book will contribute 0 results."
     );
   }
 
@@ -199,18 +179,21 @@ export async function searchBooks(
     isbndbBooks.length +
     bigBookBooks.length;
 
-  console.info("[searchBooks] raw provider counts", {
-    query: searchQuery,
-    page: pageNumber,
-    mode: genreMode ? "genre" : "text",
-    google: googleBooks.length,
-    openlibrary: openLibraryBooks.length,
-    gutendex: gutendexBooks.length,
-    isbndb: isbndbBooks.length,
-    bigbook: bigBookBooks.length,
-    totalRaw: providerRawCount,
-    bigBookConfigured,
-  });
+  if (SEARCH_DEBUG) {
+    console.info("[searchBooks] raw provider counts", {
+      query: searchQuery,
+      page: pageNumber,
+      mode: genreMode ? "genre" : "text",
+      google: googleBooks.length,
+      openlibrary: openLibraryBooks.length,
+      gutendex: gutendexBooks.length,
+      isbndb: isbndbBooks.length,
+      bigbook: bigBookBooks.length,
+      totalRaw: providerRawCount,
+      bigBookConfigured,
+      isbndbConfigured,
+    });
+  }
 
   // Rated books that match this query — always surface them on page 1,
   // prefer DB identity so ratings stay attached after dedupe.
@@ -231,12 +214,14 @@ export async function searchBooks(
     }
   }
 
-  console.info("[searchBooks] rated books matching query", {
-    query: searchQuery,
-    page: pageNumber,
-    ratedMatches: ratedBooks.length,
-    ratedSlugs: ratedSlugs.slice(0, 20),
-  });
+  if (SEARCH_DEBUG) {
+    console.info("[searchBooks] rated books matching query", {
+      query: searchQuery,
+      page: pageNumber,
+      ratedMatches: ratedBooks.length,
+      ratedSlugs: ratedSlugs.slice(0, 20),
+    });
+  }
 
   const rawCombined = [
     ...googleBooks,
@@ -250,17 +235,25 @@ export async function searchBooks(
   let books = finalizeSearchBooks(rawCombined, {
     ratedIds: new Set(ratedSlugs),
     protectedBooks: ratedBooks,
-    debug: true,
+    debug: SEARCH_DEBUG,
   });
 
-  console.info("[searchBooks] after finalize", {
-    query: searchQuery,
-    page: pageNumber,
-    rawCombined: rawCombined.length,
-    afterFinalize: books.length,
-    removedByDedupeApprox: Math.max(0, rawCombined.length - books.length),
-    ratedProtected: ratedBooks.length,
-  });
+  // Relevance ranking for text search (genre mode keeps year-forward order
+  // from finalize, then preferMatchingGenreTags).
+  if (!genreMode) {
+    books = rankSearchResults(books, searchQuery);
+  }
+
+  if (SEARCH_DEBUG) {
+    console.info("[searchBooks] after finalize", {
+      query: searchQuery,
+      page: pageNumber,
+      rawCombined: rawCombined.length,
+      afterFinalize: books.length,
+      removedByDedupeApprox: Math.max(0, rawCombined.length - books.length),
+      ratedProtected: ratedBooks.length,
+    });
+  }
 
   // Best-effort cover fallback for the survivors that still lack one.
   books = await enrichBooksWithCovers(books);

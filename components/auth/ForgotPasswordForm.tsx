@@ -124,21 +124,14 @@ export function ForgotPasswordForm() {
       const redirectTo = getResetPasswordRedirectTo();
 
       // Exact browser-client recovery send (redirect never uses localhost).
-      const { data, error } = await supabase.auth.resetPasswordForEmail(
+      const { error } = await supabase.auth.resetPasswordForEmail(
         email.trim(),
         {
           redirectTo,
         }
       );
 
-      console.log("[forgot-password] resetPasswordForEmail result:", {
-        data,
-        error,
-        redirectTo,
-      });
-
       if (error) {
-        console.log("[forgot-password] full error object:", error);
         setError(
           typeof error.message === "string" &&
             error.message.trim() &&
@@ -151,7 +144,6 @@ export function ForgotPasswordForm() {
 
       setSuccess(true);
     } catch (err) {
-      console.log("[forgot-password] full error object:", err);
       setError(toDisplayError(err));
     } finally {
       setLoading(false);

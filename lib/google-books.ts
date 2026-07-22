@@ -206,29 +206,25 @@ export async function searchGoogleBooks(
       options
     );
 
-    // Single deterministic query per page — no alternate-query branching
-    // (that path caused results to flicker between identical searches).
+    // Use requested page size so filtered-out items don't keep advertising
+    // endless "Load More" pages.
     const startIndex = (page - 1) * pageSize;
-    const hasMore = startIndex + books.length < totalItems;
+    const hasMore = startIndex + pageSize < totalItems;
 
-    if (totalItems > 0 && books.length === 0) {
-      console.error(
-        "[searchGoogleBooks] API returned items but all were filtered as low quality.",
-        {
+    if (process.env.SEARCH_DEBUG === "1") {
+      if (totalItems > 0 && books.length === 0) {
+        console.info(
+          "[searchGoogleBooks] API returned items but all were filtered as low quality.",
+          { query, page, mode: options?.mode, totalItems, pageSize }
+        );
+      } else if (totalItems === 0) {
+        console.info("[searchGoogleBooks] API returned 0 totalItems.", {
           query,
           page,
           mode: options?.mode,
-          totalItems,
           pageSize,
-        }
-      );
-    } else if (totalItems === 0) {
-      console.error("[searchGoogleBooks] API returned 0 totalItems.", {
-        query,
-        page,
-        mode: options?.mode,
-        pageSize,
-      });
+        });
+      }
     }
 
     return { books: dedupeBooks(books), hasMore };

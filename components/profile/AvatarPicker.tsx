@@ -55,6 +55,8 @@ function PickerPortrait({
       alt=""
       width={112}
       height={112}
+      loading="lazy"
+      decoding="async"
       className="h-full w-full object-cover"
       onError={() => setFailed(true)}
     />
