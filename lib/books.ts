@@ -19,6 +19,7 @@ import {
   getGoogleBookByIsbn,
   RateLimitError,
   searchGoogleBooks,
+  type GoogleBooksPageResult,
 } from "@/lib/google-books";
 import {
   enrichBookDetailWithIsbndb,
@@ -51,6 +52,12 @@ import { cache } from "react";
 export { finalizeSearchBooks } from "@/lib/search-finalize";
 
 const EMPTY_PAGE = { books: [] as BookSummary[], hasMore: false };
+const EMPTY_GOOGLE_PAGE: GoogleBooksPageResult = {
+  books: [],
+  hasMore: false,
+  rawCount: 0,
+  error: null,
+};
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
 
 const SEARCH_SOURCES: BookSource[] = [
@@ -71,6 +78,33 @@ function readSettledPage(
 
   console.error(`[searchBooks] ${label} rejected:`, result.reason);
   return EMPTY_PAGE;
+}
+
+function readSettledGoogle(
+  result: PromiseSettledResult<GoogleBooksPageResult>
+): GoogleBooksPageResult {
+  if (result.status === "fulfilled") {
+    return result.value;
+  }
+
+  const reason = result.reason;
+  const message =
+    reason instanceof Error ? reason.message : String(reason ?? "unknown error");
+  const status =
+    reason instanceof Error
+      ? (reason as Error & { status?: number }).status
+      : undefined;
+
+  console.error(`[searchBooks] Google Books rejected:`, {
+    message,
+    status,
+    reason,
+  });
+
+  return {
+    ...EMPTY_GOOGLE_PAGE,
+    error: { message, status },
+  };
 }
 
 async function resolveSearchUserId(): Promise<string | null> {
@@ -122,15 +156,6 @@ export async function searchBooks(
     searchBigBook(searchQuery, pageNumber, searchOptions),
   ]);
 
-  if (SEARCH_DEBUG && googleSettled.status === "rejected") {
-    console.error("[searchBooks] Google Books failed:", {
-      query: searchQuery,
-      page: pageNumber,
-      mode: options?.mode ?? "text",
-      reason: googleSettled.reason,
-    });
-  }
-
   if (SEARCH_DEBUG && isbndbSettled.status === "rejected") {
     console.error("[searchBooks] ISBNdb failed:", {
       query: searchQuery,
@@ -149,7 +174,7 @@ export async function searchBooks(
     });
   }
 
-  const googleResult = readSettledPage("Google Books", googleSettled);
+  const googleResult = readSettledGoogle(googleSettled);
   const openLibraryResult = readSettledPage(
     "Open Library",
     openLibrarySettled
@@ -163,6 +188,16 @@ export async function searchBooks(
   const gutendexBooks = gutendexResult.books;
   const isbndbBooks = isbndbResult.books;
   const bigBookBooks = bigBookResult.books;
+
+  if (googleResult.error) {
+    console.error("[searchBooks] Google Books provider error:", {
+      query: searchQuery,
+      page: pageNumber,
+      mode: options?.mode ?? "text",
+      googleError: googleResult.error,
+      googleRawCount: googleResult.rawCount,
+    });
+  }
 
   const isbndbConfigured = Boolean(process.env.ISBNDB_API_KEY?.trim());
   const bigBookConfigured = isBigBookConfigured();
@@ -185,6 +220,8 @@ export async function searchBooks(
       page: pageNumber,
       mode: genreMode ? "genre" : "text",
       google: googleBooks.length,
+      googleRawCount: googleResult.rawCount,
+      googleError: googleResult.error,
       openlibrary: openLibraryBooks.length,
       gutendex: gutendexBooks.length,
       isbndb: isbndbBooks.length,
@@ -192,6 +229,9 @@ export async function searchBooks(
       totalRaw: providerRawCount,
       bigBookConfigured,
       isbndbConfigured,
+      googleBooksApiKeyConfigured: Boolean(
+        process.env.GOOGLE_BOOKS_API_KEY?.trim()
+      ),
     });
   }
 
@@ -286,6 +326,9 @@ export async function searchBooks(
       gutendexResult.hasMore ||
       isbndbResult.hasMore ||
       bigBookResult.hasMore,
+    // Temporary debug fields — remove once Google search stability is confirmed.
+    googleError: googleResult.error,
+    googleRawCount: googleResult.rawCount,
   };
 }
 

@@ -22,10 +22,26 @@ import type {
 } from "@/types/google-books";
 
 export class RateLimitError extends Error {
-  constructor() {
-    super("Google Books rate limit reached.");
+  status = 429;
+
+  constructor(message = "Google Books rate limit reached.") {
+    super(message);
     this.name = "RateLimitError";
   }
+}
+
+export type GoogleBooksProviderError = {
+  message: string;
+  status?: number;
+};
+
+const FETCH_TIMEOUT_MS = 10000;
+const GOOGLE_PAGE_SIZE = 20;
+const MAX_503_ATTEMPTS = 3;
+
+function getGoogleBooksApiKey(): string | null {
+  const key = process.env.GOOGLE_BOOKS_API_KEY?.trim();
+  return key || null;
 }
 
 function normalizeCoverUrl(url: string | undefined): string | null {
@@ -47,7 +63,7 @@ function buildGoogleBooksUrl(path: string, params?: URLSearchParams): string {
     params.forEach((value, key) => url.searchParams.set(key, value));
   }
 
-  const apiKey = process.env.GOOGLE_BOOKS_API_KEY?.trim();
+  const apiKey = getGoogleBooksApiKey();
   if (apiKey) {
     url.searchParams.set("key", apiKey);
   }
@@ -55,20 +71,36 @@ function buildGoogleBooksUrl(path: string, params?: URLSearchParams): string {
   return url.toString();
 }
 
+async function readGoogleErrorBody(
+  response: Response
+): Promise<string | null> {
+  try {
+    const body = (await response.json()) as {
+      error?: { message?: string; status?: string };
+    };
+    return body.error?.message?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchGoogleBooks(
   url: string,
   options?: { revalidate?: number; noStore?: boolean }
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    return await fetch(
+    // Await the full response headers before clearing the timeout so a slow
+    // but successful request is never aborted mid-flight after resolve.
+    const response = await fetch(
       url,
       options?.noStore
         ? { cache: "no-store", signal: controller.signal }
         : { next: { revalidate: options?.revalidate ?? 3600 }, signal: controller.signal }
     );
+    return response;
   } finally {
     clearTimeout(timeout);
   }
@@ -80,13 +112,40 @@ async function fetchGoogleBooksWithRetry(
 ): Promise<Response> {
   let response = await fetchGoogleBooks(url, options);
 
-  // Google occasionally returns transient 503s — retry once
-  if (response.status === 503) {
-    await new Promise((resolve) => setTimeout(resolve, 350));
+  // Google occasionally returns transient 503s — retry with short backoff.
+  for (
+    let attempt = 1;
+    response.status === 503 && attempt < MAX_503_ATTEMPTS;
+    attempt++
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
     response = await fetchGoogleBooks(url, options);
   }
 
   return response;
+}
+
+function toProviderError(
+  error: unknown,
+  fallbackStatus?: number
+): GoogleBooksProviderError {
+  if (error instanceof RateLimitError) {
+    return { message: error.message, status: error.status };
+  }
+
+  if (error instanceof Error) {
+    const aborted =
+      error.name === "AbortError" ||
+      /aborted|abort/i.test(error.message);
+    return {
+      message: aborted
+        ? `Google Books request timed out after ${FETCH_TIMEOUT_MS}ms`
+        : error.message,
+      status: fallbackStatus,
+    };
+  }
+
+  return { message: String(error), status: fallbackStatus };
 }
 
 export function parseGoogleBooksResponse(
@@ -139,18 +198,24 @@ export function parseGoogleBookDetail(
   };
 }
 
-const GOOGLE_PAGE_SIZE = 20;
-
 export type GoogleBooksPageResult = {
   books: BookSummary[];
   hasMore: boolean;
+  /** Item count from Google before local quality filtering. */
+  rawCount: number;
+  error: GoogleBooksProviderError | null;
 };
 
 async function fetchGoogleSearch(
   query: string,
   page = 1,
   options?: SearchBooksOptions & { pageSize?: number }
-): Promise<{ books: BookSummary[]; totalItems: number; pageSize: number }> {
+): Promise<{
+  books: BookSummary[];
+  totalItems: number;
+  pageSize: number;
+  rawCount: number;
+}> {
   const genreMode = isGenreSearchMode(options?.mode);
   const pageSize = Math.min(
     40,
@@ -172,25 +237,35 @@ async function fetchGoogleSearch(
     orderBy: genreMode ? "newest" : "relevance",
   });
 
-  const response = await fetchGoogleBooksWithRetry(
-    buildGoogleBooksUrl("volumes", params),
-    { noStore: true }
-  );
+  const url = buildGoogleBooksUrl("volumes", params);
+  // Short Data Cache window — avoids burning daily quota on identical searches
+  // while still staying fresh enough for browse. Do not use no-store here.
+  const response = await fetchGoogleBooksWithRetry(url, { revalidate: 300 });
 
   if (response.status === 429) {
-    throw new RateLimitError();
+    const bodyMessage = await readGoogleErrorBody(response);
+    throw new RateLimitError(
+      bodyMessage ?? "Google Books rate limit reached."
+    );
   }
 
   if (!response.ok) {
-    throw new Error(`Google Books API error: ${response.status}`);
+    const bodyMessage = await readGoogleErrorBody(response);
+    const error = new Error(
+      bodyMessage ?? `Google Books API error: ${response.status}`
+    );
+    (error as Error & { status?: number }).status = response.status;
+    throw error;
   }
 
   const data: GoogleBooksSearchResponse = await response.json();
+  const rawCount = data.items?.length ?? 0;
   const books = parseGoogleBooksResponse(data);
   return {
     books,
     totalItems: data.totalItems ?? books.length,
     pageSize,
+    rawCount,
   };
 }
 
@@ -199,8 +274,15 @@ export async function searchGoogleBooks(
   page = 1,
   options?: SearchBooksOptions
 ): Promise<GoogleBooksPageResult> {
+  if (!getGoogleBooksApiKey()) {
+    // Anonymous Books API quota is effectively 0 from many hosts; a key is required.
+    console.warn(
+      "[searchGoogleBooks] GOOGLE_BOOKS_API_KEY is not set — requests often fail with HTTP 429 (quota exceeded)."
+    );
+  }
+
   try {
-    const { books, totalItems, pageSize } = await fetchGoogleSearch(
+    const { books, totalItems, pageSize, rawCount } = await fetchGoogleSearch(
       query,
       page,
       options
@@ -212,10 +294,10 @@ export async function searchGoogleBooks(
     const hasMore = startIndex + pageSize < totalItems;
 
     if (process.env.SEARCH_DEBUG === "1") {
-      if (totalItems > 0 && books.length === 0) {
+      if (rawCount > 0 && books.length === 0) {
         console.info(
           "[searchGoogleBooks] API returned items but all were filtered as low quality.",
-          { query, page, mode: options?.mode, totalItems, pageSize }
+          { query, page, mode: options?.mode, totalItems, pageSize, rawCount }
         );
       } else if (totalItems === 0) {
         console.info("[searchGoogleBooks] API returned 0 totalItems.", {
@@ -227,24 +309,36 @@ export async function searchGoogleBooks(
       }
     }
 
-    return { books: dedupeBooks(books), hasMore };
+    return {
+      books: dedupeBooks(books),
+      hasMore,
+      rawCount,
+      error: null,
+    };
   } catch (error) {
+    const providerError = toProviderError(
+      error,
+      error instanceof Error
+        ? (error as Error & { status?: number }).status
+        : undefined
+    );
+
     if (error instanceof RateLimitError) {
       console.error(
         "[searchGoogleBooks] Rate limited (429). Returning empty page.",
-        { query, page, mode: options?.mode }
+        { query, page, mode: options?.mode, ...providerError }
       );
-      return { books: [], hasMore: false };
+    } else {
+      console.error("[searchGoogleBooks] Request failed:", {
+        query,
+        page,
+        mode: options?.mode,
+        ...providerError,
+      });
     }
 
-    console.error("[searchGoogleBooks] Request failed:", {
-      query,
-      page,
-      mode: options?.mode,
-      error: error instanceof Error ? error.message : error,
-    });
     // Soft-fail so Promise.allSettled siblings still surface results
-    return { books: [], hasMore: false };
+    return { books: [], hasMore: false, rawCount: 0, error: providerError };
   }
 }
 
@@ -257,13 +351,19 @@ export async function getGoogleBookById(
   );
 
   if (response.status === 429) {
-    throw new RateLimitError();
+    const bodyMessage = await readGoogleErrorBody(response);
+    throw new RateLimitError(
+      bodyMessage ?? "Google Books rate limit reached."
+    );
   }
 
   if (response.status === 404) return null;
 
   if (!response.ok) {
-    throw new Error(`Google Books API error: ${response.status}`);
+    const bodyMessage = await readGoogleErrorBody(response);
+    throw new Error(
+      bodyMessage ?? `Google Books API error: ${response.status}`
+    );
   }
 
   const data: GoogleBooksVolumeResponse = await response.json();
@@ -288,11 +388,17 @@ export async function getGoogleBookByIsbn(
   });
 
   if (response.status === 429) {
-    throw new RateLimitError();
+    const bodyMessage = await readGoogleErrorBody(response);
+    throw new RateLimitError(
+      bodyMessage ?? "Google Books rate limit reached."
+    );
   }
 
   if (!response.ok) {
-    throw new Error(`Google Books API error: ${response.status}`);
+    const bodyMessage = await readGoogleErrorBody(response);
+    throw new Error(
+      bodyMessage ?? `Google Books API error: ${response.status}`
+    );
   }
 
   const data: GoogleBooksSearchResponse = await response.json();

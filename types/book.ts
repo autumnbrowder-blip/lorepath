@@ -32,6 +32,12 @@ export type BookDetail = BookSummary & {
   isbn: string | null;
 };
 
+/** Temporary debug payload when Google Books fails or is filtered. */
+export type GoogleBooksSearchDebug = {
+  message: string;
+  status?: number;
+};
+
 export type BookSearchResult = {
   books: BookSummary[];
   /** All providers queried together via Promise.allSettled. */
@@ -44,4 +50,8 @@ export type BookSearchResult = {
   page: number;
   /** True when any provider still has another page. */
   hasMore: boolean;
+  /** Temporary: Google failure details (message/status) when the provider errors. */
+  googleError?: GoogleBooksSearchDebug | null;
+  /** Temporary: Google item count before local quality filtering. */
+  googleRawCount?: number;
 };
