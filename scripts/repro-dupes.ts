@@ -55,7 +55,7 @@ function reportDuplicates(label: string, books: BookSummary[]) {
     byTitle.set(t, [...(byTitle.get(t) ?? []), b]);
   }
   let dupeGroups = 0;
-  for (const [t, group] of byTitle) {
+  for (const [t, group] of Array.from(byTitle.entries())) {
     if (group.length < 2) continue;
     dupeGroups++;
     console.log(`  DUPLICATE normalized title "${t}" (${group.length} records):`);
