@@ -16,9 +16,18 @@ import { createPortal } from "react-dom";
 
 type FormStatus = "idle" | "submitting" | "success" | "error";
 
+/** Forced UI copy — keep in sync with product wording. */
+const SUBJECT_LABEL = "Subject";
+const SUBJECT_PLACEHOLDER = "A note from the shelves\u2026";
+const MESSAGE_LABEL = "Message";
+const MESSAGE_PLACEHOLDER =
+  "Tell us what stirred, broke, or could be better\u2026";
+const SUBMIT_LABEL = "Send Feedback";
+const SUBMITTING_LABEL = "Sending\u2026";
+
 /**
  * Compact site-wide “Send Feedback” control + parchment modal.
- * Mounted in the navbar; does not alter layout height when closed.
+ * Mounted after Login/Register (logged out) or after the profile menu (logged in).
  */
 export function FeedbackWidget() {
   const pathname = usePathname();
@@ -259,10 +268,14 @@ export function FeedbackWidget() {
                       </button>
                     </div>
                   ) : (
-                    <form onSubmit={onSubmit} className="space-y-3.5">
+                    <form
+                      key="feedback-form-v2"
+                      onSubmit={onSubmit}
+                      className="space-y-3.5"
+                    >
                       <label className="block space-y-1.5">
                         <span className="font-display text-[10px] uppercase tracking-[0.18em] text-[#e2c06a]/80">
-                          Subject
+                          {SUBJECT_LABEL}
                         </span>
                         <input
                           ref={firstFieldRef}
@@ -272,14 +285,15 @@ export function FeedbackWidget() {
                           onChange={(e) => setSubject(e.target.value)}
                           maxLength={120}
                           className="w-full rounded-sm border border-gold-600/40 bg-forest-950/70 px-3 py-2 font-heading text-sm text-[#f0ead8] outline-none placeholder:text-[#e2c06a]/40 focus:border-gold-500/70"
-                          placeholder="A note from the shelves…"
+                          placeholder={SUBJECT_PLACEHOLDER}
                           autoComplete="off"
                         />
                       </label>
 
                       <label className="block space-y-1.5">
                         <span className="font-display text-[10px] uppercase tracking-[0.18em] text-[#e2c06a]/80">
-                          Message <span className="text-[#e2c06a]/55">*</span>
+                          {MESSAGE_LABEL}{" "}
+                          <span className="text-[#e2c06a]/55">*</span>
                         </span>
                         <textarea
                           name="message"
@@ -289,7 +303,7 @@ export function FeedbackWidget() {
                           maxLength={2000}
                           rows={4}
                           className="w-full resize-y rounded-sm border border-gold-600/40 bg-forest-950/70 px-3 py-2 font-heading text-sm leading-relaxed text-[#f0ead8] outline-none placeholder:text-[#e2c06a]/40 focus:border-gold-500/70"
-                          placeholder="Tell us what stirred, broke, or could be better…"
+                          placeholder={MESSAGE_PLACEHOLDER}
                         />
                       </label>
 
@@ -336,8 +350,8 @@ export function FeedbackWidget() {
                           disabled={status === "submitting"}
                         >
                           {status === "submitting"
-                            ? "Sending…"
-                            : "Send Feedback"}
+                            ? SUBMITTING_LABEL
+                            : SUBMIT_LABEL}
                         </button>
                       </div>
                     </form>
