@@ -5,26 +5,13 @@ import { BookCard } from "@/components/browse/BookCard";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { rankSearchResults } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
-import type { BookSource, BookSummary } from "@/types/book";
+import type { BookSummary } from "@/types/book";
 import { AlertCircle, Loader2, Search } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const sourceLabels: Record<BookSource | "multi", string> = {
-  google: "Google Books",
-  openlibrary: "Open Library",
-  gutendex: "Project Gutenberg",
-  nyt: "New York Times",
-  isbndb: "ISBNdb",
-  bigbook: "Big Book",
-  multi: "Multiple sources",
-};
-
 type SearchPagePayload = {
   books?: BookSummary[];
-  sources?: BookSource[];
-  source?: BookSource;
-  sourceCounts?: Partial<Record<BookSource, number>>;
   hasMore?: boolean;
   page?: number;
 };
@@ -38,10 +25,9 @@ const clientSearchCache = new Map<
 function searchCacheKey(
   searchQuery: string,
   pageNumber: number,
-  mode: "text" | "genre",
-  includeSources: boolean
+  mode: "text" | "genre"
 ) {
-  return `${includeSources ? "admin" : "public"}|${mode}|${pageNumber}|${searchQuery.trim().toLowerCase()}`;
+  return `${mode}|${pageNumber}|${searchQuery.trim().toLowerCase()}`;
 }
 
 function mergeSearchResults(
@@ -65,8 +51,6 @@ type BookSearchProps = {
   /** Prefetched NYT lists — display-only; does not affect search. */
   bestsellers?: BookSummary[];
   bestsellersError?: string | null;
-  /** Admin-only: show provider source chips / counts on results. */
-  showSourceDebug?: boolean;
 };
 
 export function BookSearch({
@@ -74,16 +58,11 @@ export function BookSearch({
   initialMode = "text",
   bestsellers = [],
   bestsellersError = null,
-  showSourceDebug = false,
 }: BookSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
   const [searchMode, setSearchMode] = useState<"text" | "genre">(initialMode);
   const [books, setBooks] = useState<BookSummary[]>([]);
-  const [sources, setSources] = useState<BookSource[]>([]);
-  const [sourceCounts, setSourceCounts] = useState<
-    Partial<Record<BookSource, number>>
-  >({});
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -101,7 +80,7 @@ export function BookSearch({
     pageNumber: number,
     mode: "text" | "genre"
   ) {
-    const key = searchCacheKey(searchQuery, pageNumber, mode, showSourceDebug);
+    const key = searchCacheKey(searchQuery, pageNumber, mode);
     const cached = clientSearchCache.get(key);
     if (cached && cached.expires > Date.now()) {
       return cached.data;
@@ -148,8 +127,6 @@ export function BookSearch({
     setError(null);
     setHasSearched(true);
     setBooks([]);
-    setSources([]);
-    setSourceCounts({});
     setPage(1);
     setHasMore(false);
     setSearchMode(mode);
@@ -168,14 +145,6 @@ export function BookSearch({
       if (requestId !== searchRequestIdRef.current) return;
 
       setBooks(data.books ?? []);
-      const nextSources: BookSource[] =
-        Array.isArray(data.sources) && data.sources.length > 0
-          ? data.sources
-          : data.source
-            ? [data.source]
-            : [];
-      setSources(nextSources);
-      setSourceCounts(data.sourceCounts ?? {});
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -185,8 +154,6 @@ export function BookSearch({
       if (aborted) return;
       if (requestId !== searchRequestIdRef.current) return;
       setBooks([]);
-      setSources([]);
-      setSourceCounts({});
       setHasMore(false);
       setError(
         err instanceof Error ? err.message : "Something went wrong. Try again."
@@ -219,23 +186,6 @@ export function BookSearch({
       const incoming = data.books ?? [];
 
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
-      setSourceCounts((current) => ({
-        ...current,
-        google: (current.google ?? 0) + (data.sourceCounts?.google ?? 0),
-        openlibrary:
-          (current.openlibrary ?? 0) + (data.sourceCounts?.openlibrary ?? 0),
-        gutendex: (current.gutendex ?? 0) + (data.sourceCounts?.gutendex ?? 0),
-        isbndb: (current.isbndb ?? 0) + (data.sourceCounts?.isbndb ?? 0),
-        // Big Book count is omitted server-side when unconfigured — only sum
-        // when the provider actually reported a number.
-        ...(typeof data.sourceCounts?.bigbook === "number" ||
-        typeof current.bigbook === "number"
-          ? {
-              bigbook:
-                (current.bigbook ?? 0) + (data.sourceCounts?.bigbook ?? 0),
-            }
-          : {}),
-      }));
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -438,29 +388,6 @@ export function BookSearch({
                   {books.length} result{books.length !== 1 ? "s" : ""} for
                   &ldquo;{query}&rdquo;
                 </p>
-                {showSourceDebug && sources.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {sources.map((s) => {
-                      const count = sourceCounts[s];
-                      const showCount = typeof count === "number";
-                      // Skip a bare "Big Book" chip when unconfigured (no count).
-                      if (s === "bigbook" && !showCount) {
-                        return null;
-                      }
-                      return (
-                        <span
-                          key={s}
-                          className="inline-flex items-center gap-1.5 rounded-sm border border-[#b38b4d]/55 bg-[#123229]/75 px-2.5 py-1 font-storybook text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[inset_0_1px_0_rgba(240,215,138,0.12)]"
-                        >
-                          <span className="codex-tag-label">
-                            {sourceLabels[s]}
-                            {showCount ? <span> ({count})</span> : null}
-                          </span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
 
               <div
