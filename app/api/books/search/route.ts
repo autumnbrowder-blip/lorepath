@@ -1,3 +1,4 @@
+import { sessionUserIsAdmin } from "@/lib/admin";
 import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
@@ -25,7 +26,18 @@ export async function GET(request: Request) {
 
   try {
     const result = await searchBooks(query, page, { mode });
-    return NextResponse.json(result, {
+    const isAdmin = await sessionUserIsAdmin();
+
+    // Public clients get books + paging only. Source breakdown is admin-only.
+    const payload = isAdmin
+      ? result
+      : {
+          books: result.books,
+          page: result.page,
+          hasMore: result.hasMore,
+        };
+
+    return NextResponse.json(payload, {
       headers: {
         "Cache-Control": "no-store",
       },

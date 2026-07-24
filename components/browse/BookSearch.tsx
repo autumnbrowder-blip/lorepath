@@ -38,9 +38,10 @@ const clientSearchCache = new Map<
 function searchCacheKey(
   searchQuery: string,
   pageNumber: number,
-  mode: "text" | "genre"
+  mode: "text" | "genre",
+  includeSources: boolean
 ) {
-  return `${mode}|${pageNumber}|${searchQuery.trim().toLowerCase()}`;
+  return `${includeSources ? "admin" : "public"}|${mode}|${pageNumber}|${searchQuery.trim().toLowerCase()}`;
 }
 
 function mergeSearchResults(
@@ -64,6 +65,8 @@ type BookSearchProps = {
   /** Prefetched NYT lists — display-only; does not affect search. */
   bestsellers?: BookSummary[];
   bestsellersError?: string | null;
+  /** Admin-only: show provider source chips / counts on results. */
+  showSourceDebug?: boolean;
 };
 
 export function BookSearch({
@@ -71,6 +74,7 @@ export function BookSearch({
   initialMode = "text",
   bestsellers = [],
   bestsellersError = null,
+  showSourceDebug = false,
 }: BookSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
@@ -89,13 +93,15 @@ export function BookSearch({
   const initialSearchDone = useRef(false);
   const searchModeRef = useRef<"text" | "genre">(initialMode);
   const abortRef = useRef<AbortController | null>(null);
+  /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
+  const searchRequestIdRef = useRef(0);
 
   async function fetchSearchPage(
     searchQuery: string,
     pageNumber: number,
     mode: "text" | "genre"
   ) {
-    const key = searchCacheKey(searchQuery, pageNumber, mode);
+    const key = searchCacheKey(searchQuery, pageNumber, mode, showSourceDebug);
     const cached = clientSearchCache.get(key);
     if (cached && cached.expires > Date.now()) {
       return cached.data;
@@ -136,9 +142,14 @@ export function BookSearch({
     const trimmed = searchQuery.trim();
     if (!trimmed) return;
 
+    const requestId = ++searchRequestIdRef.current;
     setLoading(true);
+    setLoadingMore(false);
     setError(null);
     setHasSearched(true);
+    setBooks([]);
+    setSources([]);
+    setSourceCounts({});
     setPage(1);
     setHasMore(false);
     setSearchMode(mode);
@@ -154,6 +165,7 @@ export function BookSearch({
 
     try {
       const data = await fetchSearchPage(trimmed, 1, mode);
+      if (requestId !== searchRequestIdRef.current) return;
 
       setBooks(data.books ?? []);
       const nextSources: BookSource[] =
@@ -167,9 +179,11 @@ export function BookSearch({
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return;
-      }
+      const aborted =
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && err.name === "AbortError");
+      if (aborted) return;
+      if (requestId !== searchRequestIdRef.current) return;
       setBooks([]);
       setSources([]);
       setSourceCounts({});
@@ -178,15 +192,19 @@ export function BookSearch({
         err instanceof Error ? err.message : "Something went wrong. Try again."
       );
     } finally {
-      setLoading(false);
+      // Only the latest in-flight search may leave the loading state.
+      if (requestId === searchRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }
 
   async function handleLoadMore() {
     const trimmed = query.trim();
-    if (!trimmed || loadingMore || !hasMore) return;
+    if (!trimmed || loadingMore || loading || !hasMore) return;
 
     const nextPage = page + 1;
+    const requestId = ++searchRequestIdRef.current;
     setLoadingMore(true);
     setError(null);
 
@@ -196,6 +214,8 @@ export function BookSearch({
         nextPage,
         searchModeRef.current
       );
+      if (requestId !== searchRequestIdRef.current) return;
+
       const incoming = data.books ?? [];
 
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
@@ -219,16 +239,20 @@ export function BookSearch({
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return;
-      }
+      const aborted =
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && err.name === "AbortError");
+      if (aborted) return;
+      if (requestId !== searchRequestIdRef.current) return;
       setError(
         err instanceof Error
           ? err.message
           : "Could not load more books. Try again."
       );
     } finally {
-      setLoadingMore(false);
+      if (requestId === searchRequestIdRef.current) {
+        setLoadingMore(false);
+      }
     }
   }
 
@@ -360,7 +384,7 @@ export function BookSearch({
             </div>
           )}
 
-          {loading && (
+          {loading ? (
             <div
               className="mx-auto flex max-w-lg flex-col items-center justify-center px-6 py-12 text-center shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
               style={{
@@ -379,13 +403,10 @@ export function BookSearch({
                 Searching the archives...
               </p>
               <p className="mt-2 font-heading text-base text-[#4a2f0f]/85">
-                Consulting Google Books, Open Library, Project Gutenberg,
-                ISBNdb, and Big Book together.
+                Unrolling scrolls across the shared shelves.
               </p>
             </div>
-          )}
-
-          {!loading && hasSearched && books.length === 0 && !error && (
+          ) : hasSearched && books.length === 0 && !error ? (
             <div
               className="mx-auto max-w-xl px-6 py-12 text-center shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
               style={{
@@ -410,22 +431,15 @@ export function BookSearch({
                 Tip: shorter keywords often open more doors.
               </p>
             </div>
-          )}
-
-          {!loading && books.length > 0 && (
+          ) : books.length > 0 ? (
             <>
-              <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="font-storybook text-sm font-semibold tracking-[0.12em] nav-dragon-gold sm:text-[15px]">
-                    {books.length} result{books.length !== 1 ? "s" : ""} for
-                    &ldquo;{query}&rdquo;
-                  </p>
-                  <p className="mt-1.5 font-heading text-sm font-medium tracking-wide nav-dragon-gold">
-                    Drawn from multiple archives at once
-                  </p>
-                </div>
-                {sources.length > 0 && (
-                  <div className="flex flex-wrap gap-2 sm:justify-end">
+              <div className="mb-6">
+                <p className="font-storybook text-sm font-semibold tracking-[0.12em] nav-dragon-gold sm:text-[15px]">
+                  {books.length} result{books.length !== 1 ? "s" : ""} for
+                  &ldquo;{query}&rdquo;
+                </p>
+                {showSourceDebug && sources.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {sources.map((s) => {
                       const count = sourceCounts[s];
                       const showCount = typeof count === "number";
@@ -487,7 +501,7 @@ export function BookSearch({
                 </div>
               )}
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </FantasyPageShell>

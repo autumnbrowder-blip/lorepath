@@ -107,6 +107,34 @@ export async function userIsAdmin(user: User): Promise<boolean> {
 }
 
 /**
+ * Soft admin check for public routes/APIs.
+ * Returns false when logged out, misconfigured, or not an admin — never redirects.
+ */
+export async function sessionUserIsAdmin(): Promise<boolean> {
+  noStore();
+
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  try {
+    const auth = await createAuthenticatedClient();
+    if (!("error" in auth)) {
+      return userIsAdmin(auth.user);
+    }
+
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    return userIsAdmin(user);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Server-only gate for /admin.
  * Non-admins and logged-out users go to "/" (never /login) so the route stays hidden.
  */
