@@ -310,6 +310,32 @@ create index wishlists_book_id_idx on public.wishlists (book_id);
 create index wishlists_user_created_idx on public.wishlists (user_id, created_at desc);
 
 -- -----------------------------------------------------------------------------
+-- 7. feedback (in-app Send Feedback)
+-- -----------------------------------------------------------------------------
+create table public.feedback (
+  id         uuid primary key default gen_random_uuid(),
+  page_path  text not null default '/',
+  message    text not null,
+  email      text,
+  user_id    uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+
+  constraint feedback_message_length check (
+    char_length(trim(message)) between 1 and 2000
+  ),
+  constraint feedback_page_path_length check (
+    char_length(page_path) between 1 and 500
+  ),
+  constraint feedback_email_length check (
+    email is null or char_length(email) between 3 and 254
+  )
+);
+
+create index feedback_created_at_idx on public.feedback (created_at desc);
+create index feedback_user_id_idx on public.feedback (user_id)
+  where user_id is not null;
+
+-- -----------------------------------------------------------------------------
 -- Row Level Security (RLS)
 -- -----------------------------------------------------------------------------
 alter table public.profiles enable row level security;
@@ -318,6 +344,7 @@ alter table public.ratings enable row level security;
 alter table public.user_preferences enable row level security;
 alter table public.saved_preference_profiles enable row level security;
 alter table public.wishlists enable row level security;
+alter table public.feedback enable row level security;
 
 -- profiles: users can read all, insert/update own
 create policy "Profiles are viewable by everyone"
@@ -471,3 +498,29 @@ create policy "Subscribers can delete from own wishlist"
       where id = auth.uid() and is_subscriber = true
     )
   );
+
+-- feedback: anyone may insert; only admins may select; no public update/delete
+create policy "Anyone can submit feedback"
+  on public.feedback
+  for insert
+  to anon, authenticated
+  with check (
+    char_length(trim(message)) >= 1
+    and (user_id is null or user_id = auth.uid())
+  );
+
+create policy "Admins can read feedback"
+  on public.feedback
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.is_admin = true
+    )
+  );
+
+grant insert on table public.feedback to anon, authenticated;
+grant select on table public.feedback to authenticated;

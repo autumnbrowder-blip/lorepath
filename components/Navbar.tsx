@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthNav } from "@/components/AuthNav";
+import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,7 +33,7 @@ export function Navbar() {
           />
         </Link>
 
-        <div className="flex min-w-0 items-center gap-3 sm:gap-6">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-5">
           <ul className="flex items-center gap-3 sm:gap-6">
             {navLinks.map((link) => (
               <li key={link.href}>
@@ -47,6 +48,7 @@ export function Navbar() {
               </li>
             ))}
           </ul>
+          <FeedbackWidget />
           <AuthNav />
         </div>
       </nav>
