@@ -99,9 +99,10 @@ export function BackToTop() {
       type="button"
       onClick={scrollToTop}
       aria-label="Back to top"
+      title="Back to top"
       tabIndex={visible ? 0 : -1}
       aria-hidden={!visible}
-      className={`fixed right-4 z-[9999] flex h-11 w-11 items-center justify-center overflow-hidden rounded-[3px] transition-[opacity,transform,filter] duration-300 sm:right-6 ${
+      className={`fixed right-4 z-[9999] inline-flex h-11 min-w-[2.75rem] items-center justify-center gap-1.5 overflow-hidden rounded-sm px-3 transition-[opacity,transform,filter,border-color] duration-300 sm:right-6 sm:h-12 sm:gap-2 sm:px-3.5 ${
         visible
           ? "pointer-events-auto translate-y-0 opacity-100"
           : "pointer-events-none translate-y-2 opacity-0"
@@ -109,104 +110,66 @@ export function BackToTop() {
       style={{
         bottom:
           "max(1.25rem, calc(0.75rem + env(safe-area-inset-bottom, 0px)))",
-        border: "1px solid rgba(90, 60, 18, 0.95)",
+        border: "1px solid rgba(179, 139, 77, 0.72)",
         backgroundImage: `
-          radial-gradient(ellipse at 50% 28%, rgba(240, 215, 138, 0.22) 0%, transparent 55%),
-          linear-gradient(160deg, rgba(232, 208, 120, 0.1) 0%, transparent 45%),
-          linear-gradient(155deg, #1f513d 0%, #184033 36%, #123229 70%, #0a1c16 100%)
+          linear-gradient(160deg, rgba(240, 215, 138, 0.16) 0%, transparent 48%),
+          linear-gradient(155deg, #1f513d 0%, #184033 38%, #123229 72%, #0a1c16 100%)
         `,
         boxShadow: `
-          0 0 0 1px rgba(201, 162, 74, 0.55),
-          0 0 0 2px rgba(90, 60, 18, 0.85),
-          0 10px 24px rgba(4, 12, 8, 0.55),
-          0 0 16px rgba(166, 124, 45, 0.22),
-          inset 0 1px 0 rgba(255, 236, 180, 0.28),
-          inset 0 -3px 6px rgba(0, 0, 0, 0.45),
-          inset 0 0 10px rgba(8, 24, 16, 0.35)
+          0 0 0 1px rgba(90, 60, 18, 0.55),
+          0 10px 24px rgba(4, 12, 8, 0.5),
+          0 0 14px rgba(166, 124, 45, 0.18),
+          inset 0 1px 0 rgba(255, 236, 180, 0.22),
+          inset 0 -2px 5px rgba(0, 0, 0, 0.4)
         `,
       }}
     >
-      {/* Engraved inner plate */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-[3px] rounded-[2px]"
-        style={{
-          border: "1px solid rgba(179, 139, 77, 0.35)",
-          boxShadow:
-            "inset 0 0 0 1px rgba(40, 28, 6, 0.35), inset 0 1px 0 rgba(255, 230, 150, 0.12)",
-          background:
-            "linear-gradient(180deg, rgba(240, 215, 138, 0.08) 0%, transparent 40%, rgba(0, 0, 0, 0.18) 100%)",
-        }}
-      />
-
-      {/* Shield-framed ornate up-arrow */}
+      {/* Clear gold up-arrow */}
       <svg
         viewBox="0 0 24 24"
-        width="21"
-        height="21"
+        width="18"
+        height="18"
         fill="none"
         aria-hidden="true"
-        className="relative"
+        className="relative shrink-0 sm:h-5 sm:w-5"
         style={{
           filter:
-            "drop-shadow(0 1px 0 rgba(40, 28, 6, 0.75)) drop-shadow(0 0 5px rgba(201, 162, 74, 0.4))",
+            "drop-shadow(0 1px 0 rgba(40, 28, 6, 0.7)) drop-shadow(0 0 4px rgba(201, 162, 74, 0.35))",
         }}
       >
         <defs>
-          <linearGradient id="btt-gold" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#fff1c9" />
-            <stop offset="35%" stopColor="#f0d78a" />
-            <stop offset="70%" stopColor="#c9a24a" />
-            <stop offset="100%" stopColor="#8a6424" />
-          </linearGradient>
-          <linearGradient id="btt-gold-bright" x1="12" y1="3" x2="12" y2="14" gradientUnits="userSpaceOnUse">
+          <linearGradient
+            id="btt-arrow-gold"
+            x1="12"
+            y1="4"
+            x2="12"
+            y2="20"
+            gradientUnits="userSpaceOnUse"
+          >
             <stop offset="0%" stopColor="#fff8e0" />
-            <stop offset="55%" stopColor="#e2c06a" />
-            <stop offset="100%" stopColor="#a67c2d" />
+            <stop offset="45%" stopColor="#f0d78a" />
+            <stop offset="100%" stopColor="#b38b4d" />
           </linearGradient>
         </defs>
-
-        {/* Soft shield frame */}
         <path
-          d="M12 2.6 C12 2.6 18.2 4.2 18.2 4.2 C18.2 10.8 15.8 15.6 12 21 C8.2 15.6 5.8 10.8 5.8 4.2 C5.8 4.2 12 2.6 12 2.6 Z"
-          stroke="url(#btt-gold)"
-          strokeWidth="1.15"
+          d="M12 5 L5.5 12.2 H9.2 V19 H14.8 V12.2 H18.5 Z"
+          fill="url(#btt-arrow-gold)"
+          stroke="#8a6424"
+          strokeWidth="0.7"
           strokeLinejoin="round"
-          opacity="0.72"
-        />
-
-        {/* Ornate arrow head */}
-        <path
-          d="M12 5.4 L7.1 11.1 L9.35 11.1 L9.35 12.35 L14.65 12.35 L14.65 11.1 L16.9 11.1 Z"
-          fill="url(#btt-gold-bright)"
-          stroke="url(#btt-gold)"
-          strokeWidth="0.55"
-          strokeLinejoin="round"
-        />
-
-        {/* Shaft */}
-        <path
-          d="M11.05 12.2 H12.95 V17.15 H11.05 Z"
-          fill="url(#btt-gold-bright)"
-          stroke="url(#btt-gold)"
-          strokeWidth="0.45"
-        />
-
-        {/* Engraved base flourish */}
-        <path
-          d="M8.1 18.15 H15.9"
-          stroke="url(#btt-gold)"
-          strokeWidth="1.35"
-          strokeLinecap="round"
-        />
-        <path
-          d="M9.4 19.45 H14.6"
-          stroke="#a67c2d"
-          strokeWidth="1"
-          strokeLinecap="round"
-          opacity="0.85"
         />
       </svg>
+
+      <span
+        className="relative font-storybook text-[11px] font-semibold uppercase tracking-[0.18em] sm:text-xs"
+        style={{
+          color: "#f0d78a",
+          textShadow:
+            "0 -1px 0 rgba(255, 246, 200, 0.5), 0 1px 0 rgba(90, 60, 10, 0.85), 0 0 8px rgba(201, 162, 74, 0.3)",
+        }}
+      >
+        Top
+      </span>
     </button>,
     document.body,
   );
