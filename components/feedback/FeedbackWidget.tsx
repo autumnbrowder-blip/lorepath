@@ -28,7 +28,7 @@ export function FeedbackWidget() {
 
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [pagePath, setPagePath] = useState(pathname || "/");
+  const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<FormStatus>("idle");
@@ -37,12 +37,6 @@ export function FeedbackWidget() {
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!open) {
-      setPagePath(pathname || "/");
-    }
-  }, [pathname, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,12 +90,17 @@ export function FeedbackWidget() {
     event.preventDefault();
     setError(null);
 
-    const trimmed = message.trim();
-    if (!trimmed) {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
       setStatus("error");
       setError("A message is required before the raven can fly.");
       return;
     }
+
+    const trimmedSubject = subject.trim();
+    const composedMessage = trimmedSubject
+      ? `${trimmedSubject}\n\n${trimmedMessage}`
+      : trimmedMessage;
 
     setStatus("submitting");
 
@@ -128,8 +127,8 @@ export function FeedbackWidget() {
         method: "POST",
         headers,
         body: JSON.stringify({
-          page_path: pagePath.trim() || pathname || "/",
-          message: trimmed,
+          page_path: pathname || "/",
+          message: composedMessage,
           email: email.trim() || undefined,
         }),
       });
@@ -148,6 +147,7 @@ export function FeedbackWidget() {
       }
 
       setStatus("success");
+      setSubject("");
       setMessage("");
     } catch {
       setStatus("error");
@@ -262,17 +262,17 @@ export function FeedbackWidget() {
                     <form onSubmit={onSubmit} className="space-y-3.5">
                       <label className="block space-y-1.5">
                         <span className="font-display text-[10px] uppercase tracking-[0.18em] text-[#e2c06a]/80">
-                          Page
+                          Subject
                         </span>
                         <input
                           ref={firstFieldRef}
                           type="text"
-                          name="page_path"
-                          value={pagePath}
-                          onChange={(e) => setPagePath(e.target.value)}
-                          maxLength={500}
+                          name="subject"
+                          value={subject}
+                          onChange={(e) => setSubject(e.target.value)}
+                          maxLength={120}
                           className="w-full rounded-sm border border-gold-600/40 bg-forest-950/70 px-3 py-2 font-heading text-sm text-[#f0ead8] outline-none placeholder:text-[#e2c06a]/40 focus:border-gold-500/70"
-                          placeholder="/browse"
+                          placeholder="A note from the shelves…"
                           autoComplete="off"
                         />
                       </label>
@@ -289,7 +289,7 @@ export function FeedbackWidget() {
                           maxLength={2000}
                           rows={4}
                           className="w-full resize-y rounded-sm border border-gold-600/40 bg-forest-950/70 px-3 py-2 font-heading text-sm leading-relaxed text-[#f0ead8] outline-none placeholder:text-[#e2c06a]/40 focus:border-gold-500/70"
-                          placeholder="What went wrong — or what did you love?"
+                          placeholder="Tell us what stirred, broke, or could be better…"
                         />
                       </label>
 
