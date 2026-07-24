@@ -33,22 +33,23 @@ create index if not exists feedback_user_id_idx
   where user_id is not null;
 
 comment on table public.feedback is
-  'In-app feedback submissions. Public insert; admin-only select.';
+  'In-app feedback submissions. Authenticated insert (user_id required); admin-only select.';
 
 -- -----------------------------------------------------------------------------
 -- 2. RLS
 -- -----------------------------------------------------------------------------
 alter table public.feedback enable row level security;
 
--- Inserts from the site (logged out or logged in)
+-- Inserts from signed-in users only (must stamp own user_id)
 drop policy if exists "Anyone can submit feedback" on public.feedback;
-create policy "Anyone can submit feedback"
+drop policy if exists "Authenticated users can submit feedback" on public.feedback;
+create policy "Authenticated users can submit feedback"
   on public.feedback
   for insert
-  to anon, authenticated
+  to authenticated
   with check (
     char_length(trim(message)) >= 1
-    and (user_id is null or user_id = auth.uid())
+    and user_id = auth.uid()
   );
 
 -- Only admins can read feedback (service_role bypasses RLS for server tools)
@@ -71,7 +72,8 @@ create policy "Admins can read feedback"
 -- -----------------------------------------------------------------------------
 -- 3. Grants
 -- -----------------------------------------------------------------------------
-grant insert on table public.feedback to anon, authenticated;
+grant insert on table public.feedback to authenticated;
 grant select on table public.feedback to authenticated;
 -- Revoke broad defaults if present (safe if already restricted)
+revoke insert on table public.feedback from anon;
 revoke update, delete on table public.feedback from anon, authenticated;

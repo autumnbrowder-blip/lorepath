@@ -499,16 +499,19 @@ create policy "Subscribers can delete from own wishlist"
     )
   );
 
--- feedback: anyone may insert; only admins may select; no public update/delete
-create policy "Anyone can submit feedback"
+-- feedback: authenticated users may insert (must stamp own user_id); only admins may select; no public update/delete
+drop policy if exists "Anyone can submit feedback" on public.feedback;
+drop policy if exists "Authenticated users can submit feedback" on public.feedback;
+create policy "Authenticated users can submit feedback"
   on public.feedback
   for insert
-  to anon, authenticated
+  to authenticated
   with check (
     char_length(trim(message)) >= 1
-    and (user_id is null or user_id = auth.uid())
+    and user_id = auth.uid()
   );
 
+drop policy if exists "Admins can read feedback" on public.feedback;
 create policy "Admins can read feedback"
   on public.feedback
   for select
@@ -522,5 +525,6 @@ create policy "Admins can read feedback"
     )
   );
 
-grant insert on table public.feedback to anon, authenticated;
+revoke insert on table public.feedback from anon;
+grant insert on table public.feedback to authenticated;
 grant select on table public.feedback to authenticated;

@@ -1,7 +1,7 @@
 "use client";
 
 import { LogoutButton } from "@/components/auth/LogoutButton";
-import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
+import { FeedbackModal } from "@/components/feedback/FeedbackWidget";
 import { AvatarCrest } from "@/components/profile/AvatarCrest";
 import {
   getAvatarOption,
@@ -13,6 +13,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { User } from "@supabase/supabase-js";
 import {
   BookOpen,
+  MessageSquareText,
   Settings,
   SlidersHorizontal,
   User as UserIcon,
@@ -40,6 +41,7 @@ export function AuthNav() {
   const [profile, setProfile] = useState<ProfileNavData | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -173,13 +175,10 @@ export function AuthNav() {
 
   if (loading) {
     return (
-      <div className="flex shrink-0 items-center gap-2.5 sm:gap-4">
-        <div
-          className="h-10 w-[7.5rem] shrink-0 sm:w-[9rem]"
-          aria-hidden="true"
-        />
-        <FeedbackWidget />
-      </div>
+      <div
+        className="h-10 w-[7.5rem] shrink-0 sm:w-[9rem]"
+        aria-hidden="true"
+      />
     );
   }
 
@@ -196,7 +195,7 @@ export function AuthNav() {
     const onSettings = pathname === "/settings" || pathname.startsWith("/settings/");
 
     return (
-      <div className="flex shrink-0 items-center gap-2.5 sm:gap-4">
+      <>
         <div ref={containerRef} className="relative shrink-0">
           <button
             type="button"
@@ -289,6 +288,21 @@ export function AuthNav() {
                 <Settings className={menuIconClass} aria-hidden="true" />
                 Settings
               </Link>
+              <button
+                type="button"
+                role="menuitem"
+                className={`${menuItemClass} w-full cursor-pointer border-0 bg-transparent text-left`}
+                onClick={() => {
+                  setOpen(false);
+                  setFeedbackOpen(true);
+                }}
+              >
+                <MessageSquareText
+                  className={menuIconClass}
+                  aria-hidden="true"
+                />
+                Feedback
+              </button>
               <div
                 className="mx-2 my-1 border-t border-gold-600/35"
                 aria-hidden="true"
@@ -302,8 +316,11 @@ export function AuthNav() {
             </div>
           ) : null}
         </div>
-        <FeedbackWidget />
-      </div>
+        <FeedbackModal
+          open={feedbackOpen}
+          onClose={() => setFeedbackOpen(false)}
+        />
+      </>
     );
   }
 
@@ -325,7 +342,6 @@ export function AuthNav() {
       >
         Register
       </Link>
-      <FeedbackWidget />
     </div>
   );
 }

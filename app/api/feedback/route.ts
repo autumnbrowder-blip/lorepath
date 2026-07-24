@@ -1,6 +1,6 @@
+import { getSessionUser } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
-  createClient,
   createServiceRoleClient,
   getBearerToken,
 } from "@/lib/supabase/server";
@@ -25,7 +25,6 @@ function trimString(value: unknown, max: number): string {
 
 function isValidOptionalEmail(email: string): boolean {
   if (!email) return true;
-  // Practical check — not a full RFC parser.
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= MAX_EMAIL;
 }
 
@@ -34,6 +33,20 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "The archives are quiet — feedback is unavailable right now." },
       { status: 503 }
+    );
+  }
+
+  // Authenticated users only — never trust user_id from the body.
+  const session = await getSessionUser({
+    accessToken: getBearerToken(request),
+  });
+  if ("error" in session) {
+    return NextResponse.json(
+      {
+        error: "Sign in to send feedback to the keepers.",
+        code: session.code ?? "unauthorized",
+      },
+      { status: 401 }
     );
   }
 
@@ -69,31 +82,17 @@ export async function POST(request: Request) {
   }
   const email = emailRaw || null;
 
-  // Optional session — never trust user_id from the body.
-  let userId: string | null = null;
-  try {
-    const bearer = getBearerToken(request);
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = bearer
-      ? await supabase.auth.getUser(bearer)
-      : await supabase.auth.getUser();
-    userId = user?.id ?? null;
-  } catch {
-    userId = null;
-  }
-
   const row = {
     page_path: pagePath,
     message,
     email,
-    user_id: userId,
+    user_id: session.user.id,
   };
 
   const service = createServiceRoleClient();
-  if (!("error" in service)) {
-    const { error } = await service.supabase.from("feedback").insert(row);
+  if ("error" in service) {
+    // Fallback: insert as the authenticated user (RLS requires user_id = auth.uid()).
+    const { error } = await session.supabase.from("feedback").insert(row);
     if (error) {
       return NextResponse.json(
         {
@@ -106,9 +105,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true }, { status: 201 });
   }
 
-  // Fallback: RLS insert as anon / authenticated (no service role).
-  const supabase = await createClient();
-  const { error } = await supabase.from("feedback").insert(row);
+  const { error } = await service.supabase.from("feedback").insert(row);
   if (error) {
     return NextResponse.json(
       {
