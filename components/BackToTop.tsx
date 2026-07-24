@@ -102,7 +102,7 @@ export function BackToTop() {
       title="Back to top"
       tabIndex={visible ? 0 : -1}
       aria-hidden={!visible}
-      className={`fixed right-4 z-[9999] inline-flex h-11 min-w-[2.75rem] items-center justify-center gap-1.5 overflow-hidden rounded-sm px-3 transition-[opacity,transform,filter,border-color] duration-300 sm:right-6 sm:h-12 sm:gap-2 sm:px-3.5 ${
+      className={`fixed right-4 z-[9999] flex h-11 w-11 items-center justify-center overflow-hidden rounded-sm transition-[opacity,transform,filter,border-color] duration-300 sm:right-6 sm:h-12 sm:w-12 ${
         visible
           ? "pointer-events-auto translate-y-0 opacity-100"
           : "pointer-events-none translate-y-2 opacity-0"
@@ -127,11 +127,11 @@ export function BackToTop() {
       {/* Clear gold up-arrow */}
       <svg
         viewBox="0 0 24 24"
-        width="18"
-        height="18"
+        width="20"
+        height="20"
         fill="none"
         aria-hidden="true"
-        className="relative shrink-0 sm:h-5 sm:w-5"
+        className="relative shrink-0 sm:h-[22px] sm:w-[22px]"
         style={{
           filter:
             "drop-shadow(0 1px 0 rgba(40, 28, 6, 0.7)) drop-shadow(0 0 4px rgba(201, 162, 74, 0.35))",
@@ -159,17 +159,6 @@ export function BackToTop() {
           strokeLinejoin="round"
         />
       </svg>
-
-      <span
-        className="relative font-storybook text-[11px] font-semibold uppercase tracking-[0.18em] sm:text-xs"
-        style={{
-          color: "#f0d78a",
-          textShadow:
-            "0 -1px 0 rgba(255, 246, 200, 0.5), 0 1px 0 rgba(90, 60, 10, 0.85), 0 0 8px rgba(201, 162, 74, 0.3)",
-        }}
-      >
-        Top
-      </span>
     </button>,
     document.body,
   );
