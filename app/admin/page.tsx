@@ -7,7 +7,7 @@ import {
   type AdminUserRow,
 } from "@/lib/admin";
 import { RATING_CATEGORIES } from "@/lib/rating-categories";
-import { BookOpen, ScrollText, Shield, Users } from "lucide-react";
+import { BookOpen, Eye, Map, ScrollText, Shield, Users } from "lucide-react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -186,7 +186,8 @@ export default async function AdminPage() {
           </p>
           <h1 className="page-title mt-2 nav-dragon-gold">Admin Dashboard</h1>
           <p className="mt-2 font-heading text-lg nav-dragon-gold">
-            A quiet tally of the realm — users, ratings, and recent marks.
+            A quiet tally of the realm — users, ratings, visits, and recent
+            marks.
           </p>
         </header>
 
@@ -208,6 +209,68 @@ export default async function AdminPage() {
               icon={BookOpen}
             />
           </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <StatTile
+              label="Total visits"
+              value={String(stats.pageViews.totalVisits)}
+              icon={Eye}
+            />
+            <StatTile
+              label="Visits today"
+              value={String(stats.pageViews.visitsToday)}
+              icon={Map}
+            />
+          </div>
+
+          <section aria-labelledby="admin-top-paths-heading">
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
+                <Map className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h2
+                  id="admin-top-paths-heading"
+                  className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
+                >
+                  Top paths
+                </h2>
+                <p className="font-heading text-sm nav-dragon-gold">
+                  The five shelves travelers open most often
+                </p>
+              </div>
+            </div>
+
+            {stats.pageViews.topPaths.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-gold-600/35 bg-forest-950/45 px-3 py-4">
+                <p className="font-heading text-sm leading-snug nav-dragon-gold">
+                  No visits have been recorded yet. Apply the page_views
+                  migration, then browse a few pages.
+                </p>
+              </div>
+            ) : (
+              <ol className="space-y-2">
+                {stats.pageViews.topPaths.map((row, index) => (
+                  <li
+                    key={row.path}
+                    className="flex items-center justify-between gap-3 rounded-sm border border-gold-600/30 bg-forest-950/40 px-3 py-2.5 sm:px-4"
+                  >
+                    <div className="flex min-w-0 items-baseline gap-2.5">
+                      <span className="shrink-0 font-display text-[10px] uppercase tracking-[0.16em] text-[#e2c06a]/65">
+                        {index + 1}.
+                      </span>
+                      <span className="truncate font-heading text-sm font-medium nav-dragon-gold sm:text-base">
+                        {row.path}
+                      </span>
+                    </div>
+                    <span className="shrink-0 font-storybook text-sm font-semibold tabular-nums nav-dragon-gold">
+                      {row.visits}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
           <div
             className="h-px w-full bg-gradient-to-r from-transparent via-gold-600/50 to-transparent"

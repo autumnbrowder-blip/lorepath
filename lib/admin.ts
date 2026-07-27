@@ -1,4 +1,8 @@
 import { getAvatarOption } from "@/lib/avatars";
+import {
+  getPageViewStats,
+  type PageViewStats,
+} from "@/lib/page-views";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
@@ -35,6 +39,7 @@ export type AdminDashboardStats = {
   booksWithRatings: number;
   recentRatings: AdminRecentRating[];
   users: AdminUserRow[];
+  pageViews: PageViewStats;
 };
 
 function coerceIsAdmin(value: unknown): boolean {
@@ -221,6 +226,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     recentResult,
     ratedBookRowsResult,
     profilesResult,
+    pageViews,
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("ratings").select("id", { count: "exact", head: true }),
@@ -251,6 +257,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
         "id, display_name, username, avatar_key, is_subscriber, is_admin, created_at"
       )
       .order("created_at", { ascending: false }),
+    getPageViewStats(supabase),
   ]);
 
   const booksWithRatings = new Set(
@@ -301,6 +308,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     booksWithRatings,
     recentRatings: (recentResult.data ?? []).map(mapRecentRating),
     users,
+    pageViews,
   };
 }
 

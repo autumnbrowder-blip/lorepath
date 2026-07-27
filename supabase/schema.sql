@@ -336,6 +336,38 @@ create index feedback_user_id_idx on public.feedback (user_id)
   where user_id is not null;
 
 -- -----------------------------------------------------------------------------
+-- 8. page_views (privacy-light visit tracking: path + timestamp only)
+-- -----------------------------------------------------------------------------
+create table public.page_views (
+  id         uuid primary key default gen_random_uuid(),
+  path       text not null,
+  created_at timestamptz not null default now(),
+
+  constraint page_views_path_length check (
+    char_length(path) between 1 and 500
+  )
+);
+
+create index page_views_created_at_idx on public.page_views (created_at desc);
+create index page_views_path_idx on public.page_views (path);
+
+create or replace function public.page_view_top_paths(limit_count int default 5)
+returns table(path text, visits bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    pv.path,
+    count(*)::bigint as visits
+  from public.page_views pv
+  group by pv.path
+  order by visits desc, pv.path asc
+  limit greatest(1, least(coalesce(limit_count, 5), 50));
+$$;
+
+-- -----------------------------------------------------------------------------
 -- Row Level Security (RLS)
 -- -----------------------------------------------------------------------------
 alter table public.profiles enable row level security;
@@ -345,6 +377,7 @@ alter table public.user_preferences enable row level security;
 alter table public.saved_preference_profiles enable row level security;
 alter table public.wishlists enable row level security;
 alter table public.feedback enable row level security;
+alter table public.page_views enable row level security;
 
 -- profiles: users can read all, insert/update own
 create policy "Profiles are viewable by everyone"
@@ -528,3 +561,32 @@ create policy "Admins can read feedback"
 revoke insert on table public.feedback from anon;
 grant insert on table public.feedback to authenticated;
 grant select on table public.feedback to authenticated;
+
+-- page_views: anyone may insert a path; only admins may select; no update/delete
+create policy "Anyone can record a page view"
+  on public.page_views
+  for insert
+  to anon, authenticated
+  with check (
+    char_length(path) between 1 and 500
+    and path like '/%'
+  );
+
+create policy "Admins can read page views"
+  on public.page_views
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.is_admin = true
+    )
+  );
+
+grant insert on table public.page_views to anon, authenticated;
+grant select on table public.page_views to authenticated;
+revoke update, delete on table public.page_views from anon, authenticated;
+revoke all on function public.page_view_top_paths(int) from public;
+grant execute on function public.page_view_top_paths(int) to service_role;
