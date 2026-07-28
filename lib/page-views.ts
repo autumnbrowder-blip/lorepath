@@ -66,6 +66,7 @@ async function pageViewsClient(): Promise<SupabaseClient | null> {
 
 /**
  * Insert one page view. Never throws — tracking must not break the site.
+ * Callers should skip admins before invoking this (see /api/page-views).
  */
 export async function recordPageView(rawPath: unknown): Promise<boolean> {
   try {
