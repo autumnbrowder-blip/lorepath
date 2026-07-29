@@ -15,6 +15,82 @@ import type { BookDetail, BookSummary } from "@/types/book";
 
 const ISBNDB_BASE = "https://api2.isbndb.com";
 const FETCH_TIMEOUT_MS = 10000;
+/** Plan limit: 1 request/second. Process-local only — cold serverless instances each have their own limiter. */
+const ISBNDB_MIN_INTERVAL_MS = 1000;
+
+let isbndbQueue: Promise<void> = Promise.resolve();
+let lastIsbndbRequestAt = 0;
+
+/**
+ * Serialize ISBNdb HTTP calls and space them ≥1s apart.
+ * Soft-fails with the underlying fetch — callers must tolerate null/empty.
+ */
+async function withIsbndbThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const previous = isbndbQueue;
+  isbndbQueue = previous.then(() => gate);
+  await previous;
+
+  try {
+    const wait = Math.max(0, ISBNDB_MIN_INTERVAL_MS - (Date.now() - lastIsbndbRequestAt));
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    lastIsbndbRequestAt = Date.now();
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+function hasIsbndbApiKey(): boolean {
+  return Boolean(process.env.ISBNDB_API_KEY?.trim());
+}
+
+function getIsbndbApiKey(): string | null {
+  const key = process.env.ISBNDB_API_KEY?.trim();
+  return key || null;
+}
+
+async function fetchIsbndb(path: string): Promise<Response | null> {
+  const apiKey = getIsbndbApiKey();
+  if (!apiKey) return null;
+
+  return withIsbndbThrottle(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    try {
+      return await fetch(`${ISBNDB_BASE}${path}`, {
+        headers: {
+          Accept: "application/json",
+          Authorization: apiKey,
+        },
+        next: { revalidate: 3600 },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      console.error("[isbndb] request failed:", error);
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+}
+
+/** True when description, cover, or year is missing — ISBNdb enrichment only then. */
+export function needsIsbndbEnrichment(
+  book: Pick<BookDetail, "description" | "coverUrl" | "publishedYear">
+): boolean {
+  return (
+    !book.description?.trim() ||
+    !book.coverUrl?.trim() ||
+    book.publishedYear == null
+  );
+}
 
 type IsbndbBook = {
   title?: string;
@@ -45,39 +121,6 @@ type IsbndbSearchResponse = {
   books?: IsbndbBook[];
   message?: string;
 };
-
-function hasIsbndbApiKey(): boolean {
-  return Boolean(process.env.ISBNDB_API_KEY?.trim());
-}
-
-function getIsbndbApiKey(): string | null {
-  const key = process.env.ISBNDB_API_KEY?.trim();
-  return key || null;
-}
-
-async function fetchIsbndb(path: string): Promise<Response | null> {
-  const apiKey = getIsbndbApiKey();
-  if (!apiKey) return null;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    return await fetch(`${ISBNDB_BASE}${path}`, {
-      headers: {
-        Accept: "application/json",
-        Authorization: apiKey,
-      },
-      next: { revalidate: 3600 },
-      signal: controller.signal,
-    });
-  } catch (error) {
-    console.error("[isbndb] request failed:", error);
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 function normalizeCoverUrl(url?: string | null): string | null {
   if (!url?.trim()) return null;
@@ -284,8 +327,17 @@ export async function fetchIsbndbByIsbn(
 
   try {
     const response = await fetchIsbndb(`/book/${encodeURIComponent(digits)}`);
-    if (!response || !response.ok) {
-      if (response && response.status !== 404) {
+    if (!response) return null;
+
+    if (response.status === 429) {
+      console.error("[isbndb] ISBN lookup rate limited (429). Soft-failing.", {
+        isbn: digits,
+      });
+      return null;
+    }
+
+    if (!response.ok) {
+      if (response.status !== 404) {
         console.error(`[isbndb] ISBN lookup failed: ${response.status}`);
       }
       return null;
@@ -322,8 +374,17 @@ export async function fetchIsbndbByTitle(
     });
 
     const response = await fetchIsbndb(`/books/${query}?${params.toString()}`);
-    if (!response || !response.ok) {
-      if (response && response.status !== 404) {
+    if (!response) return null;
+
+    if (response.status === 429) {
+      console.error("[isbndb] title search rate limited (429). Soft-failing.", {
+        title: trimmed,
+      });
+      return null;
+    }
+
+    if (!response.ok) {
+      if (response.status !== 404) {
         console.error(`[isbndb] title search failed: ${response.status}`);
       }
       return null;
@@ -390,12 +451,14 @@ export function preferIsbndbDetailFields(
 }
 
 /**
- * Detail-page enrichment only. Never throws — returns the original book on failure.
+ * Detail-page enrichment only — skips when description, cover, and year exist.
+ * Never throws — returns the original book on failure / 429.
  */
 export async function enrichBookDetailWithIsbndb(
   book: BookDetail
 ): Promise<BookDetail> {
   if (!hasIsbndbApiKey()) return book;
+  if (!needsIsbndbEnrichment(book)) return book;
 
   try {
     let isbndb: Partial<BookDetail> | null = null;
@@ -404,7 +467,7 @@ export async function enrichBookDetailWithIsbndb(
       isbndb = await fetchIsbndbByIsbn(book.isbn);
     }
 
-    if (!isbndb) {
+    if (!isbndb && needsIsbndbEnrichment(book)) {
       isbndb = await fetchIsbndbByTitle(book.title, book.authors);
     }
 

@@ -609,8 +609,10 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   if (book.publishedYear && book.publishedYear >= 1900) score += 1;
   if (book.genres.length > 0) score += 2;
 
-  // Prefer commercial catalog sources over Gutenberg keyword noise for text search.
-  if (book.source === "google" || book.source === "isbndb") score += 6;
+  // Prefer commercial catalog + Open Library over Gutenberg keyword noise.
+  if (book.source === "google") score += 6;
+  else if (book.source === "openlibrary") score += 5;
+  else if (book.source === "isbndb") score += 4;
   else if (book.source === "bigbook") score += 3;
   else if (book.source === "gutendex") score -= 18;
 
@@ -652,7 +654,7 @@ function hasDescription(book: BookSummary): boolean {
 
 /**
  * Primary: newest publication year first (missing years last).
- * Then: books with descriptions, then the rest. Stable title / id tiebreak.
+ * Then: description + cover quality, then title / id tiebreak.
  */
 export function sortByPublishedYearDesc(books: BookSummary[]): BookSummary[] {
   return [...books].sort((a, b) => {
@@ -668,6 +670,10 @@ export function sortByPublishedYearDesc(books: BookSummary[]): BookSummary[] {
     const aDesc = hasDescription(a);
     const bDesc = hasDescription(b);
     if (aDesc !== bDesc) return aDesc ? -1 : 1;
+
+    const aCover = Boolean(a.coverUrl?.trim());
+    const bCover = Boolean(b.coverUrl?.trim());
+    if (aCover !== bCover) return aCover ? -1 : 1;
 
     const titleCmp = a.title.localeCompare(b.title, "en", {
       sensitivity: "base",

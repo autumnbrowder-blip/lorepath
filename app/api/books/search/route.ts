@@ -8,7 +8,11 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Search books via Google Books, Open Library, Gutendex, ISBNdb, and Big Book. */
+/**
+ * Search books via Open Library, Google Books, Gutendex, and Big Book.
+ * ISBNdb is not part of the browse flood — reserved for detail enrichment.
+ * Provider outages soft-fail inside searchBooks (Promise.allSettled).
+ */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();
@@ -43,19 +47,29 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    if (error instanceof RateLimitError) {
-      return NextResponse.json(
-        {
-          error:
-            "Book search is temporarily unavailable. Please try again in a minute.",
-        },
-        { status: 429 }
-      );
-    }
+    console.error("[api/books/search] unexpected failure:", error);
+
+    // Prefer soft empty results over a hard failure — Open Library / other
+    // providers normally keep searchBooks from throwing.
+    const message =
+      error instanceof RateLimitError
+        ? "The archives are resting briefly. Try again in a moment."
+        : "Search could not reach every shelf. Try again shortly.";
 
     return NextResponse.json(
-      { error: "Failed to fetch books. Please try again." },
-      { status: 502 }
+      {
+        books: [],
+        page,
+        hasMore: false,
+        error: message,
+      },
+      {
+        // 200 so the browse UI can render an empty state + message without a crash.
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   }
 }

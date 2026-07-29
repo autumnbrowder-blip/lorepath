@@ -52,20 +52,27 @@ type OpenLibraryAuthor = {
 
 const OPEN_LIBRARY_ID_PREFIX = "ol-";
 const FETCH_TIMEOUT_MS = 8000;
+/** Required by Open Library usage policy — set on every API request. */
+export const OPEN_LIBRARY_USER_AGENT = "LorePath (support@lorepath.net)";
 
-async function fetchOpenLibrary(
+export async function fetchOpenLibrary(
   url: string,
   options?: { revalidate?: number; noStore?: boolean }
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const headers = { "User-Agent": OPEN_LIBRARY_USER_AGENT };
 
   try {
     return await fetch(
       url,
       options?.noStore
-        ? { cache: "no-store", signal: controller.signal }
-        : { next: { revalidate: options?.revalidate ?? 3600 }, signal: controller.signal }
+        ? { cache: "no-store", signal: controller.signal, headers }
+        : {
+            next: { revalidate: options?.revalidate ?? 3600 },
+            signal: controller.signal,
+            headers,
+          }
     );
   } finally {
     clearTimeout(timeout);
@@ -238,4 +245,96 @@ export async function getOpenLibraryBookById(
     language: null,
     isbn: null,
   };
+}
+
+/**
+ * Resolve a work via ISBN search, then load the work detail when possible.
+ * Soft-fails to null on any error.
+ */
+export async function getOpenLibraryBookByIsbn(
+  isbn: string
+): Promise<BookDetail | null> {
+  const digits = isbn.replace(/\D/g, "");
+  if (digits.length < 10) return null;
+
+  try {
+    const params = new URLSearchParams({
+      q: `isbn:${digits}`,
+      limit: "5",
+      fields:
+        "key,title,author_name,cover_i,first_publish_year,subject,first_sentence,isbn",
+    });
+
+    const response = await fetchOpenLibrary(
+      `https://openlibrary.org/search.json?${params.toString()}`,
+      { revalidate: 3600 }
+    );
+    if (!response.ok) return null;
+
+    const data: OpenLibrarySearchResponse = await response.json();
+    const books = parseOpenLibrarySearchResponse(data);
+    const best = books[0];
+    if (!best) return null;
+
+    try {
+      const detail = await getOpenLibraryBookById(best.id);
+      if (detail) {
+        return { ...detail, isbn: detail.isbn ?? best.isbn ?? digits };
+      }
+    } catch {
+      // Fall through to search summary.
+    }
+
+    return {
+      ...best,
+      publisher: null,
+      pageCount: best.pageCount ?? null,
+      language: null,
+      isbn: best.isbn ?? digits,
+    };
+  } catch (error) {
+    console.error("[open-library] ISBN lookup failed:", error);
+    return null;
+  }
+}
+
+/**
+ * Resolve via title (+ optional author) search. Soft-fails to null.
+ */
+export async function getOpenLibraryBookByTitle(
+  title: string,
+  authors: string[] = []
+): Promise<BookDetail | null> {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+
+  try {
+    const author = authors[0]?.trim();
+    const query = author ? `${trimmed} ${author}` : trimmed;
+    const page = await searchOpenLibrary(query, 1);
+    if (page.books.length === 0) return null;
+
+    const needle = trimmed.toLowerCase();
+    const ranked =
+      page.books.find((book) => book.title.toLowerCase().includes(needle)) ??
+      page.books[0];
+
+    try {
+      const detail = await getOpenLibraryBookById(ranked.id);
+      if (detail) return detail;
+    } catch {
+      // Fall through to search summary.
+    }
+
+    return {
+      ...ranked,
+      publisher: null,
+      pageCount: ranked.pageCount ?? null,
+      language: null,
+      isbn: ranked.isbn ?? null,
+    };
+  } catch (error) {
+    console.error("[open-library] title lookup failed:", error);
+    return null;
+  }
 }

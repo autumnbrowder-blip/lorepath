@@ -5,6 +5,7 @@ import {
   parsePublishedYear,
   pickPublishedYear,
 } from "@/lib/book-utils";
+import { fetchOpenLibrary } from "@/lib/open-library";
 import type { BookDetail } from "@/types/book";
 
 type OpenLibraryIsbnEntry = {
@@ -105,9 +106,9 @@ export async function fetchOpenLibraryByIsbn(
   const digits = isbn.replace(/\D/g, "");
   if (!digits) return null;
 
-  const response = await fetch(
+  const response = await fetchOpenLibrary(
     `https://openlibrary.org/api/books?bibkeys=ISBN:${digits}&format=json&jscmd=data`,
-    { next: { revalidate: 3600 } }
+    { revalidate: 3600 }
   );
 
   if (!response.ok) return null;
@@ -133,9 +134,9 @@ export async function fetchOpenLibraryByTitleAuthor(
       "title,author_name,subject,first_sentence,first_publish_year,publisher,isbn,cover_i,number_of_pages_median,language",
   });
 
-  const response = await fetch(
+  const response = await fetchOpenLibrary(
     `https://openlibrary.org/search.json?${params.toString()}`,
-    { next: { revalidate: 3600 } }
+    { revalidate: 3600 }
   );
 
   if (!response.ok) return null;
@@ -165,9 +166,9 @@ export async function fetchOpenLibraryByTitleAuthor(
 export async function fetchOpenLibraryEditionForWork(
   workId: string
 ): Promise<Partial<BookDetail> | null> {
-  const response = await fetch(
+  const response = await fetchOpenLibrary(
     `https://openlibrary.org/works/${workId}/editions.json?limit=5`,
-    { next: { revalidate: 3600 } }
+    { revalidate: 3600 }
   );
 
   if (!response.ok) return null;

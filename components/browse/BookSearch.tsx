@@ -105,6 +105,15 @@ export function BookSearch({
     if (!response.ok) {
       throw new Error(data.error ?? "Search failed.");
     }
+    const books = Array.isArray(data.books) ? data.books : [];
+    if (
+      books.length === 0 &&
+      typeof data.error === "string" &&
+      data.error.trim()
+    ) {
+      // Soft empty payload from the API — show a gentle message, not a crash.
+      throw new Error(data.error);
+    }
     const payload = data as SearchPagePayload;
     clientSearchCache.set(key, {
       expires: Date.now() + CLIENT_SEARCH_CACHE_TTL_MS,

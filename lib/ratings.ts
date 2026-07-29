@@ -1,4 +1,5 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
+import { bookDetailToDbRow, sourceFromBookSlug } from "@/lib/book-cache";
 import { getBookById } from "@/lib/books";
 import {
   normalizeAuthorForDedupe,
@@ -199,17 +200,7 @@ function resolveRatingsReadClient(): SupabaseClient | null {
 }
 
 function bookToDbRow(externalId: string, book: BookDetail) {
-  return {
-    slug: externalId,
-    title: book.title,
-    author: book.authors[0] ?? null,
-    isbn: book.isbn,
-    cover_image_url: book.coverUrl,
-    description: book.description,
-    published_year: book.publishedYear,
-    genre: book.genres[0] ?? null,
-    page_count: book.pageCount,
-  };
+  return bookDetailToDbRow(externalId, book);
 }
 
 function isMissingRomanceColumn(message: string): boolean {
@@ -606,12 +597,7 @@ export async function getUserReadingStats(
 }
 
 function sourceFromSlug(slug: string): BookSource {
-  if (slug.startsWith("openlibrary-")) return "openlibrary";
-  if (slug.startsWith("gutendex-")) return "gutendex";
-  if (slug.startsWith("isbndb-")) return "isbndb";
-  if (slug.startsWith("bigbook-")) return "bigbook";
-  if (slug.startsWith("nyt-")) return "nyt";
-  return "google";
+  return sourceFromBookSlug(slug);
 }
 
 function sanitizeIlikeToken(token: string): string {

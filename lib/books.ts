@@ -26,6 +26,7 @@ import {
   fetchIsbndbByIsbn,
   isIsbndbId,
   isbnFromIsbndbId,
+  needsIsbndbEnrichment,
   searchIsbndb,
 } from "@/lib/isbndb";
 import {
@@ -35,9 +36,12 @@ import {
 } from "@/lib/nyt-books";
 import {
   getOpenLibraryBookById,
+  getOpenLibraryBookByIsbn,
+  getOpenLibraryBookByTitle,
   isOpenLibraryId,
   searchOpenLibrary,
 } from "@/lib/open-library";
+import { cacheBookDetail, getCachedBookBySlug } from "@/lib/book-cache";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createAuthenticatedClient } from "@/lib/supabase/server";
 import { rankSearchResults } from "@/lib/book-utils";
@@ -60,11 +64,11 @@ const EMPTY_GOOGLE_PAGE: GoogleBooksPageResult = {
 };
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
 
+/** Providers queried on every browse search (ISBNdb is enrichment-only). */
 const SEARCH_SOURCES: BookSource[] = [
   "google",
   "openlibrary",
   "gutendex",
-  "isbndb",
   "bigbook",
 ];
 
@@ -118,7 +122,9 @@ async function resolveSearchUserId(): Promise<string | null> {
 }
 
 /**
- * Queries Google Books, Open Library, Gutendex, ISBNdb, and Big Book in parallel.
+ * Queries Google Books, Open Library, Gutendex, and Big Book in parallel.
+ * ISBNdb is NOT queried here — reserved for detail enrichment / fallbacks
+ * to stay within the 5k/day · 1 req/s plan.
  * Pass `{ mode: "genre" }` for subject/topic searches from genre tags.
  * Provider failures are isolated via Promise.allSettled.
  * Missing covers are backfilled via the BookCover API (bounded, best-effort).
@@ -142,7 +148,6 @@ export async function searchBooks(
     googleSettled,
     openLibrarySettled,
     gutendexSettled,
-    isbndbSettled,
     bigBookSettled,
   ] = await Promise.allSettled([
     searchGoogleBooks(searchQuery, pageNumber, searchOptions),
@@ -152,18 +157,8 @@ export async function searchBooks(
     genreMode || pageNumber === 1
       ? searchGutendex(searchQuery, pageNumber, searchOptions)
       : Promise.resolve(EMPTY_PAGE),
-    searchIsbndb(searchQuery, pageNumber, searchOptions),
     searchBigBook(searchQuery, pageNumber, searchOptions),
   ]);
-
-  if (SEARCH_DEBUG && isbndbSettled.status === "rejected") {
-    console.error("[searchBooks] ISBNdb failed:", {
-      query: searchQuery,
-      page: pageNumber,
-      mode: options?.mode ?? "text",
-      reason: isbndbSettled.reason,
-    });
-  }
 
   if (SEARCH_DEBUG && bigBookSettled.status === "rejected") {
     console.error("[searchBooks] Big Book failed:", {
@@ -180,13 +175,11 @@ export async function searchBooks(
     openLibrarySettled
   );
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
-  const isbndbResult = readSettledPage("ISBNdb", isbndbSettled);
   const bigBookResult = readSettledPage("Big Book", bigBookSettled);
 
   const googleBooks = googleResult.books;
   const openLibraryBooks = openLibraryResult.books;
   const gutendexBooks = gutendexResult.books;
-  const isbndbBooks = isbndbResult.books;
   const bigBookBooks = bigBookResult.books;
 
   if (googleResult.error) {
@@ -199,7 +192,6 @@ export async function searchBooks(
     });
   }
 
-  const isbndbConfigured = Boolean(process.env.ISBNDB_API_KEY?.trim());
   const bigBookConfigured = isBigBookConfigured();
   if (!bigBookConfigured && pageNumber === 1 && SEARCH_DEBUG) {
     console.warn(
@@ -211,7 +203,6 @@ export async function searchBooks(
     googleBooks.length +
     openLibraryBooks.length +
     gutendexBooks.length +
-    isbndbBooks.length +
     bigBookBooks.length;
 
   if (SEARCH_DEBUG) {
@@ -224,14 +215,13 @@ export async function searchBooks(
       googleError: googleResult.error,
       openlibrary: openLibraryBooks.length,
       gutendex: gutendexBooks.length,
-      isbndb: isbndbBooks.length,
       bigbook: bigBookBooks.length,
       totalRaw: providerRawCount,
       bigBookConfigured,
-      isbndbConfigured,
       googleBooksApiKeyConfigured: Boolean(
         process.env.GOOGLE_BOOKS_API_KEY?.trim()
       ),
+      isbndbInSearchFlood: false,
     });
   }
 
@@ -264,10 +254,9 @@ export async function searchBooks(
   }
 
   const rawCombined = [
-    ...googleBooks,
     ...openLibraryBooks,
+    ...googleBooks,
     ...gutendexBooks,
-    ...isbndbBooks,
     ...bigBookBooks,
     ...ratedBooks,
   ];
@@ -306,7 +295,6 @@ export async function searchBooks(
     google: googleBooks.length,
     openlibrary: openLibraryBooks.length,
     gutendex: gutendexBooks.length,
-    isbndb: isbndbBooks.length,
     // Omit Big Book from counts when unconfigured so the UI does not show a
     // permanent "(0)" as if the provider ran and failed.
     ...(bigBookConfigured || bigBookBooks.length > 0
@@ -324,7 +312,6 @@ export async function searchBooks(
       googleResult.hasMore ||
       openLibraryResult.hasMore ||
       gutendexResult.hasMore ||
-      isbndbResult.hasMore ||
       bigBookResult.hasMore,
     // Temporary debug fields — remove once Google search stability is confirmed.
     googleError: googleResult.error,
@@ -349,20 +336,46 @@ export const getBookById = cache(async function getBookById(
 
   const searchHint = options?.searchHint?.trim() || undefined;
   let book: BookDetail | null = null;
+  let fromCache = false;
 
-  if (isBigBookId(bookId)) {
-    book = await getBigBookBookById(bookId);
-  } else if (isOpenLibraryId(bookId)) {
-    book = await getOpenLibraryBookById(bookId);
-  } else if (isGutendexId(bookId)) {
-    book = await getGutendexBookById(bookId);
-  } else if (isIsbndbId(bookId)) {
-    book = await resolveIsbndbBook(bookId);
-  } else if (isNytId(bookId)) {
-    book = await resolveNytBook(bookId);
-  } else {
-    // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
-    book = await resolveGoogleVolume(bookId, searchHint);
+  // 1) Prefer previously resolved books in Supabase.
+  try {
+    const cached = await getCachedBookBySlug(bookId);
+    if (cached?.title?.trim()) {
+      book = cached;
+      fromCache = true;
+    }
+  } catch (error) {
+    console.error("[getBookById] cache read failed:", error);
+  }
+
+  // 2) Live provider lookup when cache misses.
+  if (!book) {
+    try {
+      if (isBigBookId(bookId)) {
+        book = await getBigBookBookById(bookId);
+      } else if (isOpenLibraryId(bookId)) {
+        book = await getOpenLibraryBookById(bookId);
+      } else if (isGutendexId(bookId)) {
+        book = await getGutendexBookById(bookId);
+      } else if (isIsbndbId(bookId)) {
+        book = await resolveIsbndbBook(bookId);
+      } else if (isNytId(bookId)) {
+        book = await resolveNytBook(bookId);
+      } else {
+        // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
+        book = await resolveGoogleVolume(bookId, searchHint);
+      }
+    } catch (error) {
+      // Google RateLimitError may still throw after OL fallbacks fail —
+      // let the page map it to "archives are resting". Soft-fail others.
+      if (error instanceof RateLimitError) throw error;
+      console.error("[getBookById] provider lookup failed:", {
+        bookId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      book = null;
+    }
   }
 
   if (!book) return null;
@@ -372,9 +385,29 @@ export const getBookById = cache(async function getBookById(
   // the URL id and save/load id must match or marks vanish on refresh.
   book = { ...book, id: bookId };
 
-  const enriched = await enrichBookDetail(book);
-  const withIsbndb = await enrichBookDetailWithIsbndb(enriched);
-  const canonical = { ...withIsbndb, id: bookId };
+  // Soft enrichment — never block the page on secondary APIs.
+  try {
+    if (!fromCache || needsIsbndbEnrichment(book)) {
+      book = await enrichBookDetail(book);
+    }
+  } catch (error) {
+    console.error("[getBookById] Open Library enrichment failed:", error);
+  }
+
+  try {
+    if (needsIsbndbEnrichment(book)) {
+      book = await enrichBookDetailWithIsbndb(book);
+    }
+  } catch (error) {
+    console.error("[getBookById] ISBNdb enrichment failed:", error);
+  }
+
+  const canonical = { ...book, id: bookId };
+
+  // Fire-and-forget cache write — soft-fail.
+  void cacheBookDetail(bookId, canonical).catch((error) => {
+    console.error("[getBookById] cache write failed:", error);
+  });
 
   let sexualContentAverage: number | null = null;
   try {
@@ -410,6 +443,71 @@ function summaryToDetail(summary: BookSummary, id: string): BookDetail {
   };
 }
 
+/**
+ * Open Library is the primary reliable fallback when Google 429s or returns null.
+ * Tries ISBN first, then title (+ author / search hint).
+ */
+async function resolveOpenLibraryFallback(options: {
+  bookId: string;
+  isbn?: string | null;
+  title?: string | null;
+  authors?: string[];
+  searchHint?: string;
+}): Promise<BookDetail | null> {
+  const { bookId, isbn, title, authors = [], searchHint } = options;
+
+  if (isbn) {
+    try {
+      const byIsbn = await getOpenLibraryBookByIsbn(isbn);
+      if (byIsbn) return { ...byIsbn, id: bookId };
+    } catch (error) {
+      console.error("[getBookById] OL ISBN fallback failed:", {
+        bookId,
+        isbn,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const titleQuery = title?.trim() || searchHint?.trim() || "";
+  if (titleQuery) {
+    try {
+      const byTitle = await getOpenLibraryBookByTitle(titleQuery, authors);
+      if (byTitle) return { ...byTitle, id: bookId };
+    } catch (error) {
+      console.error("[getBookById] OL title fallback failed:", {
+        bookId,
+        title: titleQuery,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      const page = await searchOpenLibrary(titleQuery, 1);
+      const best = rankSearchResults(page.books, titleQuery)[0];
+      if (best) {
+        if (isOpenLibraryId(best.id)) {
+          try {
+            const detail = await getOpenLibraryBookById(best.id);
+            if (detail) return { ...detail, id: bookId };
+          } catch {
+            // Use search summary below.
+          }
+        }
+        return summaryToDetail(best, bookId);
+      }
+    } catch (error) {
+      console.error("[getBookById] OL search fallback failed:", {
+        bookId,
+        title: titleQuery,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return null;
+}
+
 async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
   const isbn = isbnFromIsbndbId(bookId);
   if (isbn) {
@@ -426,6 +524,10 @@ async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
         throw error;
       }
     }
+
+    const viaOl = await resolveOpenLibraryFallback({ bookId, isbn });
+    if (viaOl) return viaOl;
+
     const viaIsbndb = await fetchIsbndbByIsbn(isbn);
     if (viaIsbndb) return { ...viaIsbndb, id: bookId };
     return null;
@@ -436,6 +538,13 @@ async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
     .replace(/-/g, " ")
     .trim();
   if (!slugQuery) return null;
+
+  const viaOl = await resolveOpenLibraryFallback({
+    bookId,
+    title: slugQuery,
+    searchHint: slugQuery,
+  });
+  if (viaOl) return viaOl;
 
   const page = await searchIsbndb(slugQuery, 1);
   const match =
@@ -460,13 +569,16 @@ async function resolveNytBook(bookId: string): Promise<BookDetail | null> {
         throw error;
       }
     }
+
+    const viaOl = await resolveOpenLibraryFallback({ bookId, isbn });
+    if (viaOl) return viaOl;
   }
   return getNytBookById(bookId);
 }
 
 /**
- * Resolve a Google Books volume id with retries + search-hint fallback.
- * Never swallows RateLimitError into a silent null.
+ * Resolve a Google Books volume id with retries + OL/search-hint fallback.
+ * Never swallows RateLimitError into a silent null — but always tries OL first.
  */
 async function resolveGoogleVolume(
   bookId: string,
@@ -503,6 +615,13 @@ async function resolveGoogleVolume(
     if (fromHint) return fromHint;
   }
 
+  // Always attempt Open Library before resting-archives / RateLimitError.
+  const fromOl = await resolveOpenLibraryFallback({
+    bookId,
+    searchHint,
+  });
+  if (fromOl) return fromOl;
+
   if (lastError) {
     throw lastError;
   }
@@ -512,6 +631,7 @@ async function resolveGoogleVolume(
 /**
  * When direct Google volume fetch fails, use the browse query to recover
  * the same volume (exact id) or the best title/author match.
+ * Open Library is preferred; ISBNdb is a last-resort detail fallback only.
  */
 async function resolveViaSearchHint(
   bookId: string,
@@ -533,6 +653,16 @@ async function resolveViaSearchHint(
           message: error instanceof Error ? error.message : String(error),
         });
       }
+
+      const viaOl = await resolveOpenLibraryFallback({
+        bookId,
+        isbn: exactGoogle.isbn,
+        title: exactGoogle.title,
+        authors: exactGoogle.authors,
+        searchHint: hint,
+      });
+      if (viaOl) return viaOl;
+
       return summaryToDetail(exactGoogle, bookId);
     }
 
@@ -550,7 +680,18 @@ async function resolveViaSearchHint(
           });
         }
       }
-      if (best) return summaryToDetail(best, bookId);
+
+      if (best) {
+        const viaOl = await resolveOpenLibraryFallback({
+          bookId,
+          isbn: best.isbn,
+          title: best.title,
+          authors: best.authors,
+          searchHint: hint,
+        });
+        if (viaOl) return viaOl;
+        return summaryToDetail(best, bookId);
+      }
     }
   } catch (error) {
     console.error("[getBookById] Google searchHint failed:", {
@@ -560,32 +701,28 @@ async function resolveViaSearchHint(
     });
   }
 
+  // Primary reliable alternate: Open Library only (no ISBNdb flood).
+  const fromOl = await resolveOpenLibraryFallback({
+    bookId,
+    searchHint: hint,
+    title: hint,
+  });
+  if (fromOl) return fromOl;
+
+  // Last-resort ISBNdb detail fallback (throttled, soft-fail).
   try {
-    const [olPage, isbndbPage] = await Promise.all([
-      searchOpenLibrary(hint, 1),
-      searchIsbndb(hint, 1),
-    ]);
-    const pooled = rankSearchResults(
-      [...olPage.books, ...isbndbPage.books],
-      hint
-    );
-    const best = pooled[0];
+    const isbndbPage = await searchIsbndb(hint, 1);
+    const best = rankSearchResults(isbndbPage.books, hint)[0];
     if (!best) return null;
 
-    if (isOpenLibraryId(best.id)) {
-      const detail = await getOpenLibraryBookById(best.id);
+    const isbn = isbnFromIsbndbId(best.id) ?? best.isbn ?? null;
+    if (isbn) {
+      const detail = await fetchIsbndbByIsbn(isbn);
       if (detail) return { ...detail, id: bookId };
-    }
-    if (isIsbndbId(best.id)) {
-      const isbn = isbnFromIsbndbId(best.id) ?? best.isbn ?? null;
-      if (isbn) {
-        const detail = await fetchIsbndbByIsbn(isbn);
-        if (detail) return { ...detail, id: bookId };
-      }
     }
     return summaryToDetail(best, bookId);
   } catch (error) {
-    console.error("[getBookById] alternate searchHint failed:", {
+    console.error("[getBookById] ISBNdb searchHint fallback failed:", {
       bookId,
       hint,
       message: error instanceof Error ? error.message : String(error),
