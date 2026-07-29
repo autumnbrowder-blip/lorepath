@@ -13,7 +13,7 @@ import {
   preferMatchingGenreTags,
   type SearchBooksOptions,
 } from "@/lib/genre-search";
-import { searchGutendex } from "@/lib/gutendex";
+import { searchGutendex, getGutendexBookById, isGutendexId } from "@/lib/gutendex";
 import {
   getGoogleBookById,
   getGoogleBookByIsbn,
@@ -332,48 +332,37 @@ export async function searchBooks(
   };
 }
 
+export type GetBookByIdOptions = {
+  /**
+   * Browse `?q=` hint. When a direct Google volume fetch fails (rate limit /
+   * transient error), we search providers with this query and pick the best match.
+   */
+  searchHint?: string;
+};
+
 export const getBookById = cache(async function getBookById(
-  id: string
+  id: string,
+  options?: GetBookByIdOptions
 ): Promise<BookDetail | null> {
+  const bookId = decodeBookRouteId(id);
+  if (!bookId) return null;
+
+  const searchHint = options?.searchHint?.trim() || undefined;
   let book: BookDetail | null = null;
 
-  if (isBigBookId(id)) {
-    book = await getBigBookBookById(id);
-  } else if (isOpenLibraryId(id)) {
-    book = await getOpenLibraryBookById(id);
-  } else if (isIsbndbId(id)) {
-    const isbn = isbnFromIsbndbId(id);
-    if (isbn) {
-      try {
-        book = await getGoogleBookByIsbn(isbn);
-      } catch {
-        // Fall through to ISBNdb metadata
-      }
-      if (!book) {
-        book = await fetchIsbndbByIsbn(isbn);
-        if (book) book = { ...book, id };
-      }
-    }
-  } else if (isNytId(id)) {
-    const isbn = isbnFromNytId(id);
-    if (isbn) {
-      try {
-        book = await getGoogleBookByIsbn(isbn);
-      } catch {
-        // Fall through to NYT list metadata
-      }
-    }
-    if (!book) {
-      book = await getNytBookById(id);
-    }
+  if (isBigBookId(bookId)) {
+    book = await getBigBookBookById(bookId);
+  } else if (isOpenLibraryId(bookId)) {
+    book = await getOpenLibraryBookById(bookId);
+  } else if (isGutendexId(bookId)) {
+    book = await getGutendexBookById(bookId);
+  } else if (isIsbndbId(bookId)) {
+    book = await resolveIsbndbBook(bookId);
+  } else if (isNytId(bookId)) {
+    book = await resolveNytBook(bookId);
   } else {
-    try {
-      book = await getGoogleBookById(id);
-    } catch (error) {
-      if (!(error instanceof RateLimitError)) {
-        throw error;
-      }
-    }
+    // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
+    book = await resolveGoogleVolume(bookId, searchHint);
   }
 
   if (!book) return null;
@@ -381,16 +370,16 @@ export const getBookById = cache(async function getBookById(
   // Keep the route/external id stable. NYT and ISBNdb lookups may resolve via
   // Google Books and temporarily swap `book.id`; ratings are keyed by slug, so
   // the URL id and save/load id must match or marks vanish on refresh.
-  book = { ...book, id };
+  book = { ...book, id: bookId };
 
   const enriched = await enrichBookDetail(book);
   const withIsbndb = await enrichBookDetailWithIsbndb(enriched);
-  const canonical = { ...withIsbndb, id };
+  const canonical = { ...withIsbndb, id: bookId };
 
   let sexualContentAverage: number | null = null;
   try {
     const { getCommunityRatings } = await import("@/lib/ratings");
-    const community = await getCommunityRatings(id);
+    const community = await getCommunityRatings(bookId);
     sexualContentAverage = community.averages?.sexual_content ?? null;
   } catch {
     // Ratings are optional for tagging.
@@ -398,3 +387,210 @@ export const getBookById = cache(async function getBookById(
 
   return withFinalizedTags(canonical, { sexualContentAverage });
 });
+
+/** Decode a `/books/[id]` segment safely (handles encodeURIComponent links). */
+function decodeBookRouteId(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  try {
+    return decodeURIComponent(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+function summaryToDetail(summary: BookSummary, id: string): BookDetail {
+  return {
+    ...summary,
+    id,
+    publisher: null,
+    pageCount: summary.pageCount ?? null,
+    language: null,
+    isbn: summary.isbn ?? null,
+  };
+}
+
+async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
+  const isbn = isbnFromIsbndbId(bookId);
+  if (isbn) {
+    try {
+      const viaGoogle = await getGoogleBookByIsbn(isbn);
+      if (viaGoogle) return viaGoogle;
+    } catch (error) {
+      console.error("[getBookById] ISBNdb→Google ISBN failed:", {
+        bookId,
+        isbn,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      if (!(error instanceof RateLimitError)) {
+        throw error;
+      }
+    }
+    const viaIsbndb = await fetchIsbndbByIsbn(isbn);
+    if (viaIsbndb) return { ...viaIsbndb, id: bookId };
+    return null;
+  }
+
+  const slugQuery = bookId
+    .replace(/^isbndb-/i, "")
+    .replace(/-/g, " ")
+    .trim();
+  if (!slugQuery) return null;
+
+  const page = await searchIsbndb(slugQuery, 1);
+  const match =
+    page.books.find((row) => row.id === bookId) ??
+    rankSearchResults(page.books, slugQuery)[0];
+  return match ? summaryToDetail(match, bookId) : null;
+}
+
+async function resolveNytBook(bookId: string): Promise<BookDetail | null> {
+  const isbn = isbnFromNytId(bookId);
+  if (isbn) {
+    try {
+      const viaGoogle = await getGoogleBookByIsbn(isbn);
+      if (viaGoogle) return viaGoogle;
+    } catch (error) {
+      console.error("[getBookById] NYT→Google ISBN failed:", {
+        bookId,
+        isbn,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      if (!(error instanceof RateLimitError)) {
+        throw error;
+      }
+    }
+  }
+  return getNytBookById(bookId);
+}
+
+/**
+ * Resolve a Google Books volume id with retries + search-hint fallback.
+ * Never swallows RateLimitError into a silent null.
+ */
+async function resolveGoogleVolume(
+  bookId: string,
+  searchHint?: string
+): Promise<BookDetail | null> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const book = await getGoogleBookById(bookId);
+      if (book) return book;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `[getBookById] Google volume fetch failed (attempt ${attempt}):`,
+        {
+          bookId,
+          message: error instanceof Error ? error.message : String(error),
+          status:
+            error instanceof RateLimitError
+              ? error.status
+              : (error as Error & { status?: number })?.status,
+        }
+      );
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
+      }
+    }
+  }
+
+  if (searchHint) {
+    const fromHint = await resolveViaSearchHint(bookId, searchHint);
+    if (fromHint) return fromHint;
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  return null;
+}
+
+/**
+ * When direct Google volume fetch fails, use the browse query to recover
+ * the same volume (exact id) or the best title/author match.
+ */
+async function resolveViaSearchHint(
+  bookId: string,
+  searchHint: string
+): Promise<BookDetail | null> {
+  const hint = searchHint.trim();
+  if (!hint) return null;
+
+  try {
+    const googlePage = await searchGoogleBooks(hint, 1);
+    const exactGoogle = googlePage.books.find((row) => row.id === bookId);
+    if (exactGoogle) {
+      try {
+        const detail = await getGoogleBookById(exactGoogle.id);
+        if (detail) return detail;
+      } catch (error) {
+        console.error("[getBookById] hint exact-id detail failed:", {
+          bookId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return summaryToDetail(exactGoogle, bookId);
+    }
+
+    if (googlePage.books.length > 0) {
+      const best = rankSearchResults(googlePage.books, hint)[0];
+      if (best?.isbn) {
+        try {
+          const byIsbn = await getGoogleBookByIsbn(best.isbn);
+          if (byIsbn) return { ...byIsbn, id: bookId };
+        } catch (error) {
+          console.error("[getBookById] hint ISBN fallback failed:", {
+            bookId,
+            isbn: best.isbn,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      if (best) return summaryToDetail(best, bookId);
+    }
+  } catch (error) {
+    console.error("[getBookById] Google searchHint failed:", {
+      bookId,
+      hint,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
+    const [olPage, isbndbPage] = await Promise.all([
+      searchOpenLibrary(hint, 1),
+      searchIsbndb(hint, 1),
+    ]);
+    const pooled = rankSearchResults(
+      [...olPage.books, ...isbndbPage.books],
+      hint
+    );
+    const best = pooled[0];
+    if (!best) return null;
+
+    if (isOpenLibraryId(best.id)) {
+      const detail = await getOpenLibraryBookById(best.id);
+      if (detail) return { ...detail, id: bookId };
+    }
+    if (isIsbndbId(best.id)) {
+      const isbn = isbnFromIsbndbId(best.id) ?? best.isbn ?? null;
+      if (isbn) {
+        const detail = await fetchIsbndbByIsbn(isbn);
+        if (detail) return { ...detail, id: bookId };
+      }
+    }
+    return summaryToDetail(best, bookId);
+  } catch (error) {
+    console.error("[getBookById] alternate searchHint failed:", {
+      bookId,
+      hint,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+

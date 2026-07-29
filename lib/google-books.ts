@@ -345,22 +345,39 @@ export async function searchGoogleBooks(
 export async function getGoogleBookById(
   volumeId: string
 ): Promise<BookDetail | null> {
+  const trimmed = volumeId.trim();
+  if (!trimmed) return null;
+
+  // Encode so hyphenated Google volume ids (e.g. E-OLEAAAQBAJ) stay intact.
   const response = await fetchGoogleBooks(
-    buildGoogleBooksUrl(`volumes/${volumeId}`),
+    buildGoogleBooksUrl(`volumes/${encodeURIComponent(trimmed)}`),
     { revalidate: 3600 }
   );
 
   if (response.status === 429) {
     const bodyMessage = await readGoogleErrorBody(response);
+    console.error("[getGoogleBookById] rate limited:", {
+      volumeId: trimmed,
+      status: 429,
+      message: bodyMessage,
+    });
     throw new RateLimitError(
       bodyMessage ?? "Google Books rate limit reached."
     );
   }
 
-  if (response.status === 404) return null;
+  if (response.status === 404) {
+    console.warn("[getGoogleBookById] volume not found:", { volumeId: trimmed });
+    return null;
+  }
 
   if (!response.ok) {
     const bodyMessage = await readGoogleErrorBody(response);
+    console.error("[getGoogleBookById] API error:", {
+      volumeId: trimmed,
+      status: response.status,
+      message: bodyMessage,
+    });
     throw new Error(
       bodyMessage ?? `Google Books API error: ${response.status}`
     );

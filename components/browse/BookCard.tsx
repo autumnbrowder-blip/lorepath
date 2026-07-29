@@ -17,9 +17,10 @@ export function BookCard({ book, searchQuery }: BookCardProps) {
     ? truncateText(book.description, 120)
     : null;
 
+  const encodedId = encodeURIComponent(book.id);
   const bookHref = searchQuery?.trim()
-    ? `/books/${book.id}?q=${encodeURIComponent(searchQuery.trim())}`
-    : `/books/${book.id}`;
+    ? `/books/${encodedId}?q=${encodeURIComponent(searchQuery.trim())}`
+    : `/books/${encodedId}`;
 
   return (
     <article className="tome-card group">

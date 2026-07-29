@@ -102,6 +102,8 @@ function workIdFromKey(key?: string): string | null {
 }
 
 export function isOpenLibraryId(id: string): boolean {
+  // Prefix must be exactly "ol-" (lowercase). Do not treat Google volume ids
+  // like "E-OLEAAAQBAJ" as Open Library — they go through Google lookup.
   return id.startsWith(OPEN_LIBRARY_ID_PREFIX);
 }
 

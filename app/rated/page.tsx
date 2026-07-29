@@ -73,7 +73,7 @@ export default async function RatedTomesPage() {
             {ratedBooks.map((item) => (
               <li key={item.ratingId}>
                 <Link
-                  href={`/books/${item.slug}`}
+                  href={`/books/${encodeURIComponent(item.slug)}`}
                   className="tome-card flex h-full gap-4 p-4 pl-5"
                 >
                   <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-gradient-to-b from-gold-500/50 via-gold-700/30 to-gold-900/40" />

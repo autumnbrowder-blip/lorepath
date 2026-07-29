@@ -10,7 +10,7 @@ import {
   toGutendexTopic,
   type SearchBooksOptions,
 } from "@/lib/genre-search";
-import type { BookSummary } from "@/types/book";
+import type { BookDetail, BookSummary } from "@/types/book";
 
 const GUTENDEX_ID_PREFIX = "gutenberg-";
 const FETCH_TIMEOUT_MS = 8000;
@@ -27,6 +27,7 @@ type GutendexBook = {
   bookshelves?: string[];
   formats?: Record<string, string>;
   download_count?: number;
+  languages?: string[];
 };
 
 type GutendexSearchResponse = {
@@ -45,6 +46,13 @@ export function isGutendexId(id: string): boolean {
 
 export function toGutendexId(gutenbergId: number): string {
   return `${GUTENDEX_ID_PREFIX}${gutenbergId}`;
+}
+
+export function gutendexNumericId(id: string): number | null {
+  if (!isGutendexId(id)) return null;
+  const raw = id.slice(GUTENDEX_ID_PREFIX.length);
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function normalizeGutendexAuthor(name: string): string {
@@ -101,29 +109,78 @@ function parseGutendexDescription(book: GutendexBook): string | null {
   return cleanDescription(subjects.join(". "));
 }
 
+function toGutendexSummary(book: GutendexBook): BookSummary | null {
+  if (!book.id || !book.title) return null;
+
+  return {
+    id: toGutendexId(book.id),
+    title: cleanTitle(book.title),
+    authors: parseGutendexAuthors(book.authors),
+    coverUrl: parseGutendexCover(book.formats),
+    description: parseGutendexDescription(book),
+    genres: parseGutendexGenres(book),
+    publishedYear: parseGutendexPublishedYear(book),
+    source: "gutendex",
+    downloadCount: book.download_count ?? null,
+  };
+}
+
 export function parseGutendexSearchResponse(
   data: GutendexSearchResponse
 ): BookSummary[] {
   if (!data.results) return [];
 
   return data.results
-    .map((book): BookSummary | null => {
-      if (!book.id || !book.title) return null;
-
-      return {
-        id: toGutendexId(book.id),
-        title: cleanTitle(book.title),
-        authors: parseGutendexAuthors(book.authors),
-        coverUrl: parseGutendexCover(book.formats),
-        description: parseGutendexDescription(book),
-        genres: parseGutendexGenres(book),
-        publishedYear: parseGutendexPublishedYear(book),
-        source: "gutendex",
-        downloadCount: book.download_count ?? null,
-      };
-    })
+    .map((book) => toGutendexSummary(book))
     .filter((book): book is BookSummary => book !== null)
     .filter((book) => !isLowQualityBook(book));
+}
+
+/** Fetch a single Project Gutenberg work by LorePath id (`gutenberg-{n}`). */
+export async function getGutendexBookById(
+  id: string
+): Promise<BookDetail | null> {
+  const numericId = gutendexNumericId(id);
+  if (numericId == null) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`https://gutendex.com/books/${numericId}`, {
+      next: { revalidate: 3600 },
+      signal: controller.signal,
+    });
+
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      console.error("[gutendex] getById failed:", {
+        id,
+        status: response.status,
+      });
+      throw new Error(`Project Gutenberg API error: ${response.status}`);
+    }
+
+    const data = (await response.json()) as GutendexBook;
+    const summary = toGutendexSummary(data);
+    if (!summary) return null;
+
+    return {
+      ...summary,
+      id: toGutendexId(numericId),
+      publisher: null,
+      pageCount: null,
+      language: data.languages?.[0] ?? null,
+      isbn: null,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Project Gutenberg request timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function searchGutendex(

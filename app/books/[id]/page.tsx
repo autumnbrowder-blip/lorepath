@@ -6,14 +6,14 @@ import { RatingForm } from "@/components/books/RatingForm";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { getBookById } from "@/lib/books";
+import { RateLimitError } from "@/lib/google-books";
 import { getCommunityRatings, getUserRatingForBook } from "@/lib/ratings";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ScrollText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import type { ContentRating } from "@/types";
 
@@ -22,15 +22,72 @@ type BookDetailPageProps = {
   searchParams: Promise<{ q?: string }>;
 };
 
+function browseBackHref(searchQuery: string): string {
+  return searchQuery
+    ? `/browse?q=${encodeURIComponent(searchQuery)}`
+    : "/browse";
+}
+
+function TomeUnavailable({
+  searchQuery,
+  reason,
+}: {
+  searchQuery: string;
+  reason: "missing" | "busy";
+}) {
+  const backHref = browseBackHref(searchQuery);
+
+  return (
+    <FantasyPageShell>
+      <div className="mx-auto flex max-w-xl flex-col items-center px-6 py-20 text-center sm:py-28">
+        <div
+          className="w-full max-w-lg px-6 py-12 shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
+          style={{
+            backgroundImage: "url('/images/parchment.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            border: "2px solid #8c6b2e",
+            borderRadius: "6px",
+          }}
+        >
+          <ScrollText className="mx-auto mb-4 h-9 w-9 text-[#a67c2d]" />
+          <h1 className="font-storybook text-2xl font-semibold tracking-[0.06em] text-[#2f1f0f]">
+            {reason === "busy"
+              ? "The archives are resting"
+              : "This tome could not be opened"}
+          </h1>
+          <p className="mt-3 font-heading text-lg leading-relaxed text-[#3f2a1e]/90">
+            {reason === "busy"
+              ? "A keeper of volumes is briefly overwhelmed. Return to the shelves and try this book again in a moment."
+              : "This shelf-marker led nowhere in the living archives. The volume may have moved, or the seal may be incomplete."}
+          </p>
+          <Link
+            href={backHref}
+            className="btn-primary mt-8 inline-flex min-w-[12rem] items-center justify-center gap-2 px-8 py-3 text-sm tracking-[0.14em]"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to Results
+          </Link>
+        </div>
+      </div>
+    </FantasyPageShell>
+  );
+}
+
 export async function generateMetadata({
   params,
+  searchParams,
 }: BookDetailPageProps): Promise<Metadata> {
   const { id } = await params;
+  const { q } = await searchParams;
 
   try {
-    const book = await getBookById(id);
+    const book = await getBookById(id, {
+      searchHint: q?.trim() || undefined,
+    });
     if (!book) {
-      return { title: "Book Not Found | LorePath" };
+      return { title: "Tome Unopened | LorePath" };
     }
     return {
       title: `${book.title} | LorePath`,
@@ -78,15 +135,29 @@ export default async function BookDetailPage({
   const { q } = await searchParams;
   const searchQuery = q?.trim() ?? "";
 
-  let book;
+  let book = null;
   try {
-    book = await getBookById(id);
-  } catch {
-    throw new Error("Failed to load book details.");
+    book = await getBookById(id, {
+      searchHint: searchQuery || undefined,
+    });
+  } catch (error) {
+    console.error("[books/[id]] getBookById failed:", {
+      id,
+      q: searchQuery || null,
+      message: error instanceof Error ? error.message : String(error),
+      status:
+        error instanceof RateLimitError
+          ? error.status
+          : (error as Error & { status?: number })?.status,
+    });
+    if (error instanceof RateLimitError) {
+      return <TomeUnavailable searchQuery={searchQuery} reason="busy" />;
+    }
+    return <TomeUnavailable searchQuery={searchQuery} reason="missing" />;
   }
 
   if (!book) {
-    notFound();
+    return <TomeUnavailable searchQuery={searchQuery} reason="missing" />;
   }
 
   const [communityRatings, viewer] = await Promise.all([
@@ -95,10 +166,7 @@ export default async function BookDetailPage({
   ]);
 
   const { user, userPreferences, userRating } = viewer;
-
-  const backHref = searchQuery
-    ? `/browse?q=${encodeURIComponent(searchQuery)}`
-    : "/browse";
+  const backHref = browseBackHref(searchQuery);
 
   return (
     <FantasyPageShell>
