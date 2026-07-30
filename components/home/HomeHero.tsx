@@ -1,9 +1,17 @@
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
-import { BookOpen, Feather } from "lucide-react";
+import { BookOpen, Feather, ScrollText } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
-export function HomeHero() {
+type HomeHeroProps = {
+  isLoggedIn?: boolean;
+};
+
+export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
+  const preferencesCtaHref = isLoggedIn
+    ? "/preferences"
+    : "/register?redirect=/preferences";
+
   return (
     <section
       aria-labelledby="home-tagline"
@@ -116,6 +124,16 @@ export function HomeHero() {
               />
               <Feather className="relative h-4 w-4" />
               <span className="relative">Set Your Preferences</span>
+            </Link>
+          </div>
+
+          <div className="mt-4 flex justify-center sm:mt-5">
+            <Link
+              href={preferencesCtaHref}
+              className="btn-primary w-full max-w-md px-6 py-3.5 text-center normal-case tracking-[0.06em] sm:w-auto"
+            >
+              <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Create your free account to set preferences
             </Link>
           </div>
         </div>
