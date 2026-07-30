@@ -1,4 +1,5 @@
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
+import { ContactArchivesNote } from "@/components/ContactArchivesNote";
 import { BookOpen, ScrollText } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -112,6 +113,8 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
               <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
               Create your free account to set preferences
             </Link>
+
+            <ContactArchivesNote className="mt-2" />
           </div>
         </div>
       </div>

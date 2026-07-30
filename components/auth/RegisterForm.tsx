@@ -1,5 +1,6 @@
 "use client";
 
+import { ContactArchivesNote } from "@/components/ContactArchivesNote";
 import { getAuthCallbackUrl } from "@/lib/auth-url";
 import { track } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase";
@@ -234,6 +235,8 @@ export function RegisterForm() {
           Sign in
         </Link>
       </p>
+
+      <ContactArchivesNote variant="inline" />
     </div>
   );
 }
