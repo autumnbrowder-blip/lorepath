@@ -1,5 +1,5 @@
 import { TrackOnMount } from "@/components/analytics/TrackOnMount";
-import { BookOpen, Feather, ScrollText } from "lucide-react";
+import { BookOpen, ScrollText } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -83,7 +83,7 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
           className="animate-fade-in-up pb-4 pt-8 sm:pb-8"
           style={{ animationDelay: "120ms" }}
         >
-          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-5">
+          <div className="flex flex-col items-center justify-center gap-4">
             <Link
               href="/browse"
               className="group relative inline-flex w-full max-w-xs items-center justify-center gap-2 overflow-hidden rounded-sm border border-gold-500/70 px-8 py-4 font-storybook text-xs font-normal uppercase tracking-[0.2em] text-forest-950 transition hover:-translate-y-1 sm:w-auto"
@@ -105,29 +105,6 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
               <span className="relative">Browse the Archives</span>
             </Link>
 
-            <Link
-              href="/preferences"
-              className="group relative inline-flex w-full max-w-xs items-center justify-center gap-2 overflow-hidden rounded-sm border border-gold-600/50 px-8 py-4 font-storybook text-xs font-normal uppercase tracking-[0.2em] text-gold-300 transition hover:-translate-y-1 hover:text-gold-200 sm:w-auto"
-              style={{
-                background:
-                  "linear-gradient(180deg, #4a3a22 0%, #2a2014 48%, #120e0a 100%)",
-                boxShadow:
-                  "0 10px 28px rgba(0,0,0,0.45), inset 0 1px 0 rgba(179,139,77,0.22), inset 0 -2px 4px rgba(0,0,0,0.5)",
-              }}
-            >
-              <span
-                className="pointer-events-none absolute inset-0 opacity-25 mix-blend-overlay"
-                style={{
-                  backgroundImage:
-                    "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-                }}
-              />
-              <Feather className="relative h-4 w-4" />
-              <span className="relative">Set Your Preferences</span>
-            </Link>
-          </div>
-
-          <div className="mt-4 flex justify-center sm:mt-5">
             <Link
               href={preferencesCtaHref}
               className="btn-primary w-full max-w-md px-6 py-3.5 text-center normal-case tracking-[0.06em] sm:w-auto"

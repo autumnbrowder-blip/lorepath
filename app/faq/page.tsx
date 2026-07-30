@@ -1,5 +1,7 @@
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
 import {
   BarChart3,
   BookOpen,
@@ -12,6 +14,7 @@ import {
   Sparkles,
   Stars,
   Target,
+  UserPlus,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -163,7 +166,23 @@ function SectionCard({
   );
 }
 
-export default function FaqPage() {
+export default async function FaqPage() {
+  let isLoggedIn = false;
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      isLoggedIn = !!user;
+    } catch {
+      isLoggedIn = false;
+    }
+  }
+
+  const signupHref = isLoggedIn ? "/preferences" : "/register";
+
   return (
     <div className="faq-page">
       {/* Viewport-locked auditorium background — fixed; does not rescale with content */}
@@ -461,6 +480,32 @@ export default function FaqPage() {
                 with both new releases and older works for readers to explore.
               </p>
             </SectionCard>
+
+            <div className="preference-codex-box relative text-center">
+              <CodexBoxOrnament />
+              <div className="relative z-[3] flex flex-col items-center px-1 py-2">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
+                  <UserPlus className="h-5 w-5" />
+                </div>
+                <p className="font-storybook text-[11px] font-bold uppercase tracking-[0.28em] nav-dragon-gold">
+                  Join the archives
+                </p>
+                <h2 className="mt-1 font-storybook text-2xl font-bold tracking-[0.08em] nav-dragon-gold">
+                  Sign up for free
+                </h2>
+                <p className="mt-3 max-w-md font-heading text-lg leading-relaxed nav-dragon-gold">
+                  Create your free account to leave marks and set your reading
+                  preferences.
+                </p>
+                <Link
+                  href={signupHref}
+                  className="btn-primary mt-5 px-8 py-3.5 text-center normal-case tracking-[0.06em]"
+                >
+                  <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Create free account
+                </Link>
+              </div>
+            </div>
 
             <div className="preference-codex-box relative text-center">
               <CodexBoxOrnament />
