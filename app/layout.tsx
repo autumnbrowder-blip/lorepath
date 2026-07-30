@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cinzel, Cinzel_Decorative, Cormorant_Garamond, Inter } from "next/font/google";
+import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { BackToTop } from "@/components/BackToTop";
 import { Navbar } from "@/components/Navbar";
 import { PageViewTracker } from "@/components/PageViewTracker";
@@ -45,12 +46,14 @@ export default function RootLayout({
         className={`${inter.variable} ${cormorant.variable} ${cinzel.variable} ${cinzelDecorative.variable} min-h-screen bg-background font-sans text-foreground antialiased selection:bg-accent/30`}
       >
         <ThemeProvider>
-          <PageViewTracker />
-          <div className="flex min-h-screen flex-col">
-            <Navbar />
-            <main className="flex-1">{children}</main>
-          </div>
-          <BackToTop />
+          <AnalyticsProvider>
+            <PageViewTracker />
+            <div className="flex min-h-screen flex-col">
+              <Navbar />
+              <main className="flex-1">{children}</main>
+            </div>
+            <BackToTop />
+          </AnalyticsProvider>
         </ThemeProvider>
       </body>
     </html>

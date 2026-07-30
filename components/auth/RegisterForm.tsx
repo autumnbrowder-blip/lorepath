@@ -1,12 +1,13 @@
 "use client";
 
 import { getAuthCallbackUrl } from "@/lib/auth-url";
+import { track } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 const missingConfigMessage =
   "Supabase is not configured. Add real NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart the dev server.";
@@ -52,6 +53,10 @@ export function RegisterForm() {
   const [loading, setLoading] = useState(false);
   const configured = isSupabaseConfigured();
 
+  useEffect(() => {
+    track("view_register");
+  }, []);
+
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -72,6 +77,7 @@ export function RegisterForm() {
     }
 
     setLoading(true);
+    track("signup_submitted");
 
     try {
       const supabase = createClient();
@@ -92,6 +98,7 @@ export function RegisterForm() {
 
       // Immediate session when Confirm email is disabled (preferred UX).
       if (data.session) {
+        track("signup_completed", { method: "signup_session" });
         router.push(redirectTo);
         router.refresh();
         return;
@@ -107,6 +114,7 @@ export function RegisterForm() {
         return;
       }
 
+      track("signup_completed", { method: "signup_then_signin" });
       router.push(redirectTo);
       router.refresh();
     } catch (err) {

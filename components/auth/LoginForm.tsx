@@ -1,6 +1,7 @@
 "use client";
 
 import { getAuthCallbackUrl } from "@/lib/auth-url";
+import { track } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
@@ -77,6 +78,10 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const configured = configuredProp ?? isSupabaseConfigured();
+
+  useEffect(() => {
+    track("view_login");
+  }, []);
 
   useEffect(() => {
     const authError = searchParams.get("error");

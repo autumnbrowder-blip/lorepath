@@ -32,8 +32,10 @@ Copy names from `.env.local.example`. After changing env vars, restart `npm run 
 | `NYT_BOOKS_API_KEY` | NYT bestsellers on Browse ([free key](https://developer.nytimes.com/)) |
 | `ISBNDB_API_KEY` | ISBNdb search |
 | `BIG_BOOK_API_KEY` | Big Book semantic search ([free key](https://bigbookapi.com)) — server-only |
+| `NEXT_PUBLIC_POSTHOG_KEY` | Optional PostHog project key for funnel analytics |
+| `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog host (default `https://us.i.posthog.com`) |
 
-Browse search still works without `NYT_BOOKS_API_KEY` — only the bestsellers strip is omitted. Without `BIG_BOOK_API_KEY`, Big Book simply contributes 0 results.
+Browse search still works without `NYT_BOOKS_API_KEY` — only the bestsellers strip is omitted. Without `BIG_BOOK_API_KEY`, Big Book simply contributes 0 results. Without PostHog keys, analytics soft-fails (dev: `console.debug`).
 
 Missing covers are backfilled from the keyless [BookCover API](https://bookcover.longitood.com) (Goodreads covers) — no configuration needed.
 

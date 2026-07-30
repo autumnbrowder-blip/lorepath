@@ -3,6 +3,7 @@
 import { BestsellersSection } from "@/components/browse/BestsellersSection";
 import { BookCard } from "@/components/browse/BookCard";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
+import { queryHint, track } from "@/lib/analytics";
 import { rankSearchResults } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import type { BookSummary } from "@/types/book";
@@ -153,9 +154,16 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      setBooks(data.books ?? []);
+      const results = data.books ?? [];
+      setBooks(results);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
+      track("search_performed", {
+        ...queryHint(trimmed),
+        mode,
+        result_count: results.length,
+        has_more: Boolean(data.hasMore),
+      });
     } catch (err) {
       const aborted =
         (err instanceof DOMException && err.name === "AbortError") ||
@@ -214,6 +222,10 @@ export function BookSearch({
       }
     }
   }
+
+  useEffect(() => {
+    track("view_browse");
+  }, []);
 
   useEffect(() => {
     if (initialQuery && !initialSearchDone.current) {

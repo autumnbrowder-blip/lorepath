@@ -1,3 +1,4 @@
+import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { BookOpen, Feather } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -8,6 +9,7 @@ export function HomeHero() {
       aria-labelledby="home-tagline"
       className="home-hero-page relative flex min-h-[calc(100vh-4.5rem)] flex-col overflow-hidden bg-[#070e0a]"
     >
+      <TrackOnMount event="view_home" />
       {/* Viewport-locked library — never rescales with layout/interaction */}
       <div className="home-hero-scene" aria-hidden="true">
         <Image

@@ -1,3 +1,4 @@
+import { TrackOnMount } from "@/components/analytics/TrackOnMount";
 import { BookInformation } from "@/components/books/BookInformation";
 import { BookRatingsProvider } from "@/components/books/BookRatingsContext";
 import { LiveCommunityRatings } from "@/components/books/LiveCommunityRatings";
@@ -170,6 +171,11 @@ export default async function BookDetailPage({
 
   return (
     <FantasyPageShell>
+      <TrackOnMount
+        key={id}
+        event="open_book"
+        props={{ book_id: id, source: "detail" }}
+      />
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
         <Link href={backHref} className="preference-codex-box--nav relative mb-5">
           <ArrowLeft className="h-4 w-4" />
