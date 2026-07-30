@@ -3,7 +3,7 @@ import { BookCover } from "@/components/books/BookCover";
 import { getUserRatedBooks } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-import { LogIn } from "lucide-react";
+import { BookOpen, LogIn } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
