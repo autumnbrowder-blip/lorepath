@@ -114,7 +114,7 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
               Create your free account to set preferences
             </Link>
 
-            <ContactArchivesNote className="mt-2" />
+            <ContactArchivesNote />
           </div>
         </div>
       </div>
