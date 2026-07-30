@@ -7,6 +7,7 @@ import {
 import { enrichBookDetail } from "@/lib/book-enrichment";
 import { withFinalizedTags } from "@/lib/book-tags";
 import { enrichBooksWithCovers } from "@/lib/bookcover";
+import { fillMissingCoverUrl } from "@/lib/cover-resolve";
 import {
   isGenreSearchMode,
   normalizeGenreQuery,
@@ -127,7 +128,7 @@ async function resolveSearchUserId(): Promise<string | null> {
  * to stay within the 5k/day · 1 req/s plan.
  * Pass `{ mode: "genre" }` for subject/topic searches from genre tags.
  * Provider failures are isolated via Promise.allSettled.
- * Missing covers are backfilled via the BookCover API (bounded, best-effort).
+ * Missing covers are backfilled via Open Library ISBN/OLID URLs (sync, best-effort).
  * Rated books from Supabase that match the query are always included.
  */
 export async function searchBooks(
@@ -284,7 +285,8 @@ export async function searchBooks(
     });
   }
 
-  // Best-effort cover fallback for the survivors that still lack one.
+  // Best-effort cover fallback for the survivors that still lack one
+  // (sync OL ISBN/OLID — never stalls Browse on an external cover API).
   books = await enrichBooksWithCovers(books);
 
   if (genreMode) {
@@ -385,10 +387,15 @@ export const getBookById = cache(async function getBookById(
   // the URL id and save/load id must match or marks vanish on refresh.
   book = { ...book, id: bookId };
 
+  // Sync cover fill (provider → OL ISBN → OL OLID) before slower enrichment.
+  book = fillMissingCoverUrl(book);
+
   // Soft enrichment — never block the page on secondary APIs.
+  // Cached complete books skip network enrichment entirely.
   try {
     if (!fromCache || needsIsbndbEnrichment(book)) {
       book = await enrichBookDetail(book);
+      book = fillMissingCoverUrl(book);
     }
   } catch (error) {
     console.error("[getBookById] Open Library enrichment failed:", error);
@@ -397,6 +404,7 @@ export const getBookById = cache(async function getBookById(
   try {
     if (needsIsbndbEnrichment(book)) {
       book = await enrichBookDetailWithIsbndb(book);
+      book = fillMissingCoverUrl(book);
     }
   } catch (error) {
     console.error("[getBookById] ISBNdb enrichment failed:", error);

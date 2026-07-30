@@ -8,7 +8,7 @@ import { finalizeBookTags } from "@/lib/book-tags";
 import type { BookDetail, BookSummary } from "@/types/book";
 
 const NYT_ID_PREFIX = "nyt-";
-const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_MS = 3000;
 
 export const NYT_BESTSELLER_LISTS = [
   {

@@ -24,7 +24,7 @@ import type { BookDetail, BookSummary } from "@/types/book";
  * Errors: 401 unauthorized, 402 daily quota exhausted, 429 rate limited.
  */
 const BIG_BOOK_API_BASE = "https://api.bigbookapi.com";
-const FETCH_TIMEOUT_MS = 8000;
+const FETCH_TIMEOUT_MS = 3000;
 const PAGE_SIZE = 20;
 
 export const BIG_BOOK_ID_PREFIX = "bigbook-";

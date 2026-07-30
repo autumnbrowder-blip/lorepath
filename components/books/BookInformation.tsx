@@ -1,4 +1,5 @@
 import { AuthorLinks } from "@/components/books/AuthorLinks";
+import { BookCover } from "@/components/books/BookCover";
 import { BookMetadataItem } from "@/components/books/BookMetadataItem";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { GenreTag } from "@/components/theme/GenreTag";
@@ -6,13 +7,11 @@ import { getIsbnUrl } from "@/lib/book-links";
 import type { BookDetail } from "@/types/book";
 import {
   BookMarked,
-  BookOpen,
   Building2,
   CalendarDays,
   Languages,
   ScanBarcode,
 } from "lucide-react";
-import Image from "next/image";
 import type { ReactNode } from "react";
 
 type BookInformationProps = {
@@ -112,21 +111,13 @@ export function BookInformation({
           <div className="group relative">
             <div className="absolute -inset-3 rounded-[1.75rem] bg-gradient-to-br from-gold-500/20 via-transparent to-forest-500/10 opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100" />
             <div className="relative aspect-[2/3] overflow-hidden rounded-sm border-2 border-gold-600/55 bg-forest-100 shadow-lg ring-1 ring-forest-900/5 transition-transform duration-300 group-hover:-translate-y-1 dark:bg-forest-900 dark:ring-gold-500/10">
-              {book.coverUrl ? (
-                <Image
-                  src={book.coverUrl}
-                  alt={`Cover of ${book.title}`}
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                  sizes="(max-width: 1024px) 280px, 280px"
-                  priority
-                />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 nav-dragon-gold">
-                  <BookOpen className="h-16 w-16" />
-                  <span className="text-xs">No cover available</span>
-                </div>
-              )}
+              <BookCover
+                book={book}
+                variant="detail"
+                priority
+                className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                sizes="(max-width: 1024px) 280px, 280px"
+              />
             </div>
           </div>
 

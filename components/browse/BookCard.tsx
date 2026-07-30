@@ -1,9 +1,8 @@
 import { AuthorLinks } from "@/components/books/AuthorLinks";
+import { BookCover } from "@/components/books/BookCover";
 import { GenreTag } from "@/components/theme/GenreTag";
 import { truncateText } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
-import { BookOpen } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 
 type BookCardProps = {
@@ -28,22 +27,12 @@ export function BookCard({ book, searchQuery }: BookCardProps) {
       <div className="absolute bottom-0 left-0 top-0 z-10 w-1.5 bg-gradient-to-b from-gold-500/50 via-gold-700/30 to-gold-900/40" />
 
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-forest-200 to-forest-300 dark:from-forest-900 dark:to-forest-950">
-        {book.coverUrl ? (
-          <Image
-            src={book.coverUrl}
-            alt={`Cover of ${book.title}`}
-            fill
-            className="object-cover transition duration-500 group-hover:scale-[1.03]"
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
-          />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2">
-            <BookOpen className="h-10 w-10 text-[#b38b4d]/80" />
-            <span className="font-storybook text-[10px] uppercase tracking-[0.2em] nav-dragon-gold">
-              Ancient volume
-            </span>
-          </div>
-        )}
+        <BookCover
+          book={book}
+          variant="card"
+          className="object-cover transition duration-500 group-hover:scale-[1.03]"
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
+        />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-forest-950/50 via-transparent to-transparent opacity-80" />
       </div>
 

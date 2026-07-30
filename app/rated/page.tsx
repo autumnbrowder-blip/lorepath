@@ -1,10 +1,10 @@
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
+import { BookCover } from "@/components/books/BookCover";
 import { getUserRatedBooks } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-import { BookOpen, LogIn } from "lucide-react";
+import { LogIn } from "lucide-react";
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -78,20 +78,17 @@ export default async function RatedTomesPage() {
                 >
                   <div className="absolute bottom-0 left-0 top-0 w-1.5 bg-gradient-to-b from-gold-500/50 via-gold-700/30 to-gold-900/40" />
                   <div className="relative h-28 w-20 shrink-0 overflow-hidden rounded-sm border border-gold-600/30 bg-surface">
-                    {item.coverImageUrl ? (
-                      <Image
-                        src={item.coverImageUrl}
-                        alt={`Cover of ${item.title}`}
-                        fill
-                        className="object-cover"
-                        sizes="80px"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-muted">
-                        <BookOpen className="h-6 w-6" />
-                      </div>
-                    )}
+                    <BookCover
+                      book={{
+                        id: item.slug,
+                        title: item.title,
+                        coverUrl: item.coverImageUrl,
+                        isbn: null,
+                      }}
+                      variant="card"
+                      className="object-cover"
+                      sizes="80px"
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h2 className="font-heading text-lg font-semibold leading-snug text-foreground">

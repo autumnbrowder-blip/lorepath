@@ -14,7 +14,7 @@ import {
 import type { BookDetail, BookSummary } from "@/types/book";
 
 const ISBNDB_BASE = "https://api2.isbndb.com";
-const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_MS = 3000;
 /** Plan limit: 1 request/second. Process-local only — cold serverless instances each have their own limiter. */
 const ISBNDB_MIN_INTERVAL_MS = 1000;
 

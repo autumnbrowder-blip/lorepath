@@ -35,7 +35,7 @@ export type GoogleBooksProviderError = {
   status?: number;
 };
 
-const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_MS = 3000;
 const GOOGLE_PAGE_SIZE = 20;
 const MAX_503_ATTEMPTS = 3;
 

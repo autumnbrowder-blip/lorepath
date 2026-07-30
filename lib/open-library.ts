@@ -51,7 +51,7 @@ type OpenLibraryAuthor = {
 };
 
 const OPEN_LIBRARY_ID_PREFIX = "ol-";
-const FETCH_TIMEOUT_MS = 8000;
+const FETCH_TIMEOUT_MS = 3000;
 /** Required by Open Library usage policy — set on every API request. */
 export const OPEN_LIBRARY_USER_AGENT = "LorePath (support@lorepath.net)";
 
