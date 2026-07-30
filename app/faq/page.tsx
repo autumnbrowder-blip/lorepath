@@ -243,7 +243,7 @@ export default async function FaqPage() {
                 receive a Match Score that shows how well each tome fits the kind of
                 journey you want. Think of it as an open classroom: the shelves are
                 ready, the candles are lit, and every rating helps fellow wanderers
-                choose their next adventure with clearer eyes.
+                choose their next adventure.
               </p>
             </SectionCard>
 
