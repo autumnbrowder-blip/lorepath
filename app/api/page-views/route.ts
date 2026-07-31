@@ -1,16 +1,24 @@
 import { sessionUserIsAdmin } from "@/lib/admin";
-import { recordPageView } from "@/lib/page-views";
+import {
+  recordPageView,
+  shouldRecordIncomingPageView,
+} from "@/lib/page-views";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Fire-and-forget visit ping.
+ * Fire-and-forget pageview ping.
  * Always returns 204 so tracking never surfaces as a client error.
- * Admins (ADMIN_EMAILS / profiles.is_admin) are not recorded.
+ *
+ * Skips: admins, bots, non-production hosts, development, blocked paths.
  */
 export async function POST(request: Request) {
   try {
+    if (!shouldRecordIncomingPageView(request)) {
+      return new NextResponse(null, { status: 204 });
+    }
+
     // Same gate as /admin access — skip staff so they do not inflate totals.
     try {
       if (await sessionUserIsAdmin()) {
@@ -19,6 +27,7 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error("[api/page-views] admin check failed:", error);
       // Fall through and record — do not break tracking for everyone.
+      // Path allowlist still rejects /admin even if this check fails.
     }
 
     let body: { path?: unknown } = {};

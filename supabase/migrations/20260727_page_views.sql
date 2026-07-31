@@ -1,4 +1,4 @@
--- Migration: public.page_views — privacy-light visit tracking (path + timestamp only)
+-- Migration: public.page_views — privacy-light pageview tracking (path + timestamp only)
 -- Safe to re-run.
 --
 -- Apply via Supabase Dashboard → SQL Editor → paste this entire file → Run.

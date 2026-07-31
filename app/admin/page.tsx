@@ -186,7 +186,7 @@ export default async function AdminPage() {
           </p>
           <h1 className="page-title mt-2 nav-dragon-gold">Admin Dashboard</h1>
           <p className="mt-2 font-heading text-lg nav-dragon-gold">
-            A quiet tally of the realm — users, ratings, visits, and recent
+            A quiet tally of the realm — users, ratings, pageviews, and recent
             marks.
           </p>
         </header>
@@ -212,13 +212,13 @@ export default async function AdminPage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <StatTile
-              label="Total visits"
-              value={String(stats.pageViews.totalVisits)}
+              label="Total pageviews"
+              value={String(stats.pageViews.totalPageviews)}
               icon={Eye}
             />
             <StatTile
-              label="Visits today"
-              value={String(stats.pageViews.visitsToday)}
+              label="Pageviews today"
+              value={String(stats.pageViews.pageviewsToday)}
               icon={Map}
             />
           </div>
@@ -244,8 +244,8 @@ export default async function AdminPage() {
             {stats.pageViews.topPaths.length === 0 ? (
               <div className="rounded-sm border border-dashed border-gold-600/35 bg-forest-950/45 px-3 py-4">
                 <p className="font-heading text-sm leading-snug nav-dragon-gold">
-                  No visits have been recorded yet. Apply the page_views
-                  migration, then browse a few pages.
+                  No pageviews have been recorded yet. Apply the page_views
+                  migration, then browse a few pages on lorepath.net.
                 </p>
               </div>
             ) : (
@@ -264,7 +264,7 @@ export default async function AdminPage() {
                       </span>
                     </div>
                     <span className="shrink-0 font-storybook text-sm font-semibold tabular-nums nav-dragon-gold">
-                      {row.visits}
+                      {row.pageviews}
                     </span>
                   </li>
                 ))}

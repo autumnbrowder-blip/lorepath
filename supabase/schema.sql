@@ -336,7 +336,7 @@ create index feedback_user_id_idx on public.feedback (user_id)
   where user_id is not null;
 
 -- -----------------------------------------------------------------------------
--- 8. page_views (privacy-light visit tracking: path + timestamp only)
+-- 8. page_views (privacy-light pageview tracking: path + timestamp only)
 -- -----------------------------------------------------------------------------
 create table public.page_views (
   id         uuid primary key default gen_random_uuid(),
