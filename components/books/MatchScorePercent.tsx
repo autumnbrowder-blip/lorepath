@@ -12,8 +12,8 @@ type MatchScorePercentProps = {
 };
 
 /**
- * Shared Match Score percentage plaque — deep forest + antique gold,
- * storybook inscription. Used on book pages and first-rating success.
+ * Shared Match Score percentage — Preference Codex / Marks of the Realm panel
+ * language with nav-dragon-gold type. Used on book pages and first-rating success.
  */
 export function MatchScorePercent({
   score,
@@ -26,26 +26,48 @@ export function MatchScorePercent({
 
   return (
     <div
-      className={`match-score-percent match-score-percent--${size}${
-        className ? ` ${className}` : ""
-      }`}
+      className={
+        isCompact
+          ? `relative flex h-[5.75rem] w-[5.75rem] min-h-[5.75rem] min-w-[5.75rem] shrink-0 flex-col items-center justify-center rounded-sm border border-gold-600/35 bg-forest-950/45 p-1.5 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)] sm:h-24 sm:w-24 sm:min-h-24 sm:min-w-24${
+              className ? ` ${className}` : ""
+            }`
+          : `preference-codex-box relative mx-auto flex min-h-[8.5rem] w-full max-w-xs flex-col items-center justify-center${
+              className ? ` ${className}` : ""
+            }`
+      }
+      style={
+        isCompact
+          ? undefined
+          : {
+              /* Translucent forest-950/45 — same treatment as nested content tiles */
+              background: "rgb(10 20 16 / 0.45)",
+            }
+      }
       aria-label={`Match Score ${score} percent`}
     >
       {!isCompact ? <CodexBoxOrnament /> : null}
-      <div className="match-score-percent__inner">
+      <div className="relative z-[3] flex flex-col items-center justify-center text-center">
         {showLabel ? (
-          <p className="match-score-percent__label">Match Score</p>
+          <p className="font-storybook text-xs font-bold uppercase tracking-[0.16em] nav-dragon-gold">
+            Match Score
+          </p>
         ) : null}
-        <p className="match-score-percent__value">
-          <span className="match-score-percent__digits tabular-nums">
-            {score}
-          </span>
-          <span className="match-score-percent__suffix" aria-hidden="true">
+        <p
+          className={
+            isCompact
+              ? "font-storybook text-2xl font-bold leading-none tracking-[0.02em] nav-dragon-gold sm:text-[1.7rem]"
+              : "mt-1.5 font-storybook text-[2.35rem] font-bold leading-none tracking-[0.04em] nav-dragon-gold sm:text-[2.65rem]"
+          }
+        >
+          <span className="tabular-nums">{score}</span>
+          <span className="text-[0.55em]" aria-hidden="true">
             %
           </span>
         </p>
         {caption ? (
-          <p className="match-score-percent__caption">{caption}</p>
+          <p className="mt-2.5 max-w-[16rem] font-heading text-sm leading-snug nav-dragon-gold">
+            {caption}
+          </p>
         ) : null}
       </div>
     </div>
