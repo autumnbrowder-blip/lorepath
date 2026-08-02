@@ -1341,7 +1341,7 @@
 
   /* Compact codex box for back/nav links (matches Preference Codex framing) */
   .preference-codex-box--nav {
-    @apply relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-sm border-2 border-gold-600/60 px-4 py-2.5 font-storybook text-xs font-medium uppercase tracking-[0.14em] transition-[filter,box-shadow,border-color,color] hover:-translate-y-0.5;
+    @apply relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-sm border-2 border-gold-600/60 px-4 py-2.5 font-storybook text-xs font-medium uppercase tracking-[0.14em];
     background: linear-gradient(
       155deg,
       #1f513d 0%,
@@ -1362,6 +1362,12 @@
       0 -1px 0 rgba(255, 246, 200, 0.55),
       0 1px 0 rgba(90, 60, 10, 0.85),
       0 0 10px rgba(201, 162, 74, 0.35);
+    transition:
+      filter 0.28s ease,
+      box-shadow 0.28s ease,
+      border-color 0.28s ease,
+      color 0.28s ease,
+      transform 0.2s ease;
   }
 
   .preference-codex-box--nav::before {
@@ -1369,19 +1375,87 @@
     pointer-events: none;
     position: absolute;
     inset: 5px;
+    z-index: 1;
     border: 1px solid rgba(179, 139, 77, 0.32);
     border-radius: 1px;
+    transition: border-color 0.28s ease, box-shadow 0.28s ease;
+  }
+
+  /* Soft antique-gold shimmer sweep */
+  .preference-codex-box--nav::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 32%,
+      rgba(240, 215, 138, 0.08) 44%,
+      rgba(255, 236, 180, 0.2) 50%,
+      rgba(240, 215, 138, 0.08) 56%,
+      transparent 68%
+    );
+    background-size: 220% 100%;
+    background-position: 130% 0;
+    opacity: 0;
+    transition:
+      opacity 0.35s ease,
+      background-position 0.55s ease;
   }
 
   .preference-codex-box--nav:hover {
-    border-color: rgba(179, 139, 77, 0.78);
-    filter: brightness(1.04);
+    border-color: rgba(179, 139, 77, 0.82);
+    filter: brightness(1.05);
+    color: #fff1c9;
+    -webkit-text-fill-color: #fff1c9;
+    text-shadow:
+      0 -1px 0 rgba(255, 250, 220, 0.65),
+      0 1px 0 rgba(90, 60, 10, 0.9),
+      0 0 14px rgba(232, 200, 100, 0.4);
   }
 
-  .preference-codex-box--nav:active,
+  .preference-codex-box--nav:hover::before {
+    border-color: rgba(201, 162, 74, 0.48);
+    box-shadow: inset 0 0 12px rgba(201, 162, 74, 0.12);
+  }
+
+  .preference-codex-box--nav:hover::after {
+    opacity: 1;
+    background-position: -30% 0;
+  }
+
+  .preference-codex-box--nav:active {
+    transform: translateY(1px);
+    filter: brightness(0.97);
+    border-color: rgba(179, 139, 77, 0.9);
+    box-shadow:
+      0 6px 16px rgba(8, 20, 14, 0.4),
+      0 1px 0 rgba(90, 60, 10, 0.4),
+      0 0 0 1px rgba(166, 124, 45, 0.32),
+      inset 0 2px 8px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 230, 150, 0.22);
+  }
+
+  .preference-codex-box--nav:active::after {
+    opacity: 1;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 236, 180, 0.16) 0%,
+      transparent 58%
+    );
+    background-size: 100% 100%;
+    background-position: 0 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .preference-codex-box--nav:active::before {
+    border-color: rgba(201, 162, 74, 0.55);
+  }
+
   .preference-codex-box--nav:focus,
   .preference-codex-box--nav:focus-visible {
-    transform: none;
+    outline: none;
   }
 
   .preference-codex-box--nav:focus-visible {
@@ -1394,11 +1468,14 @@
     font-weight: 500;
   }
 
-  .preference-codex-box--nav svg {
-    color: #f0d78a;
-    stroke: #f0d78a;
+  .preference-codex-box--nav > * {
     position: relative;
-    z-index: 1;
+    z-index: 2;
+  }
+
+  .preference-codex-box--nav svg {
+    color: inherit;
+    stroke: currentColor;
   }
 
   .dark .preference-codex-box--nav {

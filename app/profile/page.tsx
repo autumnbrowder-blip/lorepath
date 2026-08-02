@@ -159,28 +159,29 @@ export default async function ProfilePage() {
               aria-hidden="true"
             />
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Link
                 href="/browse"
-                className="btn-secondary w-full justify-center px-4 py-3 text-center"
+                className="preference-codex-box--nav relative w-full min-h-[2.75rem] justify-center px-4 py-3 text-center"
               >
-                Browse books
+                <span className="nav-dragon-gold">Browse books</span>
               </Link>
               <Link
                 href="/import"
-                className="btn-secondary w-full justify-center px-4 py-3 text-center"
+                className="preference-codex-box--nav relative w-full min-h-[2.75rem] justify-center px-4 py-3 text-center"
               >
-                Import Reading List
+                <span className="nav-dragon-gold">Import Reading List</span>
               </Link>
               <Link
                 href="/"
-                className="btn-secondary w-full justify-center px-4 py-3 text-center"
+                className="preference-codex-box--nav relative w-full min-h-[2.75rem] justify-center px-4 py-3 text-center"
               >
-                Return home
+                <span className="nav-dragon-gold">Return home</span>
               </Link>
-            </div>
-            <div className="flex justify-center sm:justify-start">
-              <LogoutButton label="Logout" />
+              <LogoutButton
+                label="Logout"
+                className="preference-codex-box--nav relative w-full min-h-[2.75rem] justify-center px-4 py-3 text-center"
+              />
             </div>
           </div>
         </div>
