@@ -12,8 +12,8 @@ type MatchScorePercentProps = {
 };
 
 /**
- * Shared Match Score percentage — Preference Codex / Marks of the Realm panel
- * language with nav-dragon-gold type. Used on book pages and first-rating success.
+ * Shared Match Score percentage — Preference Codex emerald glass + antique gold
+ * framing with nav-dragon-gold type. Used on book pages and first-rating success.
  */
 export function MatchScorePercent({
   score,
@@ -28,7 +28,7 @@ export function MatchScorePercent({
     <div
       className={
         isCompact
-          ? `relative flex h-[5.75rem] w-[5.75rem] min-h-[5.75rem] min-w-[5.75rem] shrink-0 flex-col items-center justify-center rounded-sm border border-gold-600/35 bg-forest-950/45 p-1.5 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)] sm:h-24 sm:w-24 sm:min-h-24 sm:min-w-24${
+          ? `relative flex h-[5.75rem] w-[5.75rem] min-h-[5.75rem] min-w-[5.75rem] shrink-0 flex-col items-center justify-center rounded-sm border border-gold-600/35 bg-[#184033]/50 p-1.5 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)] sm:h-24 sm:w-24 sm:min-h-24 sm:min-w-24${
               className ? ` ${className}` : ""
             }`
           : `preference-codex-box relative mx-auto flex min-h-[8.5rem] w-full max-w-xs flex-col items-center justify-center${
@@ -39,8 +39,9 @@ export function MatchScorePercent({
         isCompact
           ? undefined
           : {
-              /* Translucent forest-950/45 — same treatment as nested content tiles */
-              background: "rgb(10 20 16 / 0.45)",
+              /* Translucent emerald glass — same #184033 as BookMetadataItem / codex greens */
+              background:
+                "linear-gradient(155deg, rgba(31, 81, 61, 0.52) 0%, rgba(24, 64, 51, 0.5) 34%, rgba(18, 50, 41, 0.55) 68%, rgba(12, 36, 28, 0.58) 100%)",
             }
       }
       aria-label={`Match Score ${score} percent`}
