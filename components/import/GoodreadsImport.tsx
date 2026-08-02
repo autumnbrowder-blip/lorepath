@@ -495,7 +495,7 @@ function StepRow({
         </span>
         : {title}
       </p>
-      <p className="mt-1 font-heading text-sm leading-snug nav-dragon-gold/90">
+      <p className="mt-1.5 font-heading text-[15px] font-medium leading-relaxed tracking-wide nav-dragon-gold sm:text-base">
         {detail}
       </p>
     </li>
