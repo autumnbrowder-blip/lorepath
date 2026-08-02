@@ -220,10 +220,10 @@ export function FirstRatingScreen({
               aria-hidden="true"
             />
             <h1 className="font-storybook text-2xl font-semibold tracking-[0.05em] text-[#2f1f0f] sm:text-3xl">
-              Your first mark has been recorded in the tome.
+              Your first mark has been recorded in the archives.
             </h1>
             {ratedBookTitle && (
-              <p className="mt-3 font-heading text-base leading-relaxed text-[#3f2a1e]/90">
+              <p className="mt-3 font-heading text-[17px] font-medium leading-relaxed text-[#2a1a0c] sm:text-lg">
                 &ldquo;{ratedBookTitle}&rdquo; now carries your inscription.
               </p>
             )}
@@ -236,12 +236,12 @@ export function FirstRatingScreen({
                 <p className="mt-1 font-storybook text-3xl font-bold tabular-nums text-[#2f1f0f]">
                   {matchScore}%
                 </p>
-                <p className="mt-1 font-heading text-sm text-[#3f2a1e]/85">
+                <p className="mt-1 font-heading text-[15px] font-medium text-[#2a1a0c]">
                   How this tome aligns with your Preference Codex.
                 </p>
               </div>
             ) : (
-              <p className="mt-5 font-heading text-sm leading-relaxed text-[#3f2a1e]/88">
+              <p className="mt-5 font-heading text-[15px] font-medium leading-relaxed text-[#2a1a0c]">
                 Match Scores grow sharper as more marks are left on each tome.
               </p>
             )}
@@ -257,7 +257,7 @@ export function FirstRatingScreen({
               </button>
               <Link
                 href="/browse"
-                className="btn-secondary w-full justify-center px-6 py-3 text-sm tracking-[0.12em] sm:w-auto"
+                className="btn-primary w-full justify-center px-6 py-3.5 text-sm tracking-[0.14em] sm:w-auto sm:min-w-[12rem]"
               >
                 See Match Scores on Browse
               </Link>
