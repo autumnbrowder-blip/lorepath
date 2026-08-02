@@ -7,6 +7,7 @@ const protectedRoutes: string[] = [
   "/stats",
   "/preferences",
   "/settings",
+  "/import",
 ];
 // Public auth screens. Do not include /reset-password — recovery links
 // establish a session and the user must stay on that page to set a password.

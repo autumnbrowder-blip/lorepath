@@ -157,6 +157,9 @@ export default async function ProfilePage() {
           />
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link href="/import" className="btn-primary">
+              Import reading list
+            </Link>
             <Link href="/" className="btn-secondary">
               Return home
             </Link>

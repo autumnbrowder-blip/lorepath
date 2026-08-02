@@ -380,6 +380,16 @@ export function FirstRatingScreen({
           </div>
         </form>
 
+        <p className="mt-4 text-center font-heading text-sm leading-relaxed nav-dragon-gold">
+          Have a Goodreads export?{" "}
+          <Link
+            href="/import"
+            className="font-semibold underline decoration-gold-500/60 underline-offset-4 transition hover:brightness-125"
+          >
+            Import books you&apos;ve read
+          </Link>
+        </p>
+
         {error && (
           <div className="alert-error mt-4" role="alert">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />

@@ -39,6 +39,12 @@ function detailBackHref(searchQuery: string, from?: string): {
       label: "Back to First Mark",
     };
   }
+  if (from === "import") {
+    return {
+      href: "/import",
+      label: "Back to Import",
+    };
+  }
   return {
     href: browseBackHref(searchQuery),
     label: "Back to Results",
