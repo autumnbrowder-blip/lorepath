@@ -224,7 +224,7 @@ export function FirstRatingScreen({
             </h1>
             {ratedBookTitle && (
               <p className="mt-3 font-heading text-[17px] font-medium leading-relaxed text-[#2a1a0c] sm:text-lg">
-                &ldquo;{ratedBookTitle}&rdquo; now carries your inscription.
+                &ldquo;{ratedBookTitle}&rdquo; now carries your mark.
               </p>
             )}
 
