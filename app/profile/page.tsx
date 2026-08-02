@@ -159,16 +159,27 @@ export default async function ProfilePage() {
               aria-hidden="true"
             />
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Link href="/browse" className="btn-primary">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Link
+                href="/browse"
+                className="btn-secondary w-full justify-center px-4 py-3 text-center"
+              >
                 Browse books
               </Link>
-              <Link href="/import" className="btn-secondary">
+              <Link
+                href="/import"
+                className="btn-secondary w-full justify-center px-4 py-3 text-center"
+              >
                 Import Reading List
               </Link>
-              <Link href="/" className="btn-secondary">
+              <Link
+                href="/"
+                className="btn-secondary w-full justify-center px-4 py-3 text-center"
+              >
                 Return home
               </Link>
+            </div>
+            <div className="flex justify-center sm:justify-start">
               <LogoutButton label="Logout" />
             </div>
           </div>

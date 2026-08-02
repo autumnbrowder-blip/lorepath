@@ -141,7 +141,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
 
       if (!response.ok) {
         throw new Error(
-          data.error ?? "The archives couldn’t open that scroll."
+          data.error ?? "The keepers could not unfurl that scroll."
         );
       }
 
@@ -169,7 +169,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
       setError(
         err instanceof Error
           ? err.message
-          : "Something went awry in the archives. Please try again."
+          : "A soft draft stirred the shelves — please try again."
       );
     } finally {
       setLoading(false);
@@ -200,7 +200,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
       <div className="flex flex-col items-center py-12">
         <Loader2 className="mb-3 h-8 w-8 animate-spin text-gold-500" />
         <p className="font-heading text-sm nav-dragon-gold">
-          Opening the import desk...
+          Lighting the reading lamps...
         </p>
       </div>
     );
@@ -208,67 +208,56 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
 
   return (
     <div className="space-y-8">
-      {/* Main import plaque — shared parchment-plaque */}
       <form
         onSubmit={handleSubmit}
-        className="parchment-plaque relative overflow-hidden px-5 py-6 sm:px-7 sm:py-8"
+        className="preference-codex-box relative !px-5 !py-6 sm:!px-7 sm:!py-8"
       >
-        <div className="relative z-[1] space-y-6">
+        <CodexBoxOrnament />
+        <div className="relative z-[3] space-y-6">
           <div className="text-center sm:text-left">
             <div className="mb-3 inline-flex items-center gap-2">
               <ScrollText
-                className="h-5 w-5 shrink-0 text-[#a67c2d]"
+                className="h-5 w-5 shrink-0 text-accent"
                 aria-hidden="true"
               />
-              <p className="font-storybook text-[11px] font-bold uppercase tracking-[0.22em] text-[#5c3f0f]">
-                Goodreads export
+              <p className="font-storybook text-[11px] font-bold uppercase tracking-[0.22em] nav-dragon-gold">
+                From another shelf
               </p>
             </div>
-            <h2 className="font-storybook text-xl font-semibold tracking-[0.05em] text-[#2f1f0f] sm:text-2xl">
-              Bring your finished books here
+            <h2 className="font-storybook text-xl font-bold tracking-[0.06em] nav-dragon-gold sm:text-2xl">
+              Import Books You&apos;ve Read
             </h2>
-            <p className="mt-2 font-heading text-[15px] leading-relaxed text-[#3f2a1e] sm:text-base">
-              Match titles to LorePath shelves, then rate them one by one —
-              nothing is marked for you automatically.
+            <p className="mt-2 font-heading text-[15px] leading-relaxed nav-dragon-gold sm:text-base">
+              Bring in tales you&apos;ve already finished so you can leave marks
+              faster. Nothing is rated for you — you choose each tome.
             </p>
           </div>
 
           <ol className="space-y-3">
             <StepRow
               number="1"
-              title="Export your Goodreads CSV"
-              detail="My Books → Import and export → download your library."
+              title="Gather your Goodreads export"
+              detail="On Goodreads: My Books → Import and export → download your library CSV."
             />
             <StepRow
               number="2"
-              title="Upload it here"
-              detail="Choose the .csv file (under 2 MB). We prefer your Read shelf."
+              title="Place it on this desk"
+              detail="Choose the .csv scroll (under 2 MB). We look first to your Read shelf."
             />
             <StepRow
               number="3"
-              title="Rate matched books you’ve read"
-              detail="Open each tome and leave your marks with the usual rating form."
+              title="Leave your marks"
+              detail="Open each matched tome and inscribe ratings with the usual form."
             />
           </ol>
 
-          <label
-            className="flex cursor-pointer flex-col items-center gap-3 px-4 py-9 text-center transition hover:brightness-[1.03] sm:py-10"
-            style={{
-              border: "2px dashed #8c6b2e",
-              borderRadius: "4px",
-              background: "rgba(255, 248, 230, 0.42)",
-              boxShadow: "inset 0 1px 0 rgba(255, 250, 235, 0.55)",
-            }}
-          >
-            <Upload
-              className="h-8 w-8 text-[#a67c2d]"
-              aria-hidden="true"
-            />
-            <span className="font-storybook text-xs font-bold uppercase tracking-[0.18em] text-[#5c3f0f]">
-              {file ? file.name : "Choose Goodreads CSV"}
+          <label className="codex-inset flex cursor-pointer flex-col items-center gap-3 border-dashed px-4 py-9 text-center transition hover:border-gold-500/55 sm:py-10">
+            <Upload className="h-8 w-8 text-accent" aria-hidden="true" />
+            <span className="font-storybook text-xs font-bold uppercase tracking-[0.18em] nav-dragon-gold">
+              {file ? file.name : "Place your Goodreads export here"}
             </span>
-            <span className="font-heading text-sm text-[#3f2a1e]/85">
-              Tap to select a file · .csv only
+            <span className="font-heading text-sm nav-dragon-gold/85">
+              Tap to choose a file · .csv only
             </span>
             <input
               type="file"
@@ -301,12 +290,12 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
-                  Matching your shelves...
+                  Searching the shelves...
                 </>
               ) : (
                 <>
                   <Feather className="h-4 w-4" aria-hidden="true" />
-                  Match my books
+                  Open the archive of books you&apos;ve read
                 </>
               )}
             </button>
@@ -316,36 +305,34 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
                 onClick={clearResults}
                 className="btn-secondary w-full justify-center sm:w-auto"
               >
-                Clear results
+                Clear the desk
               </button>
             ) : null}
           </div>
 
           {loading ? (
-            <p className="font-heading text-sm leading-relaxed text-[#3f2a1e]/90">
-              Searching the archives — longer lists may take a quiet moment.
+            <p className="font-heading text-sm leading-relaxed nav-dragon-gold/90">
+              The keepers are matching titles — longer lists may take a quiet
+              moment.
             </p>
           ) : null}
         </div>
       </form>
 
-      {/* Step 3 results */}
       {stats ? (
         <div className="preference-codex-box relative !p-4 sm:!p-5">
           <CodexBoxOrnament />
           <p className="relative z-[3] font-heading text-sm leading-relaxed nav-dragon-gold sm:text-base">
             {stats.matched === 0
-              ? "No matching tomes turned up in our shelves yet."
-              : `Matched ${stats.matched} tome${stats.matched === 1 ? "" : "s"} from your export${
+              ? "No familiar tomes answered from our shelves this time."
+              : `We found ${stats.matched} tome${stats.matched === 1 ? "" : "s"} waiting for your mark${
                   stats.alreadyRated
-                    ? ` · ${stats.alreadyRated} already marked`
+                    ? ` · ${stats.alreadyRated} already carry your inscription`
                     : ""
                 }.`}
-            {stats.capped
-              ? " Showing your first batch of reads."
-              : null}
+            {stats.capped ? " Showing your first shelf of reads." : null}
             {!stats.preferredReadShelf
-              ? " We didn’t spot a Read shelf, so we included books more broadly."
+              ? " No Read shelf was clear, so we welcomed books more broadly."
               : null}
           </p>
         </div>
@@ -358,7 +345,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
               id="matched-ready-heading"
               className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
             >
-              Step 3 · Ready to mark
+              Ready for your mark
             </h2>
             <p className="shrink-0 font-heading text-xs nav-dragon-gold/85">
               {readyToRate.length} book{readyToRate.length === 1 ? "" : "s"}
@@ -377,7 +364,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
               onClick={() => setVisibleCount((n) => n + 50)}
               className="btn-secondary mt-1"
             >
-              Show more
+              Reveal more
             </button>
           ) : null}
         </section>
@@ -405,12 +392,12 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
         <div className="preference-codex-box relative !p-5 text-center sm:!p-6">
           <CodexBoxOrnament />
           <p className="relative z-[3] font-heading text-sm leading-relaxed nav-dragon-gold sm:text-base">
-            The keepers found no familiar titles this time. Search the archives
-            from Browse, or try another export.
+            The shelves stayed quiet — no matching titles this round. Wander
+            Browse, or bring another export when you&apos;re ready.
           </p>
           <Link
             href="/browse"
-            className="btn-primary relative z-[3] mt-5 inline-flex justify-center"
+            className="btn-secondary relative z-[3] mt-5 inline-flex justify-center"
           >
             Browse the shelves
           </Link>
@@ -431,7 +418,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
                 id="unmatched-heading"
                 className="font-storybook text-sm font-semibold tracking-[0.1em] nav-dragon-gold"
               >
-                Not found in the archives ({unmatched.length})
+                Still lost in the stacks ({unmatched.length})
               </h2>
               {showUnmatched ? (
                 <ChevronUp className="h-4 w-4 shrink-0 text-gold-500" />
@@ -459,8 +446,8 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
             ) : null}
           </div>
           <p className="mt-2.5 font-heading text-xs leading-relaxed nav-dragon-gold/90">
-            These titles can still be found with Browse search when you&apos;re
-            ready.
+            These titles may still turn up with Browse search when you seek
+            them.
           </p>
         </section>
       ) : null}
@@ -478,22 +465,15 @@ function StepRow({
   detail: string;
 }) {
   return (
-    <li className="flex gap-3 rounded-sm border border-[#8c6b2e]/45 bg-[rgba(255,248,230,0.38)] px-3 py-3 sm:px-3.5">
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-[#8c6b2e] font-storybook text-xs font-bold text-[#5c3f0f]"
-        style={{
-          background:
-            "linear-gradient(180deg, #d0b67a 0%, #b38b4d 45%, #a67c2d 100%)",
-        }}
-        aria-hidden="true"
-      >
+    <li className="codex-inset flex gap-3 px-3 py-3 sm:px-3.5">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/35 to-transparent font-storybook text-xs font-bold nav-dragon-gold">
         {number}
       </span>
       <div className="min-w-0 pt-0.5">
-        <p className="font-storybook text-sm font-bold tracking-[0.06em] text-[#2f1f0f]">
+        <p className="font-storybook text-sm font-bold tracking-[0.06em] nav-dragon-gold">
           Step {number}: {title}
         </p>
-        <p className="mt-0.5 font-heading text-sm leading-snug text-[#3f2a1e]/90">
+        <p className="mt-0.5 font-heading text-sm leading-snug nav-dragon-gold/90">
           {detail}
         </p>
       </div>
@@ -542,7 +522,7 @@ function ImportBookCard({ item }: { item: MatchedImportBook }) {
             className="btn-primary mt-auto w-full justify-center px-3 py-2.5 text-[11px] tracking-[0.12em] sm:w-auto sm:self-start"
           >
             <Feather className="h-3.5 w-3.5" aria-hidden="true" />
-            Rate this book
+            Leave your mark
           </Link>
         )}
       </div>

@@ -11,9 +11,9 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Import Reading List | LorePath",
+  title: "Import Books You've Read | LorePath",
   description:
-    "Upload a Goodreads library CSV and rate books you’ve already read on LorePath.",
+    "Bring tales you've already finished into LorePath so you can leave marks faster.",
 };
 
 export default async function ImportPage() {
@@ -43,15 +43,15 @@ export default async function ImportPage() {
 
         <header className="mb-8 text-center sm:mb-10">
           <h1 className="font-storybook text-3xl font-normal tracking-[0.05em] nav-dragon-gold sm:text-4xl">
-            Import reading list
+            Import Books You&apos;ve Read
           </h1>
           <div
             className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent"
             aria-hidden="true"
           />
           <p className="mx-auto mt-4 max-w-lg font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
-            Carry books you&apos;ve already finished into LorePath and leave
-            your marks at your own pace.
+            Bring in tales you&apos;ve already finished so you can leave marks
+            faster.
           </p>
         </header>
 

@@ -346,7 +346,7 @@ export function FirstRatingScreen({
         </form>
 
         <p className="mt-4 text-center font-heading text-sm leading-relaxed nav-dragon-gold">
-          Have a Goodreads export?{" "}
+          Have finished books elsewhere?{" "}
           <Link
             href="/import"
             className="font-semibold underline decoration-gold-500/60 underline-offset-4 transition hover:brightness-125"
