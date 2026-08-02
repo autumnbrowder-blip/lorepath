@@ -19,6 +19,12 @@ type PreferencesFormProps = {
   loadError?: string | null;
   /** When true, skips API persistence (local testing without login). */
   testingMode?: boolean;
+  /**
+   * Where to go after a successful save.
+   * First-time readers → `/onboarding/first-rating`; readers who already
+   * have a mark → `/browse` (avoids re-showing the first-mark prompt).
+   */
+  afterSaveHref?: string;
 };
 
 function preferencesEqual(a: ContentRating, b: ContentRating): boolean {
@@ -31,6 +37,7 @@ export function PreferencesForm({
   initialPreferences,
   loadError = null,
   testingMode = false,
+  afterSaveHref = "/onboarding/first-rating",
 }: PreferencesFormProps) {
   const router = useRouter();
   const [preferences, setPreferences] = useState<ContentRating>(
@@ -168,8 +175,7 @@ export function PreferencesForm({
       setSuccess(true);
       // Bust the App Router cache so leaving and returning shows DB values.
       router.refresh();
-      // After Preferences Codex save, guide readers to their first mark.
-      router.push("/onboarding/first-rating");
+      router.push(afterSaveHref);
     } catch (submitError) {
       setError(
         submitError instanceof Error

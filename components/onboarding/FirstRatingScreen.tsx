@@ -17,11 +17,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 type FirstRatingScreenProps = {
   suggestions: BookSummary[];
   ratingCount: number;
+  hasPreferences: boolean;
+  hasSeenMatchScore: boolean;
+  onboardingComplete: boolean;
   /** True when arriving after a successful rating from a book page. */
   justRated: boolean;
   ratedBookId: string | null;
@@ -40,15 +43,17 @@ function bookHref(bookId: string, searchQuery?: string) {
 }
 
 function ProgressChecklist({
+  hasPreferences,
   hasRated,
   hasSeenMatch,
 }: {
+  hasPreferences: boolean;
   hasRated: boolean;
   hasSeenMatch: boolean;
 }) {
   const steps: { label: string; done: boolean }[] = [
     { label: "Create account", done: true },
-    { label: "Set Preference Codex", done: true },
+    { label: "Set Preference Codex", done: hasPreferences },
     { label: "Rate your first book", done: hasRated },
     { label: "See your first Match Score", done: hasSeenMatch },
   ];
@@ -132,6 +137,9 @@ function SuggestionCard({ book }: { book: BookSummary }) {
 export function FirstRatingScreen({
   suggestions,
   ratingCount,
+  hasPreferences,
+  hasSeenMatchScore,
+  onboardingComplete,
   justRated,
   ratedBookId,
   ratedBookTitle,
@@ -146,11 +154,20 @@ export function FirstRatingScreen({
   const [hasSearched, setHasSearched] = useState(false);
 
   const hasRated = ratingCount >= 1 || Boolean(ratedBookId && justRated);
-  const hasSeenMatch = hasRated && matchScore != null;
+  const hasSeenMatch = hasSeenMatchScore || (hasRated && matchScore != null);
+  const showChecklist = !onboardingComplete;
 
-  function clearCelebrate() {
+  // Belt-and-suspenders: if ratings already exist and we're not celebrating,
+  // leave this page (server also redirects).
+  useEffect(() => {
+    if (!celebrate && hasRated) {
+      router.replace("/browse");
+    }
+  }, [celebrate, hasRated, router]);
+
+  function goToBrowse() {
     setCelebrate(false);
-    router.replace("/onboarding/first-rating", { scroll: false });
+    router.push("/browse");
   }
 
   async function handleSearch(e: FormEvent<HTMLFormElement>) {
@@ -245,7 +262,7 @@ export function FirstRatingScreen({
             <div className="mt-8 flex flex-col items-stretch gap-3 sm:items-center">
               <button
                 type="button"
-                onClick={clearCelebrate}
+                onClick={goToBrowse}
                 className="btn-primary w-full justify-center px-6 py-3.5 text-sm tracking-[0.14em] sm:w-auto sm:min-w-[12rem]"
               >
                 <Feather className="h-4 w-4" aria-hidden="true" />
@@ -260,7 +277,13 @@ export function FirstRatingScreen({
             </div>
           </div>
 
-          <ProgressChecklist hasRated={hasRated} hasSeenMatch={hasSeenMatch} />
+          {showChecklist ? (
+            <ProgressChecklist
+              hasPreferences={hasPreferences}
+              hasRated={hasRated}
+              hasSeenMatch={hasSeenMatch}
+            />
+          ) : null}
 
           <Link
             href="/browse"
@@ -268,6 +291,20 @@ export function FirstRatingScreen({
           >
             Explore the shelves instead
           </Link>
+        </div>
+      </FantasyPageShell>
+    );
+  }
+
+  // Already rated — server redirects; avoid flashing the first-mark prompt.
+  if (hasRated) {
+    return (
+      <FantasyPageShell variant="browse" priority>
+        <div className="mx-auto flex w-full max-w-lg flex-col items-center px-5 pb-16 pt-14">
+          <Loader2 className="mb-3 h-8 w-8 animate-spin text-gold-500" />
+          <p className="font-heading text-sm nav-dragon-gold">
+            Taking you to the shelves...
+          </p>
         </div>
       </FantasyPageShell>
     );
@@ -421,7 +458,13 @@ export function FirstRatingScreen({
           </p>
         )}
 
-        <ProgressChecklist hasRated={hasRated} hasSeenMatch={hasSeenMatch} />
+        {showChecklist ? (
+          <ProgressChecklist
+            hasPreferences={hasPreferences}
+            hasRated={hasRated}
+            hasSeenMatch={hasSeenMatch}
+          />
+        ) : null}
 
         <div className="mt-10 text-center">
           <Link

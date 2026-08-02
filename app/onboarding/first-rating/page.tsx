@@ -1,6 +1,12 @@
 import { FirstRatingScreen } from "@/components/onboarding/FirstRatingScreen";
 import { getBookById } from "@/lib/books";
 import { calculateMatchScore } from "@/lib/match-score";
+import {
+  getOnboardingMatchScoreSeen,
+  getOnboardingProgress,
+  isOnboardingComplete,
+  markOnboardingMatchScoreSeen,
+} from "@/lib/onboarding";
 import { getFirstRatingSuggestions } from "@/lib/onboarding-suggestions";
 import { getUserPreferences } from "@/lib/preferences";
 import { getCommunityRatings, getUserRatedBooks } from "@/lib/ratings";
@@ -41,11 +47,19 @@ export default async function FirstRatingPage({
   const justRated = params.rated === "1";
   const ratedBookId = params.bookId?.trim() || null;
 
-  const [ratedBooks, preferences, suggestions] = await Promise.all([
-    getUserRatedBooks(user.id),
-    getUserPreferences(user.id),
-    getFirstRatingSuggestions().catch(() => []),
-  ]);
+  const [ratedBooks, preferences, suggestions, matchScoreSeenFlag] =
+    await Promise.all([
+      getUserRatedBooks(user.id),
+      getUserPreferences(user.id),
+      getFirstRatingSuggestions().catch(() => []),
+      getOnboardingMatchScoreSeen(user.id),
+    ]);
+
+  // Durable: any saved rating means the first-mark prompt is done.
+  // Return visits (and post-celebrate navigation) go to Browse — not the prompt.
+  if (ratedBooks.length >= 1 && !justRated) {
+    redirect("/browse");
+  }
 
   let ratedBookTitle: string | null = null;
   let matchScore: number | null = null;
@@ -81,10 +95,34 @@ export default async function FirstRatingPage({
     ratedBookTitle = match?.title ?? null;
   }
 
+  const hasSeenMatchScore = matchScoreSeenFlag || matchScore != null;
+
+  // Persist Match Score seen when we actually show a % on this visit.
+  if (matchScore != null && !matchScoreSeenFlag) {
+    await markOnboardingMatchScoreSeen(user.id);
+  }
+
+  const ratingCount =
+    ratedBooks.length >= 1
+      ? ratedBooks.length
+      : justRated && ratedBookId
+        ? 1
+        : 0;
+
+  const progress = getOnboardingProgress({
+    isLoggedIn: true,
+    preferences,
+    ratingCount,
+    hasSeenMatchScore,
+  });
+
   return (
     <FirstRatingScreen
       suggestions={suggestions.filter((book) => book.title?.trim())}
-      ratingCount={ratedBooks.length}
+      ratingCount={ratingCount}
+      hasPreferences={progress.hasPreferences}
+      hasSeenMatchScore={progress.hasSeenMatchScore}
+      onboardingComplete={isOnboardingComplete(progress)}
       justRated={justRated}
       ratedBookId={ratedBookId}
       ratedBookTitle={ratedBookTitle}

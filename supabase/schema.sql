@@ -36,6 +36,7 @@ create table public.profiles (
   avatar_key    text,
   is_subscriber boolean not null default false,
   is_admin      boolean not null default false,
+  onboarding_match_score_seen boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
 

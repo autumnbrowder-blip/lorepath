@@ -8,6 +8,7 @@ import {
   resolveDisplayName,
 } from "@/lib/avatars";
 import { loadPreferencesForPage } from "@/lib/preferences";
+import { getUserRatedBooks } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -48,6 +49,9 @@ export default async function PreferencesPage() {
   const prefsLoad = await loadPreferencesForPage(user.id);
   const preferences = prefsLoad.preferences;
   const loadError = "error" in prefsLoad ? prefsLoad.error : null;
+  const ratedBooks = await getUserRatedBooks(user.id);
+  const afterSaveHref =
+    ratedBooks.length >= 1 ? "/browse" : "/onboarding/first-rating";
 
   return (
     <div className="preferences-page">
@@ -136,6 +140,7 @@ export default async function PreferencesPage() {
           <PreferencesForm
             initialPreferences={preferences}
             loadError={loadError}
+            afterSaveHref={afterSaveHref}
           />
         </div>
       </div>
