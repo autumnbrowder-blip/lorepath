@@ -158,10 +158,10 @@ export function BookInformation({
           )}
 
           {hasRatingsColumn ? (
-            <div className="grid gap-3 sm:gap-3.5 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)] lg:items-start">
+            <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)] lg:items-start">
               <div className="min-w-0">{descriptionBlock}</div>
               {(matchScore || communityRatings || ratingForm) && (
-                <div className="flex min-w-0 flex-col gap-3 sm:gap-3.5">
+                <div className="flex min-w-0 flex-col gap-2.5">
                   {matchScore ? (
                     <div className="min-w-0 self-start [&>*]:h-auto">
                       {matchScore}

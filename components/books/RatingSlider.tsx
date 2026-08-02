@@ -25,19 +25,19 @@ export function RatingSlider({
 
   return (
     <div
-      className="rating-slider codex-inset px-3 py-2.5"
+      className="rating-slider codex-inset px-2.5 py-2"
       style={{ animationDelay: `${index * 40}ms` }}
     >
-      <div className="mb-2 flex items-start justify-between gap-3">
+      <div className="mb-1.5 flex items-start justify-between gap-2.5">
         <div className="min-w-0">
           <label
             htmlFor={id}
-            className="font-heading text-base font-semibold leading-snug nav-dragon-gold"
+            className="font-heading text-sm font-semibold leading-snug nav-dragon-gold sm:text-base"
           >
             {label}
           </label>
           <p
-            className="mt-1 h-[4.5rem] min-h-[4.5rem] shrink-0 overflow-hidden font-heading text-sm leading-snug tracking-wide text-[#e2c06a]/80"
+            className="mt-0.5 h-[3.25rem] min-h-[3.25rem] shrink-0 overflow-hidden font-heading text-xs leading-snug tracking-wide text-[#e2c06a]/85 line-clamp-3 sm:text-sm"
             aria-live="polite"
           >
             {levelDescription ?? "\u00A0"}
@@ -48,7 +48,7 @@ export function RatingSlider({
         </span>
       </div>
 
-      <div className="relative mb-2 py-0.5">
+      <div className="relative mb-1.5 py-0.5">
         <div className="h-2 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/65">
           <div
             className="h-full rounded-sm bg-gradient-to-r from-gold-600 to-gold-400 transition-[width] duration-200"

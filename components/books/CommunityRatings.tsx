@@ -53,30 +53,30 @@ function RatingBar({
 
   return (
     <div
-      className="codex-inset px-3 py-3"
+      className="codex-inset px-2.5 py-2"
       style={{ animationDelay: `${index * 45}ms` }}
     >
-      <div className="mb-2 flex items-start justify-between gap-3">
+      <div className="mb-1.5 flex items-start justify-between gap-2.5">
         <div className="min-w-0">
-          <p className="font-heading text-base font-semibold leading-snug nav-dragon-gold sm:text-lg">
+          <p className="font-heading text-sm font-semibold leading-snug nav-dragon-gold sm:text-base">
             {label}
           </p>
           {blurb ? (
-            <p className="mt-1 font-heading text-sm leading-snug tracking-wide text-[#e2c06a]/85">
+            <p className="mt-0.5 line-clamp-2 font-heading text-xs leading-snug tracking-wide text-[#e2c06a]/85 sm:text-sm">
               {blurb}
             </p>
           ) : null}
         </div>
         <span className="inline-flex shrink-0 flex-col items-end">
-          <span className="font-storybook text-xl font-bold tabular-nums leading-none nav-dragon-gold sm:text-2xl">
+          <span className="font-storybook text-lg font-bold tabular-nums leading-none nav-dragon-gold sm:text-xl">
             {displayValue !== null ? displayValue.toFixed(1) : "—"}
           </span>
-          <span className="mt-0.5 font-heading text-xs nav-dragon-gold/80">
+          <span className="mt-0.5 font-heading text-[11px] nav-dragon-gold/80">
             out of 5
           </span>
         </span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/70">
+      <div className="h-2 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/70">
         <div
           className="h-full rounded-sm bg-gradient-to-r from-gold-700 via-gold-500 to-gold-300 transition-all duration-500"
           style={{ width }}
@@ -97,7 +97,7 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
       style={{ animationDelay: "100ms" }}
     >
       <CodexBoxOrnament />
-      <div className="relative z-[3] mb-3 flex items-center gap-2.5 px-0.5">
+      <div className="relative z-[3] mb-2 flex items-center gap-2.5 px-0.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
           <BarChart3 className="h-4 w-4" />
         </div>
@@ -123,14 +123,14 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
 
       <div className="relative z-[3] px-0.5">
         {!hasRatings && (
-          <div className="mb-3 codex-inset border-dashed px-3 py-2.5">
+          <div className="mb-2 codex-inset border-dashed px-2.5 py-2">
             <p className="font-heading text-sm leading-snug nav-dragon-gold">
               No ratings yet — be the first to mark this tome.
             </p>
           </div>
         )}
 
-        <div className="space-y-2.5">
+        <div className="space-y-1.5">
           {RATING_CATEGORIES.map((category, index) => {
             const preference = preferenceFor(category.key);
             return (

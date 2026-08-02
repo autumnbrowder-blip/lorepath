@@ -287,7 +287,7 @@ export function RatingForm({
         <CodexBoxOrnament />
       </div>
       <div className="preference-codex-box-content">
-        <div className="mb-3 flex shrink-0 items-center gap-2.5 px-0.5">
+        <div className="mb-2 flex shrink-0 items-center gap-2.5 px-0.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
             <PenLine className="h-4 w-4" />
           </div>
@@ -310,7 +310,7 @@ export function RatingForm({
 
         <div className="flex min-h-0 flex-1 flex-col px-0.5">
           {!isLoggedIn ? (
-            <div className="relative overflow-hidden rounded-sm border border-gold-600/50 bg-gradient-to-b from-[#1a2e24] to-forest-950/90 px-4 py-6 text-center shadow-[inset_0_1px_0_rgba(212,175,55,0.18)]">
+            <div className="relative overflow-hidden rounded-sm border border-gold-600/50 bg-gradient-to-b from-[#1a2e24] to-forest-950/90 px-4 py-4 text-center shadow-[inset_0_1px_0_rgba(212,175,55,0.18)]">
               <div
                 className="pointer-events-none absolute inset-0 opacity-20 mix-blend-overlay"
                 aria-hidden="true"
@@ -319,21 +319,21 @@ export function RatingForm({
                     "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
                 }}
               />
-              <div className="relative z-[1] mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-sm border border-gold-500/55 bg-forest-950/70 text-[#d4af37]">
+              <div className="relative z-[1] mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-sm border border-gold-500/55 bg-forest-950/70 text-[#d4af37]">
                 <Feather className="h-5 w-5" aria-hidden="true" />
               </div>
               <p className="relative z-[1] font-storybook text-base font-bold tracking-[0.06em] nav-dragon-gold sm:text-lg">
                 Create a free account to leave your marks
               </p>
-              <p className="relative z-[1] mt-2 max-w-sm mx-auto font-heading text-sm leading-relaxed nav-dragon-gold">
+              <p className="relative z-[1] mt-1.5 max-w-sm mx-auto font-heading text-sm leading-relaxed nav-dragon-gold">
                 Join the archives to inscribe content ratings on this tome and
                 unlock your Match Score.
               </p>
-              <Link href={registerHref} className="btn-primary relative z-[1] mt-5">
+              <Link href={registerHref} className="btn-primary relative z-[1] mt-4">
                 <Feather className="h-4 w-4" aria-hidden="true" />
                 Create free account
               </Link>
-              <p className="relative z-[1] mt-3 font-heading text-sm nav-dragon-gold">
+              <p className="relative z-[1] mt-2.5 font-heading text-sm nav-dragon-gold">
                 Already a traveler?{" "}
                 <Link
                   href={loginHref}
@@ -345,13 +345,13 @@ export function RatingForm({
             </div>
           ) : (
             <>
-              <p className="mb-3 shrink-0 font-heading text-base leading-snug nav-dragon-gold sm:text-lg">
+              <p className="mb-2 shrink-0 font-heading text-sm leading-snug nav-dragon-gold sm:text-base">
                 0 = none · 5 = very high
               </p>
 
               <div
                 ref={statusRef}
-                className="rating-form-status mb-3 shrink-0 scroll-mb-4 scroll-mt-20 overflow-hidden"
+                className="rating-form-status mb-2 shrink-0 scroll-mb-4 scroll-mt-20 overflow-hidden"
                 role="status"
                 aria-live="polite"
               >
@@ -374,7 +374,7 @@ export function RatingForm({
 
               <form
                 onSubmit={handleSubmit}
-                className="flex flex-1 flex-col gap-2.5"
+                className="flex flex-1 flex-col gap-2"
               >
                 {RATING_CATEGORIES.map((category, index) => {
                   const guidance = preferenceGuidance(category.key);
@@ -394,7 +394,7 @@ export function RatingForm({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-primary mt-auto w-full shrink-0"
+                  className="btn-primary mt-1 w-full shrink-0"
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

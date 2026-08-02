@@ -1269,14 +1269,19 @@
   }
 
   .preference-codex-box-shell.rating-form-panel--inscribed {
-    /* Floor for full logged-in form (header + legend + status + 5 sliders + submit) */
-    min-height: 74rem;
+    /* Height stays stable via fixed status + description slots — no tall empty floor */
+    min-height: 0;
   }
 
   .rating-form-status {
-    /* Fits alert py-3 + up to 2 lines of text-sm; never expands the shell */
-    height: 4rem;
-    min-height: 4rem;
+    /* Fits compact alert + up to 2 lines of text-sm; reserved so save feedback never shifts the form */
+    height: 3.25rem;
+    min-height: 3.25rem;
+  }
+
+  .rating-form-status .alert-error,
+  .rating-form-status .alert-success {
+    @apply px-3 py-2;
   }
 
   .rating-form-panel .rating-slider {
