@@ -95,19 +95,19 @@ export function MatchScore({
         </div>
       </div>
 
-      {/* Compact rows: thin gold fill tracks; labels bumped one step for readability */}
+      {/* Compact rows: thin gold fill tracks; labels/values bumped for readability */}
       <div className="grid gap-1.5 sm:grid-cols-2">
         {breakdown.map((item) => (
           <div key={item.label} className="min-w-0">
             <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="truncate font-heading text-xs font-medium leading-tight nav-dragon-gold sm:text-[0.8125rem]">
+              <span className="truncate font-heading text-[0.8125rem] font-medium leading-tight nav-dragon-gold sm:text-sm">
                 {item.label}
               </span>
-              <span className="shrink-0 font-heading text-xs font-bold tabular-nums leading-tight nav-dragon-gold sm:text-[0.8125rem]">
+              <span className="shrink-0 font-heading text-[0.8125rem] font-bold tabular-nums leading-tight nav-dragon-gold sm:text-sm">
                 {item.score}%
               </span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/70">
+            <div className="h-2 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/70">
               <div
                 className="h-full rounded-sm bg-gradient-to-r from-gold-700 via-gold-500 to-gold-300 transition-[width] duration-500"
                 style={{ width: `${item.score}%` }}
