@@ -35,15 +35,21 @@ export default async function ImportPage() {
 
   return (
     <FantasyPageShell variant="browse" priority>
-      <div className="mx-auto max-w-2xl px-5 py-10 sm:px-6 sm:py-14">
+      <div className="mx-auto max-w-2xl px-5 pb-20 pt-8 sm:px-6 sm:pt-12">
         <Link href="/profile" className="preference-codex-box--nav relative mb-8">
           <ArrowLeft className="h-4 w-4" />
           <span className="relative z-[1] nav-dragon-gold">Back to Profile</span>
         </Link>
 
-        <header className="mb-8 text-center sm:mb-10 sm:text-left">
-          <h1 className="page-title nav-dragon-gold">Import reading list</h1>
-          <p className="mt-2 font-heading text-lg nav-dragon-gold">
+        <header className="mb-8 text-center sm:mb-10">
+          <h1 className="font-storybook text-3xl font-normal tracking-[0.05em] nav-dragon-gold sm:text-4xl">
+            Import reading list
+          </h1>
+          <div
+            className="mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent"
+            aria-hidden="true"
+          />
+          <p className="mx-auto mt-4 max-w-lg font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
             Carry books you&apos;ve already finished into LorePath and leave
             your marks at your own pace.
           </p>
