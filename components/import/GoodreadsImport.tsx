@@ -24,6 +24,7 @@ import {
   useMemo,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 
 const STORAGE_KEY = "lorepath.goodreads-import.v1";
@@ -323,13 +324,24 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
         <div className="preference-codex-box relative !p-4 sm:!p-5">
           <CodexBoxOrnament />
           <p className="relative z-[3] font-heading text-sm leading-relaxed nav-dragon-gold sm:text-base">
-            {stats.matched === 0
-              ? "No familiar tomes answered from our shelves this time."
-              : `We found ${stats.matched} tome${stats.matched === 1 ? "" : "s"} waiting for your mark${
-                  stats.alreadyRated
-                    ? ` · ${stats.alreadyRated} already carry your inscription`
-                    : ""
-                }.`}
+            {stats.matched === 0 ? (
+              "No familiar tomes answered from our shelves this time."
+            ) : (
+              <>
+                We found{" "}
+                <ImportStatNumber>{stats.matched}</ImportStatNumber> tome
+                {stats.matched === 1 ? "" : "s"} waiting for your mark
+                {stats.alreadyRated ? (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <ImportStatNumber>{stats.alreadyRated}</ImportStatNumber>{" "}
+                    already carry your inscription
+                  </>
+                ) : null}
+                .
+              </>
+            )}
             {stats.capped ? " Showing your first shelf of reads." : null}
             {!stats.preferredReadShelf
               ? " No Read shelf was clear, so we welcomed books more broadly."
@@ -347,8 +359,9 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
             >
               Ready for your mark
             </h2>
-            <p className="shrink-0 font-heading text-xs nav-dragon-gold/85">
-              {readyToRate.length} book{readyToRate.length === 1 ? "" : "s"}
+            <p className="shrink-0 font-heading text-sm nav-dragon-gold">
+              <ImportStatNumber>{readyToRate.length}</ImportStatNumber>{" "}
+              book{readyToRate.length === 1 ? "" : "s"}
             </p>
           </div>
           <ul className="space-y-3">
@@ -418,7 +431,8 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
                 id="unmatched-heading"
                 className="font-storybook text-sm font-semibold tracking-[0.1em] nav-dragon-gold"
               >
-                Still lost in the stacks ({unmatched.length})
+                Still lost in the stacks (
+                <ImportStatNumber>{unmatched.length}</ImportStatNumber>)
               </h2>
               {showUnmatched ? (
                 <ChevronUp className="h-4 w-4 shrink-0 text-gold-500" />
@@ -455,6 +469,14 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
   );
 }
 
+function ImportStatNumber({ children }: { children: ReactNode }) {
+  return (
+    <span className="antique-gold-text inline-block font-storybook text-[1.15em] font-bold tabular-nums tracking-[0.04em] sm:text-[1.2em]">
+      {children}
+    </span>
+  );
+}
+
 function StepRow({
   number,
   title,
@@ -466,12 +488,19 @@ function StepRow({
 }) {
   return (
     <li className="codex-inset flex gap-3 px-3 py-3 sm:px-3.5">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/35 to-transparent font-storybook text-xs font-bold nav-dragon-gold">
+      <span
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-gold-500/70 bg-gradient-to-b from-gold-400 via-gold-500 to-gold-700 font-storybook text-base font-bold tabular-nums leading-none text-forest-950 shadow-[0_2px_8px_rgba(8,20,14,0.35),inset_0_1px_0_rgba(255,245,210,0.45)] sm:h-10 sm:w-10 sm:text-lg"
+        aria-hidden="true"
+      >
         {number}
       </span>
       <div className="min-w-0 pt-0.5">
-        <p className="font-storybook text-sm font-bold tracking-[0.06em] nav-dragon-gold">
-          Step {number}: {title}
+        <p className="font-storybook text-sm font-bold tracking-[0.06em] nav-dragon-gold sm:text-[15px]">
+          Step{" "}
+          <span className="antique-gold-text text-base font-bold tabular-nums sm:text-lg">
+            {number}
+          </span>
+          : {title}
         </p>
         <p className="mt-0.5 font-heading text-sm leading-snug nav-dragon-gold/90">
           {detail}
