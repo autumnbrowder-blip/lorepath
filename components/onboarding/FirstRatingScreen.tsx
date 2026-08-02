@@ -237,7 +237,7 @@ export function FirstRatingScreen({
                   {matchScore}%
                 </p>
                 <p className="mt-1 font-heading text-sm text-[#3f2a1e]/85">
-                  How this tome aligns with your Preferences Codex.
+                  How this tome aligns with your Preference Codex.
                 </p>
               </div>
             ) : (
@@ -282,7 +282,7 @@ export function FirstRatingScreen({
       <div className="mx-auto flex w-full max-w-xl flex-col px-5 pb-20 pt-8 sm:pt-12">
         <header className="text-center">
           <h1 className="font-storybook text-3xl font-normal tracking-[0.05em] nav-dragon-gold sm:text-4xl">
-            Your Preferences Codex is set
+            Your Preference Codex is set
           </h1>
           <div
             className="mx-auto mt-3 h-px w-36 bg-gradient-to-r from-transparent via-gold-600/70 to-transparent"
