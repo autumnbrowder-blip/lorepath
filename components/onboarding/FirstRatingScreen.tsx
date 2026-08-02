@@ -53,27 +53,42 @@ function ProgressChecklist({
   ];
 
   return (
-    <ol className="preference-codex-box relative mt-6 space-y-2 !p-3.5 sm:!p-4">
-      <p className="relative z-[3] mb-2 font-storybook text-[11px] font-semibold tracking-[0.14em] nav-dragon-gold">
+    <ol
+      className="relative mt-6 space-y-2"
+      style={{
+        backgroundImage: "url('/images/parchment.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        border: "3px solid #8c6b2e",
+        borderRadius: "6px",
+        boxShadow:
+          "0 6px 16px rgba(0,0,0,0.35), inset 0 0 40px rgba(139, 105, 20, 0.15)",
+        padding: "14px 16px",
+      }}
+    >
+      <p className="mb-2 font-storybook text-[11px] font-semibold tracking-[0.14em] text-[#5c3f0f]">
         Your path so far
       </p>
       {steps.map((step) => (
         <li
           key={step.label}
-          className="relative z-[3] flex items-center gap-2.5 font-heading text-sm nav-dragon-gold"
+          className="flex items-center gap-2.5 font-heading text-sm text-[#2f1f0f]"
         >
           {step.done ? (
             <Check
-              className="h-4 w-4 shrink-0 text-[#d4af37]"
+              className="h-4 w-4 shrink-0 text-[#a67c2d]"
               aria-hidden="true"
             />
           ) : (
             <Circle
-              className="h-3.5 w-3.5 shrink-0 text-gold-600/55"
+              className="h-3.5 w-3.5 shrink-0 text-[#8c6b2e]/60"
               aria-hidden="true"
             />
           )}
-          <span className={step.done ? "" : "opacity-80"}>{step.label}</span>
+          <span className={step.done ? "" : "text-[#3f2a1e]/80"}>
+            {step.label}
+          </span>
           <span className="sr-only">{step.done ? "complete" : "not yet"}</span>
         </li>
       ))}
@@ -253,7 +268,7 @@ export function FirstRatingScreen({
 
           <Link
             href="/browse"
-            className="mt-8 text-center font-heading text-sm nav-dragon-gold/80 underline decoration-gold-600/40 underline-offset-4 hover:nav-dragon-gold hover:decoration-gold-500"
+            className="mt-8 text-center font-heading text-sm tracking-[0.06em] text-[#e2c06a] underline decoration-[#8c6b2e]/55 underline-offset-4 transition hover:text-[#f0d070] hover:decoration-[#d4af37]"
           >
             Explore the shelves instead
           </Link>
@@ -274,14 +289,9 @@ export function FirstRatingScreen({
             aria-hidden="true"
           />
           <p className="mt-4 font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
-            Rate a book you&apos;ve already read so Match Scores can begin.
+            Rate a book you&apos;ve read so Match Scores can begin.
           </p>
         </header>
-
-        <p className="preference-codex-box relative mt-6 !p-3.5 text-center font-heading text-sm leading-snug nav-dragon-gold sm:!p-4 sm:text-[0.95rem]">
-          One quick mark is enough to start. Search a title you know, or pick
-          one below.
-        </p>
 
         <form
           onSubmit={handleSearch}
@@ -420,7 +430,7 @@ export function FirstRatingScreen({
         <div className="mt-10 text-center">
           <Link
             href="/browse"
-            className="font-heading text-sm nav-dragon-gold/75 underline decoration-gold-600/35 underline-offset-4 transition hover:nav-dragon-gold hover:decoration-gold-500"
+            className="font-heading text-sm tracking-[0.06em] text-[#e2c06a] underline decoration-[#8c6b2e]/55 underline-offset-4 transition hover:text-[#f0d070] hover:decoration-[#d4af37]"
           >
             Explore the shelves instead
           </Link>

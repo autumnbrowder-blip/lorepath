@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Your First Mark | LorePath",
   description:
-    "Rate a book you've already read so Match Scores can begin on LorePath.",
+    "Rate a book you've read so Match Scores can begin on LorePath.",
 };
 
 type FirstRatingPageProps = {
