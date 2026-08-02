@@ -10,8 +10,6 @@ import type { BookSummary } from "@/types/book";
 import {
   AlertCircle,
   Check,
-  ChevronDown,
-  ChevronUp,
   Feather,
   Loader2,
   ScrollText,
@@ -28,7 +26,8 @@ import {
 } from "react";
 
 const STORAGE_KEY = "lorepath.goodreads-import.v1";
-const INITIAL_VISIBLE = 50;
+const INITIAL_VISIBLE_MATCHED = 40;
+const INITIAL_VISIBLE_UNMATCHED = 30;
 
 type ImportStats = {
   csvRows: number;
@@ -67,8 +66,10 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
   const [matched, setMatched] = useState<MatchedImportBook[]>([]);
   const [unmatched, setUnmatched] = useState<UnmatchedImportBook[]>([]);
   const [stats, setStats] = useState<ImportStats | null>(null);
-  const [showUnmatched, setShowUnmatched] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+  const [visibleMatched, setVisibleMatched] = useState(INITIAL_VISIBLE_MATCHED);
+  const [visibleUnmatched, setVisibleUnmatched] = useState(
+    INITIAL_VISIBLE_UNMATCHED
+  );
   const [restored, setRestored] = useState(false);
 
   const persist = useCallback(
@@ -156,8 +157,8 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
       setMatched(nextMatched);
       setUnmatched(nextUnmatched);
       setStats(nextStats);
-      setVisibleCount(INITIAL_VISIBLE);
-      setShowUnmatched(false);
+      setVisibleMatched(INITIAL_VISIBLE_MATCHED);
+      setVisibleUnmatched(INITIAL_VISIBLE_UNMATCHED);
 
       if (nextStats) {
         persist({
@@ -192,8 +193,10 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
 
   const readyToRate = matched.filter((m) => !m.alreadyRated);
   const alreadyMarked = matched.filter((m) => m.alreadyRated);
-  const visibleReady = readyToRate.slice(0, visibleCount);
-  const hasMore = readyToRate.length > visibleCount;
+  const visibleMatchedItems = matched.slice(0, visibleMatched);
+  const visibleUnmatchedItems = unmatched.slice(0, visibleUnmatched);
+  const hasMoreMatched = matched.length > visibleMatched;
+  const hasMoreUnmatched = unmatched.length > visibleUnmatched;
   const hasResults = matched.length > 0 || unmatched.length > 0;
 
   if (!restored) {
@@ -208,15 +211,15 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <form
         onSubmit={handleSubmit}
-        className="preference-codex-box relative !px-5 !py-6 sm:!px-7 sm:!py-8"
+        className="preference-codex-box relative !px-4 !py-5 sm:!px-7 sm:!py-8"
       >
         <CodexBoxOrnament />
-        <div className="relative z-[3] space-y-6">
+        <div className="relative z-[3] space-y-5 sm:space-y-6">
           <div className="text-center sm:text-left">
-            <div className="mb-3 inline-flex items-center gap-2">
+            <div className="mb-2.5 inline-flex items-center gap-2">
               <ScrollText
                 className="h-5 w-5 shrink-0 text-accent"
                 aria-hidden="true"
@@ -234,7 +237,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
             </p>
           </div>
 
-          <ol className="space-y-3">
+          <ol className="space-y-2.5 sm:space-y-3">
             <StepRow
               number="1"
               title="Gather your Goodreads export"
@@ -252,8 +255,8 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
             />
           </ol>
 
-          <label className="codex-inset flex cursor-pointer flex-col items-center gap-3 border-dashed px-4 py-9 text-center transition hover:border-gold-500/55 sm:py-10">
-            <Upload className="h-8 w-8 text-accent" aria-hidden="true" />
+          <label className="codex-inset flex min-h-[2.75rem] cursor-pointer flex-col items-center gap-2.5 border-dashed px-4 py-7 text-center transition hover:border-gold-500/55 sm:py-9">
+            <Upload className="h-7 w-7 text-accent sm:h-8 sm:w-8" aria-hidden="true" />
             <span className="font-storybook text-xs font-bold uppercase tracking-[0.18em] nav-dragon-gold">
               {file ? file.name : "Place your Goodreads export here"}
             </span>
@@ -279,11 +282,11 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             <button
               type="submit"
               disabled={!file || loading}
-              className="btn-primary w-full justify-center px-8 py-3.5 text-sm tracking-[0.14em] sm:w-auto"
+              className="btn-primary w-full min-h-[2.75rem] justify-center px-8 py-3.5 text-sm tracking-[0.14em] sm:w-auto"
             >
               {loading ? (
                 <>
@@ -304,7 +307,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
               <button
                 type="button"
                 onClick={clearResults}
-                className="btn-secondary w-full justify-center sm:w-auto"
+                className="btn-secondary w-full min-h-[2.75rem] justify-center sm:w-auto"
               >
                 Clear the desk
               </button>
@@ -321,87 +324,56 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
       </form>
 
       {stats ? (
-        <div className="preference-codex-box relative !p-4 sm:!p-5">
-          <CodexBoxOrnament />
-          <p className="relative z-[3] font-heading text-sm leading-relaxed nav-dragon-gold sm:text-base">
-            {stats.matched === 0 ? (
-              "No familiar tomes answered from our shelves this time."
-            ) : (
-              <>
-                We found{" "}
-                <ImportStatNumber>{stats.matched}</ImportStatNumber> tome
-                {stats.matched === 1 ? "" : "s"} waiting for your mark
-                {stats.alreadyRated ? (
-                  <>
-                    {" "}
-                    ·{" "}
-                    <ImportStatNumber>{stats.alreadyRated}</ImportStatNumber>{" "}
-                    already carry your inscription
-                  </>
-                ) : null}
-                .
-              </>
-            )}
-            {stats.capped ? " Showing your first shelf of reads." : null}
-            {!stats.preferredReadShelf
-              ? " No Read shelf was clear, so we welcomed books more broadly."
-              : null}
-          </p>
-        </div>
+        <ImportStatusPanel
+          readyCount={readyToRate.length}
+          alreadyMarkedCount={alreadyMarked.length}
+          unmatchedCount={unmatched.length}
+          capped={stats.capped}
+          preferredReadShelf={stats.preferredReadShelf}
+        />
       ) : null}
 
-      {readyToRate.length > 0 ? (
-        <section aria-labelledby="matched-ready-heading" className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
-            <h2
-              id="matched-ready-heading"
-              className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
-            >
-              Ready for your mark
-            </h2>
-            <p className="shrink-0 font-heading text-sm nav-dragon-gold">
-              <ImportStatNumber>{readyToRate.length}</ImportStatNumber>{" "}
-              book{readyToRate.length === 1 ? "" : "s"}
+      {matched.length > 0 ? (
+        <section aria-labelledby="matched-heading" className="space-y-3">
+          <div className="flex items-end justify-between gap-3 px-0.5">
+            <div className="min-w-0">
+              <h2
+                id="matched-heading"
+                className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
+              >
+                Found on the shelves
+              </h2>
+              <p className="mt-0.5 font-heading text-sm nav-dragon-gold/90">
+                Tomes matched to LorePath — ready for your hand, or already
+                marked.
+              </p>
+            </div>
+            <p className="shrink-0 font-heading text-sm tabular-nums nav-dragon-gold">
+              <ImportStatNumber>{matched.length}</ImportStatNumber>
             </p>
           </div>
-          <ul className="space-y-3">
-            {visibleReady.map((item) => (
+
+          <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
+            {visibleMatchedItems.map((item) => (
               <li key={`${item.book.id}-${item.csvTitle}`}>
                 <ImportBookCard item={item} />
               </li>
             ))}
           </ul>
-          {hasMore ? (
+
+          {hasMoreMatched ? (
             <button
               type="button"
-              onClick={() => setVisibleCount((n) => n + 50)}
-              className="btn-secondary mt-1"
+              onClick={() => setVisibleMatched((n) => n + 40)}
+              className="btn-secondary mt-1 min-h-[2.75rem] w-full justify-center sm:w-auto"
             >
-              Reveal more
+              Reveal more matched tomes
             </button>
           ) : null}
         </section>
       ) : null}
 
-      {alreadyMarked.length > 0 ? (
-        <section aria-labelledby="already-marked-heading" className="space-y-3">
-          <h2
-            id="already-marked-heading"
-            className="font-storybook text-sm font-semibold tracking-[0.12em] nav-dragon-gold"
-          >
-            Already marked
-          </h2>
-          <ul className="space-y-3">
-            {alreadyMarked.map((item) => (
-              <li key={`rated-${item.book.id}`}>
-                <ImportBookCard item={item} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {stats && stats.matched === 0 && unmatched.length === 0 ? (
+      {stats && matched.length === 0 && unmatched.length === 0 ? (
         <div className="preference-codex-box relative !p-5 text-center sm:!p-6">
           <CodexBoxOrnament />
           <p className="relative z-[3] font-heading text-sm leading-relaxed nav-dragon-gold sm:text-base">
@@ -410,7 +382,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
           </p>
           <Link
             href="/browse"
-            className="btn-secondary relative z-[3] mt-5 inline-flex justify-center"
+            className="btn-secondary relative z-[3] mt-4 inline-flex min-h-[2.75rem] justify-center"
           >
             Browse the shelves
           </Link>
@@ -418,53 +390,134 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
       ) : null}
 
       {unmatched.length > 0 ? (
-        <section aria-labelledby="unmatched-heading">
-          <div className="preference-codex-box relative !p-0">
-            <CodexBoxOrnament />
-            <button
-              type="button"
-              onClick={() => setShowUnmatched((v) => !v)}
-              className="relative z-[3] flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left sm:px-5"
-              aria-expanded={showUnmatched}
-            >
+        <section aria-labelledby="unmatched-heading" className="space-y-3">
+          <div className="flex items-end justify-between gap-3 px-0.5">
+            <div className="min-w-0">
               <h2
                 id="unmatched-heading"
-                className="font-storybook text-sm font-semibold tracking-[0.1em] nav-dragon-gold"
+                className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
               >
-                Still lost in the stacks (
-                <ImportStatNumber>{unmatched.length}</ImportStatNumber>)
+                Needs a closer look
               </h2>
-              {showUnmatched ? (
-                <ChevronUp className="h-4 w-4 shrink-0 text-gold-500" />
-              ) : (
-                <ChevronDown className="h-4 w-4 shrink-0 text-gold-500" />
-              )}
-            </button>
-            {showUnmatched ? (
-              <ul className="relative z-[3] space-y-2 border-t border-gold-600/30 px-4 py-3 sm:px-5">
-                {unmatched.map((item, index) => (
-                  <li
-                    key={`${item.title}-${item.author}-${index}`}
-                    className="codex-inset px-3 py-2.5"
-                  >
-                    <p className="font-storybook text-sm font-bold tracking-[0.04em] nav-dragon-gold">
-                      {item.title}
-                    </p>
-                    <p className="mt-0.5 font-heading text-xs nav-dragon-gold/85">
-                      {item.author}
-                      {item.shelfLabel ? ` · ${item.shelfLabel}` : ""}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+              <p className="mt-0.5 font-heading text-sm nav-dragon-gold/90">
+                These titles could not be placed on LorePath&apos;s shelves yet.
+              </p>
+            </div>
+            <p className="shrink-0 font-heading text-sm tabular-nums nav-dragon-gold">
+              <ImportStatNumber>{unmatched.length}</ImportStatNumber>
+            </p>
           </div>
-          <p className="mt-2.5 font-heading text-xs leading-relaxed nav-dragon-gold/90">
-            These titles may still turn up with Browse search when you seek
-            them.
-          </p>
+
+          <ul className="space-y-2">
+            {visibleUnmatchedItems.map((item, index) => (
+              <li key={`${item.title}-${item.author}-${index}`}>
+                <UnmatchedBookRow item={item} />
+              </li>
+            ))}
+          </ul>
+
+          {hasMoreUnmatched ? (
+            <button
+              type="button"
+              onClick={() => setVisibleUnmatched((n) => n + 30)}
+              className="btn-secondary mt-1 min-h-[2.75rem] w-full justify-center sm:w-auto"
+            >
+              Reveal more
+            </button>
+          ) : null}
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function ImportStatusPanel({
+  readyCount,
+  alreadyMarkedCount,
+  unmatchedCount,
+  capped,
+  preferredReadShelf,
+}: {
+  readyCount: number;
+  alreadyMarkedCount: number;
+  unmatchedCount: number;
+  capped: boolean;
+  preferredReadShelf: boolean;
+}) {
+  const totalMatched = readyCount + alreadyMarkedCount;
+  const statusLine =
+    totalMatched === 0 && unmatchedCount === 0
+      ? "The shelves answered with silence."
+      : totalMatched === 0
+        ? "A few titles still wait beyond the lamp-light."
+        : "Your archive has been sorted.";
+
+  return (
+    <section
+      aria-label="Import results summary"
+      className="preference-codex-box relative !p-3.5 sm:!p-4"
+    >
+      <CodexBoxOrnament />
+      <div className="relative z-[3] space-y-3">
+        <div className="flex items-start gap-2.5 px-0.5">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
+            <ScrollText className="h-4 w-4" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-storybook text-sm font-bold tracking-[0.06em] nav-dragon-gold sm:text-base">
+              {statusLine}
+            </p>
+            <p className="mt-0.5 font-heading text-xs leading-snug nav-dragon-gold/90 sm:text-sm">
+              {capped ? "Showing your first shelf of reads. " : null}
+              {!preferredReadShelf
+                ? "No Read shelf was clear, so we welcomed books more broadly."
+                : "Nothing was rated for you — open a tome when you are ready."}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <StatusCount
+            label="Matched"
+            value={totalMatched}
+            hint="on our shelves"
+          />
+          <StatusCount
+            label="Already marked"
+            value={alreadyMarkedCount}
+            hint="your inscription"
+          />
+          <StatusCount
+            label="Closer look"
+            value={unmatchedCount}
+            hint="not placed yet"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatusCount({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+}) {
+  return (
+    <div className="codex-inset px-2 py-2.5 text-center sm:px-3 sm:py-3">
+      <p className="font-storybook text-[1.35rem] font-bold tabular-nums leading-none tracking-[0.04em] nav-dragon-gold sm:text-2xl">
+        {value}
+      </p>
+      <p className="mt-1.5 font-storybook text-[10px] font-semibold uppercase tracking-[0.12em] nav-dragon-gold sm:text-[11px]">
+        {label}
+      </p>
+      <p className="mt-0.5 hidden font-heading text-[11px] leading-tight nav-dragon-gold/80 sm:block">
+        {hint}
+      </p>
     </div>
   );
 }
@@ -506,9 +559,9 @@ function ImportBookCard({ item }: { item: MatchedImportBook }) {
   const book = toBookSummary(item.book);
 
   return (
-    <article className="preference-codex-box relative flex gap-3 !p-3 sm:!p-3.5">
+    <article className="preference-codex-box relative flex h-full gap-3 !p-2.5 sm:!p-3">
       <CodexBoxOrnament />
-      <div className="relative z-[3] h-24 w-[4.25rem] shrink-0 overflow-hidden rounded-sm border border-gold-600/40 bg-[#184033]/50">
+      <div className="relative z-[3] h-[5.5rem] w-[3.85rem] shrink-0 overflow-hidden rounded-sm border border-gold-600/40 bg-[#184033]/50 sm:h-24 sm:w-[4.25rem]">
         <BookCover
           book={book}
           variant="card"
@@ -521,7 +574,7 @@ function ImportBookCard({ item }: { item: MatchedImportBook }) {
           {item.book.title}
         </h3>
         {item.book.authors.length > 0 ? (
-          <p className="mt-1 line-clamp-1 font-heading text-xs nav-dragon-gold/90 sm:text-sm">
+          <p className="mt-0.5 line-clamp-1 font-heading text-xs nav-dragon-gold/90 sm:text-sm">
             {item.book.authors.join(", ")}
           </p>
         ) : null}
@@ -538,15 +591,37 @@ function ImportBookCard({ item }: { item: MatchedImportBook }) {
             Already marked
           </p>
         ) : (
-          <Link
-            href={bookHref(item.book.id)}
-            className="btn-primary mt-auto w-full justify-center px-3 py-2.5 text-[11px] tracking-[0.12em] sm:w-auto sm:self-start"
-          >
-            <Feather className="h-3.5 w-3.5" aria-hidden="true" />
-            Leave your mark
-          </Link>
+          <div className="mt-auto pt-2">
+            <p className="mb-1.5 font-heading text-[11px] tracking-wide text-[#e2c06a]/90">
+              Ready to mark
+            </p>
+            <Link
+              href={bookHref(item.book.id)}
+              className="btn-primary w-full min-h-[2.5rem] justify-center px-3 py-2 text-[11px] tracking-[0.12em] sm:w-auto sm:self-start"
+            >
+              <Feather className="h-3.5 w-3.5" aria-hidden="true" />
+              Inscribe rating
+            </Link>
+          </div>
         )}
       </div>
+    </article>
+  );
+}
+
+function UnmatchedBookRow({ item }: { item: UnmatchedImportBook }) {
+  return (
+    <article className="codex-inset px-3 py-2.5 sm:px-3.5">
+      <h3 className="line-clamp-2 font-storybook text-sm font-bold tracking-[0.04em] nav-dragon-gold">
+        {item.title}
+      </h3>
+      <p className="mt-0.5 line-clamp-1 font-heading text-xs nav-dragon-gold/90">
+        {item.author || "Unknown author"}
+        {item.shelfLabel ? ` · ${item.shelfLabel}` : ""}
+      </p>
+      <p className="mt-1.5 font-heading text-xs italic leading-snug text-[#e2c06a]/85">
+        Could not place this tome yet
+      </p>
     </article>
   );
 }
