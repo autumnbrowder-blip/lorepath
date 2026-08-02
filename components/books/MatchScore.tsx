@@ -89,21 +89,21 @@ export function MatchScore({
           <span className={`match-score-badge ${style.badge}`}>
             <span className="match-score-badge-label">{label}</span>
           </span>
-          <p className="font-heading text-xs leading-snug nav-dragon-gold">
+          <p className="font-heading text-[0.8125rem] leading-snug nav-dragon-gold">
             Community ratings vs your preferences.
           </p>
         </div>
       </div>
 
-      {/* Compact rows: thin gold fill tracks only (Marks of the Realm chrome, Match Score density) */}
+      {/* Compact rows: thin gold fill tracks; labels bumped one step for readability */}
       <div className="grid gap-1.5 sm:grid-cols-2">
         {breakdown.map((item) => (
           <div key={item.label} className="min-w-0">
             <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="truncate font-heading text-[11px] leading-none nav-dragon-gold sm:text-xs">
+              <span className="truncate font-heading text-xs font-medium leading-tight nav-dragon-gold sm:text-[0.8125rem]">
                 {item.label}
               </span>
-              <span className="shrink-0 font-heading text-[11px] font-bold tabular-nums leading-none nav-dragon-gold sm:text-xs">
+              <span className="shrink-0 font-heading text-xs font-bold tabular-nums leading-tight nav-dragon-gold sm:text-[0.8125rem]">
                 {item.score}%
               </span>
             </div>

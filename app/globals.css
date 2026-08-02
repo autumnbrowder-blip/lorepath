@@ -1025,6 +1025,96 @@
   }
 
   /*
+   * Compact Match Score % seal (book page).
+   * Preference Codex emerald + antique gold — storybook plaque, not a modern pill.
+   * Fixed size so fill/score changes never resize the panel.
+   */
+  .match-score-seal {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 5.5rem;
+    height: 5.5rem;
+    min-width: 5.5rem;
+    min-height: 5.5rem;
+    padding: 0.4rem;
+    overflow: hidden;
+    border-radius: 2px;
+    border: 2px solid rgba(166, 124, 45, 0.62);
+    background: linear-gradient(
+      155deg,
+      #1f513d 0%,
+      #184033 36%,
+      #123229 72%,
+      #0c241c 100%
+    );
+    box-shadow:
+      0 6px 16px rgba(8, 20, 14, 0.4),
+      0 1px 0 rgba(60, 42, 8, 0.4),
+      0 0 0 1px rgba(166, 124, 45, 0.22),
+      inset 0 1px 0 rgba(255, 230, 150, 0.16),
+      inset 0 -2px 6px rgba(0, 0, 0, 0.38),
+      inset 0 0 20px rgba(179, 139, 77, 0.06);
+  }
+
+  .match-score-seal::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 3px;
+    border: 1px solid rgba(201, 162, 74, 0.28);
+    border-radius: 1px;
+  }
+
+  .match-score-seal-value {
+    position: relative;
+    z-index: 2;
+    font-family: var(--font-storybook), var(--font-display), Georgia, serif;
+    font-size: 1.55rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.03em;
+    color: #f0d78a;
+    -webkit-text-fill-color: #f0d78a;
+    text-shadow:
+      0 1px 0 rgba(40, 28, 6, 0.9),
+      0 0 10px rgba(201, 162, 74, 0.35);
+  }
+
+  .match-score-seal-value .match-score-seal-pct {
+    font-size: 0.55em;
+    margin-left: 0.05em;
+    letter-spacing: 0.02em;
+  }
+
+  @media (min-width: 640px) {
+    .match-score-seal {
+      width: 5.75rem;
+      height: 5.75rem;
+      min-width: 5.75rem;
+      min-height: 5.75rem;
+    }
+
+    .match-score-seal-value {
+      font-size: 1.7rem;
+    }
+  }
+
+  .dark .match-score-seal {
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: linear-gradient(
+      155deg,
+      #1c4a38 0%,
+      #163b2d 36%,
+      #102c23 72%,
+      #0b2019 100%
+    );
+  }
+
+  /*
    * Match Score label badge (“Good match”, etc.).
    * Explicit antique-gold / deep-forest borders — never white/cream outlines.
    * Do NOT use nav-dragon-gold on this box: Chromium background-clip cream
