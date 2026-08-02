@@ -30,6 +30,11 @@ type RatingFormProps = {
   initialRatings?: ContentRating | null;
   /** Optional when used outside BookRatingsProvider. */
   onRatingsUpdated?: (next: CommunityRatingsSummary) => void;
+  /**
+   * When true (book opened from first-rating onboarding), redirect back
+   * to the onboarding success screen after a successful submit.
+   */
+  returnToFirstRating?: boolean;
 };
 
 /** Match Preferences guidance text, without wrapping quotation marks. */
@@ -66,6 +71,7 @@ export function RatingForm({
   isLoggedIn,
   initialRatings = null,
   onRatingsUpdated,
+  returnToFirstRating = false,
 }: RatingFormProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -248,6 +254,14 @@ export function RatingForm({
       // POST already returned confirmed user + community marks — skip a
       // redundant GET. Refresh RSC islands (match score / rated lists).
       setSuccess(true);
+      if (returnToFirstRating) {
+        const params = new URLSearchParams({
+          rated: "1",
+          bookId,
+        });
+        router.push(`/onboarding/first-rating?${params.toString()}`);
+        return;
+      }
       router.refresh();
     } catch (submitError) {
       setError(

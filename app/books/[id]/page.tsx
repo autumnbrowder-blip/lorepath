@@ -20,13 +20,29 @@ import type { ContentRating } from "@/types";
 
 type BookDetailPageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; from?: string }>;
 };
 
 function browseBackHref(searchQuery: string): string {
   return searchQuery
     ? `/browse?q=${encodeURIComponent(searchQuery)}`
     : "/browse";
+}
+
+function detailBackHref(searchQuery: string, from?: string): {
+  href: string;
+  label: string;
+} {
+  if (from === "first-rating") {
+    return {
+      href: "/onboarding/first-rating",
+      label: "Back to First Mark",
+    };
+  }
+  return {
+    href: browseBackHref(searchQuery),
+    label: "Back to Results",
+  };
 }
 
 function TomeUnavailable({
@@ -133,8 +149,9 @@ export default async function BookDetailPage({
   searchParams,
 }: BookDetailPageProps) {
   const { id } = await params;
-  const { q } = await searchParams;
+  const { q, from } = await searchParams;
   const searchQuery = q?.trim() ?? "";
+  const fromFirstRating = from === "first-rating";
 
   let book = null;
   try {
@@ -167,7 +184,7 @@ export default async function BookDetailPage({
   ]);
 
   const { user, userPreferences, userRating } = viewer;
-  const backHref = browseBackHref(searchQuery);
+  const back = detailBackHref(searchQuery, from);
 
   return (
     <FantasyPageShell>
@@ -177,9 +194,9 @@ export default async function BookDetailPage({
         props={{ book_id: id, source: "detail" }}
       />
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
-        <Link href={backHref} className="preference-codex-box--nav relative mb-5">
+        <Link href={back.href} className="preference-codex-box--nav relative mb-5">
           <ArrowLeft className="h-4 w-4" />
-          <span className="relative z-[1] nav-dragon-gold">Back to Results</span>
+          <span className="relative z-[1] nav-dragon-gold">{back.label}</span>
         </Link>
 
         <div className="book-detail-tome relative">
@@ -209,6 +226,7 @@ export default async function BookDetailPage({
                     bookId={id}
                     isLoggedIn={!!user}
                     initialRatings={userRating}
+                    returnToFirstRating={fromFirstRating}
                   />
                 }
               />

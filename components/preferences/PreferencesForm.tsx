@@ -168,6 +168,8 @@ export function PreferencesForm({
       setSuccess(true);
       // Bust the App Router cache so leaving and returning shows DB values.
       router.refresh();
+      // After Preferences Codex save, guide readers to their first mark.
+      router.push("/onboarding/first-rating");
     } catch (submitError) {
       setError(
         submitError instanceof Error
