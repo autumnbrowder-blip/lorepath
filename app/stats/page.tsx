@@ -45,7 +45,7 @@ function StatTile({
   hint?: string;
 }) {
   return (
-    <div className="codex-inset px-4 py-4">
+    <div className="preference-codex-box--plaque relative">
       <p className="font-display text-[10px] uppercase tracking-[0.2em] nav-dragon-gold">
         {label}
       </p>
@@ -53,7 +53,7 @@ function StatTile({
         {value}
       </p>
       {hint ? (
-        <p className="mt-2 font-heading text-sm leading-snug text-[#e2c06a]/85">
+        <p className="mt-2 font-heading text-sm leading-snug nav-dragon-gold">
           {hint}
         </p>
       ) : null}
@@ -78,7 +78,7 @@ function CategoryBar({
 
   return (
     <div
-      className="codex-inset px-3 py-3"
+      className="preference-codex-box--plaque relative !px-3 !py-3"
       style={{ animationDelay: `${index * 45}ms` }}
     >
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -87,7 +87,7 @@ function CategoryBar({
             {label}
           </p>
           {blurb ? (
-            <p className="mt-1 font-heading text-sm leading-snug tracking-wide text-[#e2c06a]/85">
+            <p className="mt-1 font-heading text-sm leading-snug tracking-wide nav-dragon-gold">
               {blurb}
             </p>
           ) : null}
@@ -96,7 +96,7 @@ function CategoryBar({
           <span className="font-storybook text-xl font-bold tabular-nums leading-none nav-dragon-gold sm:text-2xl">
             {value.toFixed(1)}
           </span>
-          <span className="mt-0.5 font-heading text-xs nav-dragon-gold/80">
+          <span className="mt-0.5 font-heading text-xs nav-dragon-gold">
             out of 5
           </span>
         </span>
@@ -177,7 +177,9 @@ export default async function ReadingStatsPage() {
           </div>
         </header>
 
-        <div className="parchment-panel space-y-6 px-6 py-8 sm:px-8">
+        <div className="preference-codex-box relative !px-6 !py-8 sm:!px-8">
+          <CodexBoxOrnament />
+          <div className="relative z-[3] space-y-6">
           <div className="grid gap-3 sm:grid-cols-3">
             <StatTile
               label="Tomes rated"
@@ -211,10 +213,9 @@ export default async function ReadingStatsPage() {
 
           <section
             aria-labelledby="reading-stats-breakdown-heading"
-            className="preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start"
+            className="space-y-3"
           >
-            <CodexBoxOrnament />
-            <div className="relative z-[3] mb-3 flex items-center gap-2.5 px-0.5">
+            <div className="flex items-center gap-2.5 px-0.5">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
                 <BarChart3 className="h-4 w-4" />
               </div>
@@ -231,9 +232,9 @@ export default async function ReadingStatsPage() {
               </div>
             </div>
 
-            <div className="relative z-[3] px-0.5">
+            <div>
               {!hasRatings ? (
-                <div className="codex-inset mb-3 border-dashed px-3 py-2.5">
+                <div className="preference-codex-box--plaque relative border-dashed">
                   <p className="font-heading text-sm leading-snug nav-dragon-gold">
                     No ratings yet — browse the archives and inscribe your first
                     tome.
@@ -258,15 +259,22 @@ export default async function ReadingStatsPage() {
             </div>
           </section>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Link href="/rated" className="btn-secondary inline-flex items-center gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Link
+              href="/rated"
+              className="preference-codex-box--nav relative w-full min-h-[2.75rem] justify-center px-4 py-3 text-center"
+            >
               <BookOpen className="h-4 w-4" />
-              Your rated tomes
+              <span className="nav-dragon-gold">Your rated tomes</span>
             </Link>
-            <Link href="/browse" className="btn-secondary inline-flex items-center gap-2">
+            <Link
+              href="/browse"
+              className="preference-codex-box--nav relative w-full min-h-[2.75rem] justify-center px-4 py-3 text-center"
+            >
               <Sparkles className="h-4 w-4" />
-              Browse books
+              <span className="nav-dragon-gold">Browse books</span>
             </Link>
+          </div>
           </div>
         </div>
       </div>

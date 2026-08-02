@@ -1339,9 +1339,13 @@
     background-repeat: no-repeat;
   }
 
-  /* Compact codex box for back/nav links (matches Preference Codex framing) */
-  .preference-codex-box--nav {
-    @apply relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-sm border-2 border-gold-600/60 px-4 py-2.5 font-storybook text-xs font-medium uppercase tracking-[0.14em];
+  /*
+   * Shared emerald plaque chrome + antique-gold shimmer
+   * (--nav = compact actions; --plaque = content tiles with readable body type)
+   */
+  .preference-codex-box--nav,
+  .preference-codex-box--plaque {
+    @apply relative overflow-hidden rounded-sm border-2 border-gold-600/60;
     background: linear-gradient(
       155deg,
       #1f513d 0%,
@@ -1355,7 +1359,6 @@
       0 0 0 1px rgba(166, 124, 45, 0.28),
       inset 0 1px 0 rgba(255, 230, 150, 0.16),
       inset 0 -2px 5px rgba(0, 0, 0, 0.38);
-    /* Default label color matches navbar / btn-secondary gold */
     color: #f0d78a;
     -webkit-text-fill-color: #f0d78a;
     text-shadow:
@@ -1370,7 +1373,18 @@
       transform 0.2s ease;
   }
 
-  .preference-codex-box--nav::before {
+  .preference-codex-box--nav {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 font-storybook text-xs font-medium uppercase tracking-[0.14em];
+  }
+
+  .preference-codex-box--plaque {
+    @apply block px-4 py-4 text-left normal-case tracking-normal;
+    text-shadow: none;
+    -webkit-text-fill-color: unset;
+  }
+
+  .preference-codex-box--nav::before,
+  .preference-codex-box--plaque::before {
     content: "";
     pointer-events: none;
     position: absolute;
@@ -1381,8 +1395,8 @@
     transition: border-color 0.28s ease, box-shadow 0.28s ease;
   }
 
-  /* Soft antique-gold shimmer sweep */
-  .preference-codex-box--nav::after {
+  .preference-codex-box--nav::after,
+  .preference-codex-box--plaque::after {
     content: "";
     pointer-events: none;
     position: absolute;
@@ -1404,9 +1418,13 @@
       background-position 0.55s ease;
   }
 
-  .preference-codex-box--nav:hover {
+  .preference-codex-box--nav:hover,
+  .preference-codex-box--plaque:hover {
     border-color: rgba(179, 139, 77, 0.82);
     filter: brightness(1.05);
+  }
+
+  .preference-codex-box--nav:hover {
     color: #fff1c9;
     -webkit-text-fill-color: #fff1c9;
     text-shadow:
@@ -1415,17 +1433,20 @@
       0 0 14px rgba(232, 200, 100, 0.4);
   }
 
-  .preference-codex-box--nav:hover::before {
+  .preference-codex-box--nav:hover::before,
+  .preference-codex-box--plaque:hover::before {
     border-color: rgba(201, 162, 74, 0.48);
     box-shadow: inset 0 0 12px rgba(201, 162, 74, 0.12);
   }
 
-  .preference-codex-box--nav:hover::after {
+  .preference-codex-box--nav:hover::after,
+  .preference-codex-box--plaque:hover::after {
     opacity: 1;
     background-position: -30% 0;
   }
 
-  .preference-codex-box--nav:active {
+  .preference-codex-box--nav:active,
+  .preference-codex-box--plaque:active {
     transform: translateY(1px);
     filter: brightness(0.97);
     border-color: rgba(179, 139, 77, 0.9);
@@ -1437,7 +1458,8 @@
       inset 0 1px 0 rgba(255, 230, 150, 0.22);
   }
 
-  .preference-codex-box--nav:active::after {
+  .preference-codex-box--nav:active::after,
+  .preference-codex-box--plaque:active::after {
     opacity: 1;
     background: linear-gradient(
       180deg,
@@ -1449,36 +1471,42 @@
     transition: opacity 0.15s ease;
   }
 
-  .preference-codex-box--nav:active::before {
+  .preference-codex-box--nav:active::before,
+  .preference-codex-box--plaque:active::before {
     border-color: rgba(201, 162, 74, 0.55);
   }
 
   .preference-codex-box--nav:focus,
-  .preference-codex-box--nav:focus-visible {
+  .preference-codex-box--nav:focus-visible,
+  .preference-codex-box--plaque:focus,
+  .preference-codex-box--plaque:focus-visible {
     outline: none;
   }
 
-  .preference-codex-box--nav:focus-visible {
+  .preference-codex-box--nav:focus-visible,
+  .preference-codex-box--plaque:focus-visible {
     outline: 2px solid rgba(201, 162, 74, 0.7);
     outline-offset: 2px;
   }
 
-  /* Keep gold fill, but lighter type than body nav-dragon-gold (600) */
   .preference-codex-box--nav .nav-dragon-gold {
     font-weight: 500;
   }
 
-  .preference-codex-box--nav > * {
+  .preference-codex-box--nav > *,
+  .preference-codex-box--plaque > * {
     position: relative;
     z-index: 2;
   }
 
-  .preference-codex-box--nav svg {
+  .preference-codex-box--nav svg,
+  .preference-codex-box--plaque svg {
     color: inherit;
     stroke: currentColor;
   }
 
-  .dark .preference-codex-box--nav {
+  .dark .preference-codex-box--nav,
+  .dark .preference-codex-box--plaque {
     border-color: color-mix(in srgb, var(--accent) 55%, transparent);
     background: linear-gradient(
       155deg,

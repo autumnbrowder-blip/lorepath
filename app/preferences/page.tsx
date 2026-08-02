@@ -136,8 +136,13 @@ export default async function PreferencesPage() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-            <Link href="/import" className="btn-secondary">
-              Import books you&apos;ve read
+            <Link
+              href="/import"
+              className="preference-codex-box--nav relative min-h-[2.75rem] justify-center px-4 py-3 text-center"
+            >
+              <span className="nav-dragon-gold">
+                Import books you&apos;ve read
+              </span>
             </Link>
           </div>
         </header>
