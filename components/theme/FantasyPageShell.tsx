@@ -36,6 +36,7 @@ type FantasyPageShellProps = {
  * Ambient forest/gold library atmosphere for inner pages (navbar untouched).
  * Viewport-height shell + absolute backdrop layer: background never rescales
  * when content height changes; content scrolls in a separate layer.
+ * Inner image uses data-scroll-parallax for soft transform drift on scroll.
  */
 export function FantasyPageShell({
   children,
@@ -47,20 +48,22 @@ export function FantasyPageShell({
 
   return (
     <div
-      className={`fantasy-page-shell relative h-[calc(100vh-4.5rem)] min-h-[calc(100vh-4.5rem)] overflow-hidden ${backdrop.fallbackBg} ${className}`}
+      className={`fantasy-page-shell relative overflow-hidden ${backdrop.fallbackBg} ${className}`}
     >
       <div
         className="fantasy-page-shell-backdrop pointer-events-none absolute inset-0 overflow-hidden"
         aria-hidden="true"
       >
-        <Image
-          src={backdrop.src}
-          alt=""
-          fill
-          priority={priority}
-          sizes="100vw"
-          className={backdrop.objectClass}
-        />
+        <div className="scroll-parallax-layer" data-scroll-parallax="">
+          <Image
+            src={backdrop.src}
+            alt=""
+            fill
+            priority={priority}
+            sizes="100vw"
+            className={backdrop.objectClass}
+          />
+        </div>
         {/* Readable overlay — deep green + soft gold candlelight */}
         <div className={`absolute inset-0 ${backdrop.veil}`} />
         <div className={`absolute inset-0 ${backdrop.radial}`} />

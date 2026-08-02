@@ -97,17 +97,17 @@ export function BookInformation({
 
   return (
     <section aria-labelledby="book-info-heading" className="animate-fade-in-up">
-      <div className="border-b border-gold-600/30 px-6 py-4 sm:px-8">
+      <div className="border-b border-gold-600/30 px-4 py-3 sm:px-8 sm:py-4">
         <p
           id="book-info-heading"
-          className="font-storybook text-[13px] font-bold uppercase tracking-[0.28em] nav-dragon-gold"
+          className="font-storybook text-[12px] font-bold uppercase tracking-[0.24em] nav-dragon-gold sm:text-[13px] sm:tracking-[0.28em]"
         >
           Magical Tome
         </p>
       </div>
 
-      <div className="grid gap-6 p-5 sm:gap-8 sm:p-7 lg:grid-cols-[minmax(220px,280px)_1fr] lg:items-start lg:gap-10 lg:p-8">
-        <div className="mx-auto flex w-full max-w-[280px] flex-col gap-4 lg:mx-0">
+      <div className="grid gap-5 p-4 sm:gap-8 sm:p-7 lg:grid-cols-[minmax(220px,280px)_1fr] lg:items-start lg:gap-10 lg:p-8">
+        <div className="mx-auto flex w-full max-w-[240px] flex-col gap-3 sm:max-w-[280px] sm:gap-4 lg:mx-0">
           <div className="group relative">
             <div className="absolute -inset-3 rounded-[1.75rem] bg-gradient-to-br from-gold-500/20 via-transparent to-forest-500/10 opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100" />
             <div className="relative aspect-[2/3] overflow-hidden rounded-sm border-2 border-gold-600/55 bg-forest-100 shadow-lg ring-1 ring-forest-900/5 transition-transform duration-300 group-hover:-translate-y-1 dark:bg-forest-900 dark:ring-gold-500/10">
@@ -137,11 +137,11 @@ export function BookInformation({
         </div>
 
         <div className="flex min-w-0 flex-col">
-          <h1 className="metallic-emerald-book-title mb-4 font-storybook text-3xl font-bold tracking-[0.04em] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
+          <h1 className="metallic-emerald-book-title mb-3 font-storybook text-2xl font-bold tracking-[0.04em] sm:mb-4 sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
             {book.title}
           </h1>
 
-          <p className="metallic-emerald mb-4 font-heading text-lg font-semibold leading-relaxed">
+          <p className="metallic-emerald mb-3 font-heading text-base font-semibold leading-relaxed sm:mb-4 sm:text-lg">
             by{" "}
             <AuthorLinks
               authors={book.authors}
@@ -150,7 +150,7 @@ export function BookInformation({
           </p>
 
           {book.genres.length > 0 && (
-            <div className="mb-5 flex flex-wrap gap-2">
+            <div className="mb-4 flex flex-wrap gap-2 sm:mb-5">
               {book.genres.map((genre) => (
                 <GenreTag key={genre}>{genre}</GenreTag>
               ))}

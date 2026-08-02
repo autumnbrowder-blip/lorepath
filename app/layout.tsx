@@ -5,6 +5,7 @@ import { BackToTop } from "@/components/BackToTop";
 import { Navbar } from "@/components/Navbar";
 import { PageViewTracker } from "@/components/PageViewTracker";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { ScrollParallax } from "@/components/theme/ScrollParallax";
 import "./globals.css";
 
 const inter = Inter({
@@ -53,6 +54,7 @@ export default function RootLayout({
               <main className="flex-1">{children}</main>
             </div>
             <BackToTop />
+            <ScrollParallax />
           </AnalyticsProvider>
         </ThemeProvider>
       </body>

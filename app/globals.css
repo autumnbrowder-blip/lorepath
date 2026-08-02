@@ -237,6 +237,13 @@
   }
 
   /* Viewport shell — backdrop stays pinned while content scrolls */
+  .fantasy-page-shell {
+    height: calc(100vh - 4.5rem);
+    height: calc(100dvh - 4.5rem);
+    min-height: calc(100vh - 4.5rem);
+    min-height: calc(100dvh - 4.5rem);
+  }
+
   .fantasy-page-shell,
   .fantasy-page-shell-backdrop {
     transition: none;
@@ -245,6 +252,29 @@
   .fantasy-page-shell-backdrop img {
     object-fit: cover;
     object-position: center;
+    transition: none;
+  }
+
+  /*
+   * Soft scroll-parallax image layer — oversized bleed so translate3d never
+   * shows empty edges. Driven by ScrollParallax (transform only).
+   */
+  .scroll-parallax-layer {
+    position: absolute;
+    inset: -8%;
+    z-index: 0;
+    will-change: transform;
+    transform: translate3d(0, 0, 0) scale(1.08);
+    transform-origin: center center;
+    backface-visibility: hidden;
+    transition: none;
+  }
+
+  .scroll-parallax-layer img {
+    object-fit: cover;
+    object-position: center center;
+    width: 100%;
+    height: 100%;
     transition: none;
   }
 
@@ -1835,8 +1865,60 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
     animation: none;
   }
 
+  .scroll-parallax-layer {
+    inset: 0 !important;
+    transform: none !important;
+    will-change: auto;
+  }
+
   html {
     scroll-behavior: auto;
+  }
+}
+
+/*
+ * Mobile layout polish — tighter stacks, overflow safety, tap targets.
+ * Desktop styles above remain the baseline; these only refine small screens.
+ */
+@media (max-width: 639px) {
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    min-height: 2.75rem;
+  }
+
+  .preference-codex-box--nav {
+    min-height: 2.75rem;
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+  }
+
+  .page-title {
+    font-size: 1.75rem;
+    line-height: 1.2;
+  }
+
+  .portal-auth-shell {
+    padding: 1.5rem 1rem;
+  }
+
+  .portal-auth-parchment {
+    padding: 1.25rem;
+  }
+
+  .faq-tome .font-heading.text-lg,
+  .faq-page .font-heading.text-lg {
+    font-size: 1.05rem;
+    line-height: 1.55;
+  }
+
+  .book-detail-tome {
+    max-width: 100%;
   }
 }
 

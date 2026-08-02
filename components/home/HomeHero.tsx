@@ -21,14 +21,16 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
       <TrackOnMount event="view_home" />
       {/* Viewport-locked library — never rescales with layout/interaction */}
       <div className="home-hero-scene" aria-hidden="true">
-        <Image
-          src="/images/lorepath-library-hero.png"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="home-hero-scene-image"
-        />
+        <div className="scroll-parallax-layer" data-scroll-parallax="">
+          <Image
+            src="/images/lorepath-library-hero.png"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="home-hero-scene-image"
+          />
+        </div>
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,_rgba(7,14,10,0.1)_0%,_rgba(7,14,10,0.5)_55%,_rgba(4,8,6,0.9)_100%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#070e0a]/65 via-transparent to-[#070e0a]/92" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#070e0a]/40 via-transparent to-[#070e0a]/40" />
@@ -55,11 +57,11 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
         ))}
       </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-12">
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-12">
         <div className="flex flex-1 flex-col items-center justify-center text-center">
           <div className="animate-fade-in-up w-full">
             {/* Translucent antique-gold LorePath mark */}
-            <div className="relative mx-auto w-full max-w-[320px] sm:max-w-[420px] md:max-w-[500px] lg:max-w-[580px]">
+            <div className="relative mx-auto w-full max-w-[220px] sm:max-w-[360px] md:max-w-[500px] lg:max-w-[580px]">
               <div className="pointer-events-none absolute left-1/2 top-1/2 h-[125%] w-[125%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(212,175,55,0.28)_0%,_transparent_65%)] blur-3xl" />
               <Image
                 src="/images/lorepath-logo.png"
@@ -73,7 +75,7 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
 
             <p
               id="home-tagline"
-              className="nav-dragon-gold mx-auto mt-4 max-w-xl font-storybook text-xl leading-relaxed tracking-[0.06em] sm:mt-6 sm:text-2xl md:text-[1.75rem]"
+              className="nav-dragon-gold mx-auto mt-3 max-w-xl font-storybook text-lg leading-relaxed tracking-[0.06em] sm:mt-6 sm:text-2xl md:text-[1.75rem]"
             >
               Know before you turn the page
             </p>
@@ -81,13 +83,13 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
         </div>
 
         <div
-          className="animate-fade-in-up pb-4 pt-8 sm:pb-8"
+          className="animate-fade-in-up pb-3 pt-6 sm:pb-8 sm:pt-8"
           style={{ animationDelay: "120ms" }}
         >
-          <div className="flex flex-col items-center justify-center gap-4">
+          <div className="flex flex-col items-center justify-center gap-3 sm:gap-4">
             <Link
               href="/browse"
-              className="group relative inline-flex w-full max-w-xs items-center justify-center gap-2 overflow-hidden rounded-sm border border-gold-500/70 px-8 py-4 font-storybook text-xs font-normal uppercase tracking-[0.2em] text-forest-950 transition hover:-translate-y-1 sm:w-auto"
+              className="group relative inline-flex w-full max-w-xs min-h-[2.75rem] items-center justify-center gap-2 overflow-hidden rounded-sm border border-gold-500/70 px-8 py-3.5 font-storybook text-xs font-normal uppercase tracking-[0.2em] text-forest-950 transition hover:-translate-y-1 sm:w-auto sm:py-4"
               style={{
                 background:
                   "linear-gradient(180deg, #d0b67a 0%, #b38b4d 42%, #a67c2d 100%)",
@@ -108,7 +110,7 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
 
             <Link
               href={preferencesCtaHref}
-              className="btn-primary w-full max-w-md px-6 py-3.5 text-center normal-case tracking-[0.06em] sm:w-auto"
+              className="btn-primary w-full max-w-md min-h-[2.75rem] px-5 py-3 text-center normal-case tracking-[0.06em] sm:w-auto sm:px-6 sm:py-3.5"
             >
               <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
               Create your free account to set preferences

@@ -187,14 +187,16 @@ export default async function FaqPage() {
     <div className="faq-page">
       {/* Viewport-locked auditorium background — fixed; does not rescale with content */}
       <div className="faq-page-scene" aria-hidden="true">
-        <Image
-          src="/images/lorepath-faq-auditorium-amphitheater.png"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="faq-page-scene-image"
-        />
+        <div className="scroll-parallax-layer" data-scroll-parallax="">
+          <Image
+            src="/images/lorepath-faq-auditorium-amphitheater.png"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="faq-page-scene-image"
+          />
+        </div>
 
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_rgba(8,16,12,0.55)_0%,_rgba(8,16,12,0.22)_38%,_transparent_68%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#07120c]/40 via-transparent to-[#050a08]/72" />
@@ -204,31 +206,31 @@ export default async function FaqPage() {
         <div className="absolute left-[12%] top-[22%] h-40 w-40 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.22)_0%,_transparent_70%)] blur-2xl" />
         <div className="absolute right-[14%] top-[30%] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.8s]" />
 
-        <CornerFlourish className="absolute left-2 top-2 h-16 w-16 text-gold-500/55 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute right-2 top-2 h-16 w-16 rotate-90 text-gold-500/55 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute bottom-2 left-2 h-16 w-16 -rotate-90 text-gold-500/55 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute bottom-2 right-2 h-16 w-16 rotate-180 text-gold-500/55 sm:bottom-4 sm:right-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute left-2 top-2 h-12 w-12 text-gold-500/55 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute right-2 top-2 h-12 w-12 rotate-90 text-gold-500/55 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute bottom-2 left-2 h-12 w-12 -rotate-90 text-gold-500/55 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute bottom-2 right-2 h-12 w-12 rotate-180 text-gold-500/55 sm:bottom-4 sm:right-4 sm:h-20 sm:w-20" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-10 sm:px-6 sm:py-14">
-        <header className="mb-7 text-center">
-          <p className="mx-auto flex items-center justify-center gap-2 font-storybook text-xs font-bold uppercase tracking-[0.32em] nav-dragon-gold">
+      <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-7 sm:px-6 sm:py-14">
+        <header className="mb-5 text-center sm:mb-7">
+          <p className="mx-auto flex items-center justify-center gap-2 font-storybook text-[11px] font-bold uppercase tracking-[0.28em] nav-dragon-gold sm:text-xs sm:tracking-[0.32em]">
             <Sparkles className="h-3.5 w-3.5 text-[#f0d78a]" />
             From the Wizard&apos;s Desk
           </p>
-          <h1 className="mt-3 font-storybook text-4xl font-bold tracking-[0.06em] nav-dragon-gold sm:text-5xl">
+          <h1 className="mt-2.5 font-storybook text-3xl font-bold tracking-[0.05em] nav-dragon-gold sm:mt-3 sm:text-4xl md:text-5xl sm:tracking-[0.06em]">
             Frequently Asked Questions
           </h1>
         </header>
 
         <div className="book-detail-tome faq-tome relative shadow-[0_28px_70px_rgba(0,0,0,0.55)]">
           <div className="book-detail-tome-parchment faq-tome-parchment" aria-hidden="true" />
-          <CornerFlourish className="pointer-events-none absolute left-1 top-1 z-20 h-14 w-14 text-[#a67c2d]/70 sm:left-2 sm:top-2 sm:h-16 sm:w-16" />
-          <CornerFlourish className="pointer-events-none absolute right-1 top-1 z-20 h-14 w-14 rotate-90 text-[#a67c2d]/70 sm:right-2 sm:top-2 sm:h-16 sm:w-16" />
-          <CornerFlourish className="pointer-events-none absolute bottom-1 left-1 z-20 h-14 w-14 -rotate-90 text-[#a67c2d]/70 sm:bottom-2 sm:left-2 sm:h-16 sm:w-16" />
-          <CornerFlourish className="pointer-events-none absolute bottom-1 right-1 z-20 h-14 w-14 rotate-180 text-[#a67c2d]/70 sm:bottom-2 sm:right-2 sm:h-16 sm:w-16" />
+          <CornerFlourish className="pointer-events-none absolute left-1 top-1 z-20 h-12 w-12 text-[#a67c2d]/70 sm:left-2 sm:top-2 sm:h-16 sm:w-16" />
+          <CornerFlourish className="pointer-events-none absolute right-1 top-1 z-20 h-12 w-12 rotate-90 text-[#a67c2d]/70 sm:right-2 sm:top-2 sm:h-16 sm:w-16" />
+          <CornerFlourish className="pointer-events-none absolute bottom-1 left-1 z-20 h-12 w-12 -rotate-90 text-[#a67c2d]/70 sm:bottom-2 sm:left-2 sm:h-16 sm:w-16" />
+          <CornerFlourish className="pointer-events-none absolute bottom-1 right-1 z-20 h-12 w-12 rotate-180 text-[#a67c2d]/70 sm:bottom-2 sm:right-2 sm:h-16 sm:w-16" />
 
-          <div className="book-detail-tome-content relative z-[2] space-y-6 p-5 sm:p-8">
+          <div className="book-detail-tome-content relative z-[2] space-y-5 p-4 sm:space-y-6 sm:p-8">
             <SectionCard
               icon={ScrollText}
               eyebrow="Chapter 1 of 8 · The Path Begins"

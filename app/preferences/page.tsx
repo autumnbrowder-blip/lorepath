@@ -57,14 +57,16 @@ export default async function PreferencesPage() {
     <div className="preferences-page">
       {/* Viewport-locked parchment scene — does not rescale when sliders/notes expand */}
       <div className="preferences-page-scene" aria-hidden="true">
-        <Image
-          src="/images/lorepath-preferences-parchment.png"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="preferences-page-scene-image"
-        />
+        <div className="scroll-parallax-layer" data-scroll-parallax="">
+          <Image
+            src="/images/lorepath-preferences-parchment.png"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="preferences-page-scene-image"
+          />
+        </div>
         {/* Fiber grain + coffee stains */}
         <div
           className="absolute inset-0 opacity-[0.34] mix-blend-multiply"
@@ -86,13 +88,13 @@ export default async function PreferencesPage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_transparent_35%,_rgba(40,28,10,0.22)_72%,_rgba(20,14,6,0.48)_100%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#2a1c0a]/20 via-transparent to-[#1a1208]/35" />
 
-        <CornerFlourish className="absolute left-2 top-2 h-16 w-16 text-gold-600/45 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute right-2 top-2 h-16 w-16 rotate-90 text-gold-600/45 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute bottom-2 left-2 h-16 w-16 -rotate-90 text-gold-600/45 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute bottom-2 right-2 h-16 w-16 rotate-180 text-gold-600/45 sm:bottom-4 sm:right-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute left-2 top-2 h-12 w-12 text-gold-600/45 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute right-2 top-2 h-12 w-12 rotate-90 text-gold-600/45 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute bottom-2 left-2 h-12 w-12 -rotate-90 text-gold-600/45 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
+        <CornerFlourish className="absolute bottom-2 right-2 h-12 w-12 rotate-180 text-gold-600/45 sm:bottom-4 sm:right-4 sm:h-20 sm:w-20" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-2xl px-6 py-10 sm:py-14">
+      <div className="relative z-10 mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-14">
         <div
           className="pointer-events-none absolute -left-16 top-20 h-64 w-64 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(212,170,60,0.2)_0%,_transparent_70%)] blur-2xl"
           aria-hidden="true"
@@ -102,22 +104,22 @@ export default async function PreferencesPage() {
           aria-hidden="true"
         />
 
-        <Link href="/browse" className="preference-codex-box--nav relative mb-10">
+        <Link href="/browse" className="preference-codex-box--nav relative mb-6 sm:mb-10">
           <ArrowLeft className="h-4 w-4" />
           <span className="relative z-[1] nav-dragon-gold">Back to the Archives</span>
         </Link>
 
-        <header className="relative mb-10 text-center sm:mb-12 sm:text-left">
-          <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
+        <header className="relative mb-8 text-center sm:mb-12 sm:text-left">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
             <AvatarCrest
               avatarKey={avatarKey}
               variant="display"
-              className="h-40 w-40 sm:h-44 sm:w-44 md:h-48 md:w-48"
+              className="h-28 w-28 sm:h-40 sm:w-40 md:h-48 md:w-48"
               size={192}
               title={avatar.label}
             />
             <div className="min-w-0 sm:pt-1">
-              <h1 className="metallic-emerald-deep font-storybook text-4xl font-normal tracking-[0.06em] sm:text-5xl">
+              <h1 className="metallic-emerald-deep font-storybook text-3xl font-normal tracking-[0.05em] sm:text-4xl sm:tracking-[0.06em] md:text-5xl">
                 {displayName}&apos;s Preference Codex
               </h1>
               <div

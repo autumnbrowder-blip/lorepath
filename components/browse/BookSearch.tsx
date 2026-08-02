@@ -261,15 +261,15 @@ export function BookSearch({
         ))}
       </div>
 
-      <div className="relative flex min-h-[calc(100vh-4.5rem)] flex-col">
+      <div className="relative flex min-h-full flex-col">
         <div
-          className={`mx-auto flex w-full max-w-2xl flex-col items-center px-6 ${
+          className={`mx-auto flex w-full max-w-2xl flex-col items-center px-4 sm:px-6 ${
             hasSearched || loading
-              ? "pb-8 pt-14 sm:pt-16"
-              : "flex-1 justify-center pb-24 pt-10"
+              ? "pb-6 pt-8 sm:pb-8 sm:pt-16"
+              : "flex-1 justify-center pb-12 pt-6 sm:pb-24 sm:pt-10"
           }`}
         >
-          <p className="relative mb-7 max-w-xl text-center text-[1.05rem] leading-relaxed sm:mb-8 sm:text-xl md:text-[1.35rem]">
+          <p className="relative mb-5 max-w-xl px-1 text-center text-base leading-relaxed sm:mb-8 sm:text-xl md:text-[1.35rem]">
             <span
               aria-hidden="true"
               className="pointer-events-none absolute inset-x-0 top-[2px] select-none font-[family-name:var(--font-storybook)] tracking-[0.03em] text-[#1a1205]/80 blur-[0.4px]"
@@ -285,10 +285,10 @@ export function BookSearch({
 
           <form
             onSubmit={handleSearch}
-            className="parchment-plaque mx-auto w-full max-w-3xl px-5 py-3.5"
+            className="parchment-plaque mx-auto w-full max-w-3xl px-3 py-3 sm:px-5 sm:py-3.5"
           >
-            <div className="relative flex flex-col items-center gap-3 sm:flex-row">
-              <Search className="absolute left-6 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#a67c2d]" />
+            <div className="relative flex flex-col items-stretch gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+              <Search className="pointer-events-none absolute left-3.5 top-3.5 z-10 h-5 w-5 text-[#a67c2d] sm:left-6 sm:top-1/2 sm:-translate-y-1/2" />
 
               <input
                 type="search"
@@ -297,7 +297,7 @@ export function BookSearch({
                 // Search runs only on form submit — never on each keystroke
                 placeholder="Search by title, author, or ISBN..."
                 autoComplete="off"
-                className="flex-1 bg-transparent py-3 pl-14 pr-4 text-[17px] placeholder:text-[#4a2f0f] placeholder:opacity-75 focus:outline-none"
+                className="min-h-[2.75rem] flex-1 bg-transparent py-3 pl-11 pr-3 text-base placeholder:text-[#4a2f0f] placeholder:opacity-75 focus:outline-none sm:pl-14 sm:pr-4 sm:text-[17px]"
                 style={{
                   color: "#2f1f0f",
                   fontFamily: "var(--font-heading), Georgia, serif",
@@ -314,7 +314,7 @@ export function BookSearch({
               <button
                 type="submit"
                 disabled={loading || loadingMore || !query.trim()}
-                className="btn-primary px-8 py-3 text-sm tracking-[0.14em]"
+                className="btn-primary min-h-[2.75rem] w-full px-8 py-3 text-sm tracking-[0.14em] sm:w-auto"
               >
                 {loading ? (
                   <>
@@ -329,7 +329,7 @@ export function BookSearch({
           </form>
         </div>
 
-        <div className="mx-auto w-full max-w-5xl px-6 pb-16">
+        <div className="mx-auto w-full max-w-5xl px-4 pb-12 sm:px-6 sm:pb-16">
           {!hasSearched && !loading && (
             <BestsellersSection
               books={bestsellers}

@@ -91,28 +91,28 @@ export default async function ProfilePage() {
 
   return (
     <FantasyPageShell>
-      <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-        <Link href="/browse" className="preference-codex-box--nav relative mb-10">
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-16">
+        <Link href="/browse" className="preference-codex-box--nav relative mb-6 sm:mb-10">
           <ArrowLeft className="h-4 w-4" />
           <span className="relative z-[1] nav-dragon-gold">Back to the Archives</span>
         </Link>
 
-        <header className="mb-8 text-center sm:mb-10 sm:text-left">
+        <header className="mb-6 text-center sm:mb-10 sm:text-left">
           <h1 className="page-title nav-dragon-gold">Your Profile</h1>
-          <p className="mt-2 font-heading text-lg nav-dragon-gold">
+          <p className="mt-2 font-heading text-base nav-dragon-gold sm:text-lg">
             A quiet corner of the archives for your account.
           </p>
         </header>
 
-        <div className="preference-codex-box relative !px-6 !py-8 sm:!px-8">
+        <div className="preference-codex-box relative !px-4 !py-6 sm:!px-8 sm:!py-8">
           <CodexBoxOrnament />
-          <div className="relative z-[3] space-y-6">
-            <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
+          <div className="relative z-[3] space-y-5 sm:space-y-6">
+            <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
               <div className="flex shrink-0 flex-col items-center gap-2">
                 <AvatarCrest
                   avatarKey={avatarKey}
                   variant="display"
-                  className="h-40 w-40 sm:h-44 sm:w-44 md:h-48 md:w-48"
+                  className="h-28 w-28 sm:h-40 sm:w-40 md:h-48 md:w-48"
                   size={192}
                   title={avatar.label}
                 />
