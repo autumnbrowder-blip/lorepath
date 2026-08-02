@@ -28,7 +28,7 @@ function MatchScoreShell({ children }: { children: React.ReactNode }) {
           Match Score
         </h2>
       </div>
-      <div className="relative z-[3] flex flex-col gap-4 px-0.5">{children}</div>
+      <div className="relative z-[3] flex flex-col gap-3 px-0.5">{children}</div>
     </section>
   );
 }
@@ -83,9 +83,9 @@ export function MatchScore({
 
   return (
     <MatchScoreShell>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <MatchScorePercent score={score} size="compact" showLabel={false} />
-        <div className="min-w-0 space-y-2">
+        <div className="min-w-0 space-y-1.5">
           <span className={`match-score-badge ${style.badge}`}>
             <span className="match-score-badge-label">{label}</span>
           </span>
@@ -95,35 +95,21 @@ export function MatchScore({
         </div>
       </div>
 
-      <div className="space-y-2.5">
-        {breakdown.map((item, index) => (
-          <div
-            key={item.label}
-            className="codex-inset px-3 py-3"
-            style={{ animationDelay: `${index * 45}ms` }}
-          >
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-heading text-base font-semibold leading-snug nav-dragon-gold sm:text-lg">
-                  {item.label}
-                </p>
-              </div>
-              <span className="inline-flex shrink-0 flex-col items-end">
-                <span className="font-storybook text-xl font-bold tabular-nums leading-none nav-dragon-gold sm:text-2xl">
-                  {item.score}
-                  <span className="text-[0.55em]" aria-hidden="true">
-                    %
-                  </span>
-                </span>
-                <span className="mt-0.5 font-heading text-xs nav-dragon-gold/80">
-                  match
-                </span>
+      {/* Compact rows: thin gold fill tracks only (Marks of the Realm chrome, Match Score density) */}
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {breakdown.map((item) => (
+          <div key={item.label} className="min-w-0">
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="truncate font-heading text-[11px] leading-none nav-dragon-gold sm:text-xs">
+                {item.label}
+              </span>
+              <span className="shrink-0 font-heading text-[11px] font-bold tabular-nums leading-none nav-dragon-gold sm:text-xs">
+                {item.score}%
               </span>
             </div>
-            {/* Same track + gold fill as Marks of the Realm; width = category match % */}
-            <div className="h-2.5 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/70">
+            <div className="h-1.5 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/70">
               <div
-                className="h-full rounded-sm bg-gradient-to-r from-gold-700 via-gold-500 to-gold-300 transition-all duration-500"
+                className="h-full rounded-sm bg-gradient-to-r from-gold-700 via-gold-500 to-gold-300 transition-[width] duration-500"
                 style={{ width: `${item.score}%` }}
                 role="progressbar"
                 aria-valuenow={item.score}
