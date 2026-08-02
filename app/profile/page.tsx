@@ -2,6 +2,7 @@ import { LogoutButton } from "@/components/auth/LogoutButton";
 import { AvatarCrest } from "@/components/profile/AvatarCrest";
 import { AvatarPicker } from "@/components/profile/AvatarPicker";
 import { DisplayNameForm } from "@/components/profile/DisplayNameForm";
+import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import {
   DEFAULT_AVATAR_KEY,
@@ -103,70 +104,73 @@ export default async function ProfilePage() {
           </p>
         </header>
 
-        <div className="parchment-panel space-y-6 px-6 py-8 sm:px-8">
-          <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
-            <div className="flex shrink-0 flex-col items-center gap-2">
-              <AvatarCrest
-                avatarKey={avatarKey}
-                variant="display"
-                className="h-40 w-40 sm:h-44 sm:w-44 md:h-48 md:w-48"
-                size={192}
-                title={avatar.label}
-              />
-              <p className="font-storybook text-xs font-semibold uppercase tracking-[0.14em] nav-dragon-gold sm:text-[11px]">
-                {avatar.label}
-              </p>
-              {"clan" in avatar && avatar.clan ? (
-                <p className="font-display text-[9px] uppercase tracking-[0.18em] text-gold-600/90">
-                  {avatar.clan}
+        <div className="preference-codex-box relative !px-6 !py-8 sm:!px-8">
+          <CodexBoxOrnament />
+          <div className="relative z-[3] space-y-6">
+            <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
+              <div className="flex shrink-0 flex-col items-center gap-2">
+                <AvatarCrest
+                  avatarKey={avatarKey}
+                  variant="display"
+                  className="h-40 w-40 sm:h-44 sm:w-44 md:h-48 md:w-48"
+                  size={192}
+                  title={avatar.label}
+                />
+                <p className="font-storybook text-xs font-semibold uppercase tracking-[0.14em] nav-dragon-gold sm:text-[11px]">
+                  {avatar.label}
                 </p>
-              ) : null}
-            </div>
-            <div className="min-w-0 flex-1 space-y-4">
-              <DisplayNameForm
-                userId={user.id}
-                initialDisplayName={
-                  typeof displayNameRaw === "string" ? displayNameRaw : null
-                }
-              />
-              <div>
-                <p className="font-display text-[10px] uppercase tracking-[0.2em] nav-dragon-gold">
-                  Email
-                </p>
-                <p className="mt-1 break-all font-heading text-lg nav-dragon-gold">
-                  {email}
-                </p>
+                {"clan" in avatar && avatar.clan ? (
+                  <p className="font-display text-[9px] uppercase tracking-[0.18em] text-gold-600/90">
+                    {avatar.clan}
+                  </p>
+                ) : null}
+              </div>
+              <div className="min-w-0 flex-1 space-y-4">
+                <DisplayNameForm
+                  userId={user.id}
+                  initialDisplayName={
+                    typeof displayNameRaw === "string" ? displayNameRaw : null
+                  }
+                />
+                <div>
+                  <p className="font-display text-[10px] uppercase tracking-[0.2em] nav-dragon-gold">
+                    Email
+                  </p>
+                  <p className="mt-1 break-all font-heading text-lg nav-dragon-gold">
+                    {email}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div
-            className="h-px w-full bg-gradient-to-r from-transparent via-gold-600/50 to-transparent"
-            aria-hidden="true"
-          />
+            <div
+              className="h-px w-full bg-gradient-to-r from-transparent via-gold-600/50 to-transparent"
+              aria-hidden="true"
+            />
 
-          <AvatarPicker
-            userId={user.id}
-            initialAvatarKey={avatarKey}
-            avatarColumnUnavailable={avatarColumnUnavailable}
-          />
+            <AvatarPicker
+              userId={user.id}
+              initialAvatarKey={avatarKey}
+              avatarColumnUnavailable={avatarColumnUnavailable}
+            />
 
-          <div
-            className="h-px w-full bg-gradient-to-r from-transparent via-gold-600/50 to-transparent"
-            aria-hidden="true"
-          />
+            <div
+              className="h-px w-full bg-gradient-to-r from-transparent via-gold-600/50 to-transparent"
+              aria-hidden="true"
+            />
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Link href="/import" className="btn-primary">
-              Import reading list
-            </Link>
-            <Link href="/" className="btn-secondary">
-              Return home
-            </Link>
-            <Link href="/browse" className="btn-secondary">
-              Browse books
-            </Link>
-            <LogoutButton label="Logout" />
+            <div className="flex flex-wrap items-center gap-3">
+              <Link href="/browse" className="btn-primary">
+                Browse books
+              </Link>
+              <Link href="/import" className="btn-secondary">
+                Import Reading List
+              </Link>
+              <Link href="/" className="btn-secondary">
+                Return home
+              </Link>
+              <LogoutButton label="Logout" />
+            </div>
           </div>
         </div>
       </div>

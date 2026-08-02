@@ -285,18 +285,7 @@ export function BookSearch({
 
           <form
             onSubmit={handleSearch}
-            className="mx-auto w-full max-w-3xl"
-            style={{
-              backgroundImage: "url('/images/parchment.jpg')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              border: "3px solid #8c6b2e",
-              borderRadius: "6px",
-              boxShadow:
-                "0 6px 16px rgba(0,0,0,0.35), inset 0 0 40px rgba(139, 105, 20, 0.15)",
-              padding: "14px 20px",
-            }}
+            className="parchment-plaque mx-auto w-full max-w-3xl px-5 py-3.5"
           >
             <div className="relative flex flex-col items-center gap-3 sm:flex-row">
               <Search className="absolute left-6 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#a67c2d]" />
@@ -357,15 +346,7 @@ export function BookSearch({
 
           {loading ? (
             <div
-              className="mx-auto flex max-w-lg flex-col items-center justify-center px-6 py-12 text-center shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
-              style={{
-                backgroundImage: "url('/images/parchment.jpg')",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                backgroundRepeat: "no-repeat",
-                border: "2px solid #8c6b2e",
-                borderRadius: "6px",
-              }}
+              className="parchment-plaque mx-auto flex max-w-lg flex-col items-center justify-center px-6 py-12 text-center"
               aria-live="polite"
               aria-busy="true"
             >
@@ -378,17 +359,7 @@ export function BookSearch({
               </p>
             </div>
           ) : hasSearched && books.length === 0 && !error ? (
-            <div
-              className="mx-auto max-w-xl px-6 py-12 text-center shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
-              style={{
-                backgroundImage: "url('/images/parchment.jpg')",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                backgroundRepeat: "no-repeat",
-                border: "2px solid #8c6b2e",
-                borderRadius: "6px",
-              }}
-            >
+            <div className="parchment-plaque mx-auto max-w-xl px-6 py-12 text-center">
               <Search className="mx-auto mb-4 h-8 w-8 text-[#a67c2d]" />
               <p className="font-storybook text-xl font-semibold tracking-[0.06em] text-[#2f1f0f]">
                 No tomes on this shelf

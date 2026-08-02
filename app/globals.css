@@ -186,20 +186,49 @@
   }
 
   .dark .parchment-panel {
-    background-color: #152018;
-    border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+    /* Align with preference-codex emerald — no gray/slate surfaces */
+    background-color: #123229;
+    border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
     box-shadow:
-      0 16px 40px rgba(0, 0, 0, 0.35),
-      inset 0 1px 0 color-mix(in srgb, var(--accent) 15%, transparent);
+      0 16px 40px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(166, 124, 45, 0.22),
+      inset 0 1px 0 rgba(255, 230, 150, 0.14),
+      inset 0 -2px 8px rgba(0, 0, 0, 0.4);
   }
 
   .dark .parchment-panel::before {
     background-image: linear-gradient(
-      160deg,
-      #1a2418 0%,
-      #152018 45%,
-      #101810 100%
+      155deg,
+      #1c4a38 0%,
+      #163b2d 36%,
+      #102c23 72%,
+      #0b2019 100%
     );
+  }
+
+  /*
+   * Browse search / Import / onboarding forms — textured parchment plaque.
+   * Pair with dark ink (#2f1f0f) text; do not use nav-dragon-gold on this surface.
+   */
+  .parchment-plaque {
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    border: 3px solid #8c6b2e;
+    background-color: #e6d9b8;
+    background-image: url("/images/parchment.jpg");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    box-shadow:
+      0 6px 16px rgba(0, 0, 0, 0.35),
+      inset 0 0 40px rgba(139, 105, 20, 0.15);
+  }
+
+  /* Nested tiles inside codex / tome panels — translucent emerald glass */
+  .codex-inset {
+    @apply rounded-sm border border-gold-600/35 bg-[#184033]/50;
+    box-shadow: inset 0 1px 0 rgba(255, 230, 150, 0.08);
   }
 
   /* Book detail — darkened fantasy library bookshelves behind the tome */
@@ -542,18 +571,19 @@
   }
 
   .tome-card {
-    @apply relative flex flex-col overflow-hidden rounded-sm border border-gold-600/30 bg-surface-elevated transition-all duration-300;
+    @apply relative flex flex-col overflow-hidden rounded-sm border border-gold-600/40 transition-all duration-300;
+    background: linear-gradient(180deg, #123229 0%, #0c1f19 100%);
     box-shadow:
-      0 10px 28px rgba(8, 20, 14, 0.1),
-      inset 0 1px 0 color-mix(in srgb, var(--accent) 18%, transparent);
+      0 10px 28px rgba(8, 20, 14, 0.35),
+      inset 0 1px 0 rgba(255, 230, 150, 0.1);
   }
 
   .tome-card:hover {
-    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
     transform: translateY(-4px);
     box-shadow:
-      0 16px 36px rgba(8, 20, 14, 0.16),
-      0 0 24px rgba(166, 124, 45, 0.12);
+      0 16px 36px rgba(8, 20, 14, 0.4),
+      0 0 24px rgba(166, 124, 45, 0.14);
   }
 
   .input-field {
@@ -910,11 +940,18 @@
   }
 
   .ornate-panel {
-    @apply relative overflow-hidden rounded-sm border bg-surface-elevated;
-    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    @apply relative overflow-hidden rounded-sm border;
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: linear-gradient(
+      155deg,
+      #1f513d 0%,
+      #184033 34%,
+      #123229 68%,
+      #0c241c 100%
+    );
     box-shadow:
-      0 12px 32px rgba(8, 20, 14, 0.1),
-      inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+      0 12px 32px rgba(8, 20, 14, 0.35),
+      inset 0 1px 0 rgba(255, 230, 150, 0.12);
   }
 
   .ornate-panel::before {
@@ -922,7 +959,7 @@
     pointer-events: none;
     position: absolute;
     inset: 5px;
-    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    border: 1px solid rgba(179, 139, 77, 0.28);
     border-radius: 1px;
   }
 

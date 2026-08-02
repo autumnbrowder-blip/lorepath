@@ -99,7 +99,7 @@ export function MatchScore({
         {breakdown.map((item, index) => (
           <div
             key={item.label}
-            className="rounded-sm border border-gold-600/35 bg-forest-950/45 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)]"
+            className="codex-inset px-2.5 py-2"
             style={{ animationDelay: `${index * 40}ms` }}
           >
             <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">

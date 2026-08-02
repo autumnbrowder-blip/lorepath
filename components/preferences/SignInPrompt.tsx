@@ -14,9 +14,7 @@ export function SignInPrompt({
 }: SignInPromptProps) {
   return (
     <div
-      className={`rounded-sm border border-gold-600/40 bg-forest-950/55 ${
-        compact ? "p-5" : "p-6"
-      }`}
+      className={`codex-inset ${compact ? "p-5" : "p-6"}`}
     >
       <div className="mb-3 flex items-center gap-2">
         <Feather className="h-5 w-5 text-accent" />

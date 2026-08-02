@@ -267,7 +267,7 @@ export default async function FaqPage() {
                 {ratingScaleOverview.map(({ level, meaning }) => (
                   <li
                     key={level}
-                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
+                    className="flex items-start gap-3 codex-inset px-4 py-3"
                   >
                     <span className="inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-600 to-gold-500 px-1.5 font-storybook text-xs font-bold text-forest-950">
                       {level}
@@ -292,7 +292,7 @@ export default async function FaqPage() {
                 {ratingCategoryGuides.map((category) => (
                   <details
                     key={category.label}
-                    className="faq-rating-details rounded-sm border border-gold-600/40 bg-forest-950/45 open:border-gold-600/55 open:bg-forest-950/60"
+                    className="faq-rating-details codex-inset open:border-gold-600/55 open:bg-[#184033]/70"
                   >
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-heading text-lg font-semibold nav-dragon-gold outline-none marker:content-none [&::-webkit-details-marker]:hidden">
                       <span>{category.label}</span>
@@ -354,7 +354,7 @@ export default async function FaqPage() {
                 for every signed-in reader.
               </p>
 
-              <div className="rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3">
+              <div className="codex-inset px-4 py-3">
                 <p className="font-heading text-base leading-snug nav-dragon-gold">
                   Tip from the desk: set your preferences first, then open any
                   book — your Match Score appears at the top of the right-hand
@@ -393,7 +393,7 @@ export default async function FaqPage() {
                 its own.
               </p>
 
-              <div className="rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3">
+              <div className="codex-inset px-4 py-3">
                 <p className="font-heading text-base leading-snug nav-dragon-gold">
                   Tip from the desk: open{" "}
                   <Link
@@ -421,7 +421,7 @@ export default async function FaqPage() {
                 {betaFeatures.map((feature) => (
                   <li
                     key={feature}
-                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
+                    className="flex items-start gap-3 codex-inset px-4 py-3"
                   >
                     <Library className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                     <span className="font-heading text-lg leading-snug nav-dragon-gold">
@@ -445,7 +445,7 @@ export default async function FaqPage() {
                 {upcomingFeatures.map((feature) => (
                   <li
                     key={feature}
-                    className="flex items-start gap-3 rounded-sm border border-gold-600/30 bg-forest-950/45 px-4 py-3"
+                    className="flex items-start gap-3 codex-inset px-4 py-3"
                   >
                     <Compass className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                     <span className="font-heading text-lg leading-snug nav-dragon-gold">

@@ -25,7 +25,7 @@ export function RatingSlider({
 
   return (
     <div
-      className="rating-slider rounded-sm border border-gold-600/30 bg-forest-950/45 px-3 py-2.5"
+      className="rating-slider codex-inset px-3 py-2.5"
       style={{ animationDelay: `${index * 40}ms` }}
     >
       <div className="mb-2 flex items-start justify-between gap-3">

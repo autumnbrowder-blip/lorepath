@@ -134,6 +134,12 @@ export default async function PreferencesPage() {
               Beta, preferences and Match Score are free for every account.
             </p>
           </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+            <Link href="/import" className="btn-secondary">
+              Import books you&apos;ve read
+            </Link>
+          </div>
         </header>
 
         <div className="relative space-y-5">

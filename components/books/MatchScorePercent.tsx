@@ -28,7 +28,7 @@ export function MatchScorePercent({
     <div
       className={
         isCompact
-          ? `relative flex h-[5.75rem] w-[5.75rem] min-h-[5.75rem] min-w-[5.75rem] shrink-0 flex-col items-center justify-center rounded-sm border border-gold-600/35 bg-[#184033]/50 p-1.5 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)] sm:h-24 sm:w-24 sm:min-h-24 sm:min-w-24${
+          ? `codex-inset relative flex h-[5.75rem] w-[5.75rem] min-h-[5.75rem] min-w-[5.75rem] shrink-0 flex-col items-center justify-center p-1.5 sm:h-24 sm:w-24 sm:min-h-24 sm:min-w-24${
               className ? ` ${className}` : ""
             }`
           : `preference-codex-box relative mx-auto flex min-h-[8.5rem] w-full max-w-xs flex-col items-center justify-center${

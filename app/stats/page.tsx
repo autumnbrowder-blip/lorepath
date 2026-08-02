@@ -45,7 +45,7 @@ function StatTile({
   hint?: string;
 }) {
   return (
-    <div className="rounded-sm border border-gold-600/35 bg-forest-950/45 px-4 py-4">
+    <div className="codex-inset px-4 py-4">
       <p className="font-display text-[10px] uppercase tracking-[0.2em] nav-dragon-gold">
         {label}
       </p>
@@ -78,7 +78,7 @@ function CategoryBar({
 
   return (
     <div
-      className="rounded-sm border border-gold-600/35 bg-forest-950/45 px-3 py-3"
+      className="codex-inset px-3 py-3"
       style={{ animationDelay: `${index * 45}ms` }}
     >
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -233,7 +233,7 @@ export default async function ReadingStatsPage() {
 
             <div className="relative z-[3] px-0.5">
               {!hasRatings ? (
-                <div className="mb-3 rounded-sm border border-dashed border-gold-600/35 bg-forest-950/45 px-3 py-2.5">
+                <div className="codex-inset mb-3 border-dashed px-3 py-2.5">
                   <p className="font-heading text-sm leading-snug nav-dragon-gold">
                     No ratings yet — browse the archives and inscribe your first
                     tome.

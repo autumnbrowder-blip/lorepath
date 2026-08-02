@@ -23,24 +23,11 @@ import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
   type FormEvent,
 } from "react";
 
 const STORAGE_KEY = "lorepath.goodreads-import.v1";
 const INITIAL_VISIBLE = 50;
-
-/** Same parchment plaque as Browse search / first-rating forms. */
-const PARCHMENT_PLAQUE: CSSProperties = {
-  backgroundImage: "url('/images/parchment.jpg')",
-  backgroundSize: "cover",
-  backgroundPosition: "center",
-  backgroundRepeat: "no-repeat",
-  border: "3px solid #8c6b2e",
-  borderRadius: "6px",
-  boxShadow:
-    "0 6px 16px rgba(0,0,0,0.35), inset 0 0 40px rgba(139, 105, 20, 0.15)",
-};
 
 type ImportStats = {
   csvRows: number;
@@ -221,11 +208,10 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
 
   return (
     <div className="space-y-8">
-      {/* Main import plaque — parchment like Browse search */}
+      {/* Main import plaque — shared parchment-plaque */}
       <form
         onSubmit={handleSubmit}
-        className="relative overflow-hidden px-5 py-6 sm:px-7 sm:py-8"
-        style={PARCHMENT_PLAQUE}
+        className="parchment-plaque relative overflow-hidden px-5 py-6 sm:px-7 sm:py-8"
       >
         <div className="relative z-[1] space-y-6">
           <div className="text-center sm:text-left">
@@ -458,7 +444,7 @@ export function GoodreadsImport({ ratedSlugs }: GoodreadsImportProps) {
                 {unmatched.map((item, index) => (
                   <li
                     key={`${item.title}-${item.author}-${index}`}
-                    className="rounded-sm border border-gold-600/35 bg-[#184033]/50 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,230,150,0.08)]"
+                    className="codex-inset px-3 py-2.5"
                   >
                     <p className="font-storybook text-sm font-bold tracking-[0.04em] nav-dragon-gold">
                       {item.title}

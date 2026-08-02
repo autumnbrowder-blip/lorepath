@@ -59,20 +59,7 @@ function ProgressChecklist({
   ];
 
   return (
-    <ol
-      className="relative mt-6 space-y-2"
-      style={{
-        backgroundImage: "url('/images/parchment.jpg')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-        border: "3px solid #8c6b2e",
-        borderRadius: "6px",
-        boxShadow:
-          "0 6px 16px rgba(0,0,0,0.35), inset 0 0 40px rgba(139, 105, 20, 0.15)",
-        padding: "14px 16px",
-      }}
-    >
+    <ol className="parchment-plaque relative mt-6 space-y-2 px-4 py-3.5">
       <p className="mb-2.5 font-storybook text-xs font-bold tracking-[0.14em] text-[#2f1f0f]">
         Your path so far
       </p>
@@ -217,18 +204,7 @@ export function FirstRatingScreen({
     return (
       <FantasyPageShell variant="browse" priority>
         <div className="mx-auto flex w-full max-w-lg flex-col px-5 pb-16 pt-10 sm:pt-14">
-          <div
-            className="relative overflow-hidden rounded-sm px-5 py-8 text-center shadow-[0_18px_48px_rgba(0,0,0,0.4)] animate-fade-in-up sm:px-8 sm:py-10"
-            style={{
-              backgroundImage: "url('/images/parchment.jpg')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              border: "3px solid #8c6b2e",
-              boxShadow:
-                "0 6px 16px rgba(0,0,0,0.35), inset 0 0 40px rgba(139, 105, 20, 0.22), 0 0 28px rgba(212, 175, 55, 0.18)",
-            }}
-          >
+          <div className="parchment-plaque relative overflow-hidden px-5 py-8 text-center animate-fade-in-up sm:px-8 sm:py-10">
             <div
               className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#d4af37]/70 to-transparent"
               aria-hidden="true"
@@ -328,18 +304,7 @@ export function FirstRatingScreen({
 
         <form
           onSubmit={handleSearch}
-          className="mt-6 w-full"
-          style={{
-            backgroundImage: "url('/images/parchment.jpg')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-            border: "3px solid #8c6b2e",
-            borderRadius: "6px",
-            boxShadow:
-              "0 6px 16px rgba(0,0,0,0.35), inset 0 0 40px rgba(139, 105, 20, 0.15)",
-            padding: "14px 16px",
-          }}
+          className="parchment-plaque mt-6 w-full px-4 py-3.5"
         >
           <div className="relative flex flex-col gap-3">
             <div className="relative">

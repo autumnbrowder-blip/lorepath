@@ -53,7 +53,7 @@ function RatingBar({
 
   return (
     <div
-      className="rounded-sm border border-gold-600/35 bg-forest-950/45 px-3 py-3"
+      className="codex-inset px-3 py-3"
       style={{ animationDelay: `${index * 45}ms` }}
     >
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -123,7 +123,7 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
 
       <div className="relative z-[3] px-0.5">
         {!hasRatings && (
-          <div className="mb-3 rounded-sm border border-dashed border-gold-600/35 bg-forest-950/45 px-3 py-2.5">
+          <div className="mb-3 codex-inset border-dashed px-3 py-2.5">
             <p className="font-heading text-sm leading-snug nav-dragon-gold">
               No ratings yet — be the first to mark this tome.
             </p>
