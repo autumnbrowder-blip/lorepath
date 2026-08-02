@@ -47,7 +47,7 @@ function ProgressChecklist({
 }) {
   const steps: { label: string; done: boolean }[] = [
     { label: "Create account", done: true },
-    { label: "Set Preferences Codex", done: true },
+    { label: "Set Preference Codex", done: true },
     { label: "Rate your first book", done: hasRated },
     { label: "See your first Match Score", done: hasSeenMatch },
   ];
@@ -67,13 +67,13 @@ function ProgressChecklist({
         padding: "14px 16px",
       }}
     >
-      <p className="mb-2 font-storybook text-[11px] font-semibold tracking-[0.14em] text-[#5c3f0f]">
+      <p className="mb-2.5 font-storybook text-xs font-bold tracking-[0.14em] text-[#2f1f0f]">
         Your path so far
       </p>
       {steps.map((step) => (
         <li
           key={step.label}
-          className="flex items-center gap-2.5 font-heading text-sm text-[#2f1f0f]"
+          className="flex items-center gap-2.5 font-heading text-[15px] font-semibold text-[#1f1409]"
         >
           {step.done ? (
             <Check
@@ -82,11 +82,11 @@ function ProgressChecklist({
             />
           ) : (
             <Circle
-              className="h-3.5 w-3.5 shrink-0 text-[#8c6b2e]/60"
+              className="h-3.5 w-3.5 shrink-0 text-[#8c6b2e]/70"
               aria-hidden="true"
             />
           )}
-          <span className={step.done ? "" : "text-[#3f2a1e]/80"}>
+          <span className={step.done ? "" : "text-[#3f2a1e]"}>
             {step.label}
           </span>
           <span className="sr-only">{step.done ? "complete" : "not yet"}</span>
