@@ -487,25 +487,17 @@ function StepRow({
   detail: string;
 }) {
   return (
-    <li className="codex-inset flex gap-3 px-3 py-3 sm:px-3.5">
-      <span
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-gold-500/70 bg-gradient-to-b from-gold-400 via-gold-500 to-gold-700 font-storybook text-base font-bold tabular-nums leading-none text-forest-950 shadow-[0_2px_8px_rgba(8,20,14,0.35),inset_0_1px_0_rgba(255,245,210,0.45)] sm:h-10 sm:w-10 sm:text-lg"
-        aria-hidden="true"
-      >
-        {number}
-      </span>
-      <div className="min-w-0 pt-0.5">
-        <p className="font-storybook text-sm font-bold tracking-[0.06em] nav-dragon-gold sm:text-[15px]">
-          Step{" "}
-          <span className="antique-gold-text text-base font-bold tabular-nums sm:text-lg">
-            {number}
-          </span>
-          : {title}
-        </p>
-        <p className="mt-0.5 font-heading text-sm leading-snug nav-dragon-gold/90">
-          {detail}
-        </p>
-      </div>
+    <li className="codex-inset px-3.5 py-3 sm:px-4">
+      <p className="font-storybook text-sm font-bold tracking-[0.06em] nav-dragon-gold sm:text-[15px]">
+        Step{" "}
+        <span className="antique-gold-text text-base font-bold tabular-nums sm:text-lg">
+          {number}
+        </span>
+        : {title}
+      </p>
+      <p className="mt-1 font-heading text-sm leading-snug nav-dragon-gold/90">
+        {detail}
+      </p>
     </li>
   );
 }
