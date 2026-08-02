@@ -1,6 +1,7 @@
 "use client";
 
 import { BookCover } from "@/components/books/BookCover";
+import { MatchScorePercent } from "@/components/books/MatchScorePercent";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { rankSearchResults } from "@/lib/book-utils";
@@ -228,23 +229,18 @@ export function FirstRatingScreen({
               </p>
             )}
 
-            {matchScore != null ? (
-              <div className="mx-auto mt-6 max-w-xs rounded-sm border border-[#8c6b2e]/55 bg-[#2f1f0f]/08 px-4 py-3">
-                <p className="font-storybook text-xs font-semibold tracking-[0.14em] text-[#5c3f0f]">
-                  Match Score
+            <div className="mx-auto mt-6 flex min-h-[8.5rem] w-full max-w-xs items-center justify-center">
+              {matchScore != null ? (
+                <MatchScorePercent
+                  score={matchScore}
+                  caption="How this tome aligns with your Preference Codex."
+                />
+              ) : (
+                <p className="font-heading text-[15px] font-medium leading-relaxed text-[#2a1a0c]">
+                  Match Scores grow sharper as more marks are left on each tome.
                 </p>
-                <p className="mt-1 font-storybook text-3xl font-bold tabular-nums text-[#2f1f0f]">
-                  {matchScore}%
-                </p>
-                <p className="mt-1 font-heading text-[15px] font-medium text-[#2a1a0c]">
-                  How this tome aligns with your Preference Codex.
-                </p>
-              </div>
-            ) : (
-              <p className="mt-5 font-heading text-[15px] font-medium leading-relaxed text-[#2a1a0c]">
-                Match Scores grow sharper as more marks are left on each tome.
-              </p>
-            )}
+              )}
+            </div>
 
             <div className="mt-8 flex flex-col items-stretch gap-3 sm:items-center">
               <button

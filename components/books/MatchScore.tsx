@@ -7,6 +7,7 @@ import type { CommunityRatingsSummary } from "@/lib/ratings";
 import type { ContentRating } from "@/types";
 import { Target } from "lucide-react";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
+import { MatchScorePercent } from "@/components/books/MatchScorePercent";
 import { SignInPrompt } from "@/components/preferences/SignInPrompt";
 
 type MatchScoreProps = {
@@ -14,57 +15,6 @@ type MatchScoreProps = {
   communityRatings: CommunityRatingsSummary;
   userPreferences: ContentRating | null;
 };
-
-function ScoreRing({
-  score,
-  ringClass,
-  textClass,
-}: {
-  score: number;
-  ringClass: string;
-  textClass: string;
-}) {
-  const radius = 34;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-
-  return (
-    <div className="relative flex h-[92px] w-[92px] shrink-0 items-center justify-center">
-      <svg
-        className="-rotate-90"
-        width="92"
-        height="92"
-        viewBox="0 0 92 92"
-        aria-hidden="true"
-      >
-        <circle
-          cx="46"
-          cy="46"
-          r={radius}
-          fill="none"
-          strokeWidth="7"
-          className="stroke-forest-950/70"
-        />
-        <circle
-          cx="46"
-          cy="46"
-          r={radius}
-          fill="none"
-          strokeWidth="7"
-          strokeLinecap="round"
-          className={`${ringClass} transition-all duration-700`}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-        />
-      </svg>
-      <span
-        className={`absolute font-storybook text-xl font-bold leading-none tracking-tight tabular-nums sm:text-2xl ${textClass}`}
-      >
-        {score}%
-      </span>
-    </div>
-  );
-}
 
 function MatchScoreShell({ children }: { children: React.ReactNode }) {
   return (
@@ -134,11 +84,7 @@ export function MatchScore({
   return (
     <MatchScoreShell>
       <div className="flex items-center gap-4">
-        <ScoreRing
-          score={score}
-          ringClass={style.ring}
-          textClass={style.text}
-        />
+        <MatchScorePercent score={score} size="compact" showLabel={false} />
         <div className="min-w-0 space-y-2">
           <span className={`match-score-badge ${style.badge}`}>
             <span className="match-score-badge-label">{label}</span>
