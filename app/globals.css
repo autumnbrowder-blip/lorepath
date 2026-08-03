@@ -68,6 +68,8 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    overflow-x: clip;
+    max-width: 100%;
     /* Golden quill — tip hotspot at 2,1 (nib tip near top-left of 48×48 asset) */
     cursor: url("/cursors/golden-quill.png") 2 1, auto;
   }
@@ -79,6 +81,10 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: clip;
+    max-width: 100%;
+    min-height: 100%;
+    min-height: 100dvh;
     background-image:
       radial-gradient(ellipse at 15% 0%, var(--vine) 0%, transparent 48%),
       radial-gradient(ellipse at 85% 100%, var(--glow) 0%, transparent 50%);
@@ -238,10 +244,14 @@
 
   /* Viewport shell — backdrop stays pinned while content scrolls */
   .fantasy-page-shell {
-    height: calc(100vh - 4.5rem);
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    height: calc(100svh - 4.5rem);
     height: calc(100dvh - 4.5rem);
-    min-height: calc(100vh - 4.5rem);
+    min-height: calc(100svh - 4.5rem);
     min-height: calc(100dvh - 4.5rem);
+    max-height: calc(100dvh - 4.5rem);
   }
 
   .fantasy-page-shell,
@@ -249,33 +259,53 @@
     transition: none;
   }
 
+  .fantasy-page-shell-backdrop {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
   .fantasy-page-shell-backdrop img {
     object-fit: cover;
-    object-position: center;
+    object-position: center center;
     transition: none;
   }
 
   /*
-   * Soft scroll-parallax image layer — oversized bleed so translate3d never
-   * shows empty edges. Driven by ScrollParallax (transform only).
+   * Full-bleed scene image layer — always covers the parent (object-fit: cover).
+   * Optional desktop micro-drift via ScrollParallax; mobile/reduced-motion stay static.
    */
   .scroll-parallax-layer {
     position: absolute;
-    inset: -8%;
+    inset: 0;
     z-index: 0;
-    will-change: transform;
-    transform: translate3d(0, 0, 0) scale(1.08);
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    transform: translateZ(0);
     transform-origin: center center;
     backface-visibility: hidden;
     transition: none;
   }
 
-  .scroll-parallax-layer img {
-    object-fit: cover;
-    object-position: center center;
-    width: 100%;
-    height: 100%;
+  .scroll-parallax-layer img,
+  .scroll-parallax-layer > span {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    object-fit: cover !important;
+    object-position: center center !important;
     transition: none;
+  }
+
+  /* Mobile / tablet: lock static cover — no transform drift, no edge gaps */
+  @media (max-width: 1023px) {
+    .scroll-parallax-layer {
+      transform: none !important;
+      will-change: auto !important;
+    }
   }
 
   /* Magical parchment tome — texture on absolute layer (not content box) */
@@ -356,9 +386,12 @@
   .faq-page {
     position: relative;
     isolation: isolate;
-    min-height: calc(100vh - 4.5rem);
+    min-height: calc(100svh - 4.5rem);
+    min-height: calc(100dvh - 4.5rem);
     background-color: #07120c;
     overflow-x: clip;
+    width: 100%;
+    max-width: 100%;
   }
 
   /* Keep gold clip text clean — no utility filters reintroducing white boxes */
@@ -375,8 +408,11 @@
     inset: 0;
     z-index: 0;
     width: 100%;
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
+    min-width: 100%;
+    min-height: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
     overflow: hidden;
     transform: none;
     background-color: #07120c;
@@ -421,8 +457,11 @@
   .home-hero-page {
     position: relative;
     isolation: isolate;
-    min-height: calc(100vh - 4.5rem);
+    min-height: calc(100svh - 4.5rem);
+    min-height: calc(100dvh - 4.5rem);
     overflow-x: clip;
+    width: 100%;
+    max-width: 100%;
   }
 
   .portal-auth-page {
@@ -448,8 +487,11 @@
     inset: 0;
     z-index: 0;
     width: 100%;
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
+    min-width: 100%;
+    min-height: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
     overflow: hidden;
     transform: none;
     transition: none;
@@ -498,7 +540,8 @@
     display: flex;
     flex: 1 1 auto;
     width: 100%;
-    min-height: calc(100vh - 4.5rem);
+    min-height: calc(100svh - 4.5rem);
+    min-height: calc(100dvh - 4.5rem);
     align-items: center;
     justify-content: center;
     padding: 3rem 1.5rem;
@@ -1867,8 +1910,10 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
 
   .scroll-parallax-layer {
     inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
     transform: none !important;
-    will-change: auto;
+    will-change: auto !important;
   }
 
   html {

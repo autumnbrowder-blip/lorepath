@@ -36,7 +36,8 @@ type FantasyPageShellProps = {
  * Ambient forest/gold library atmosphere for inner pages (navbar untouched).
  * Viewport-height shell + absolute backdrop layer: background never rescales
  * when content height changes; content scrolls in a separate layer.
- * Inner image uses data-scroll-parallax for soft transform drift on scroll.
+ * Inner pages: viewport-height shell + absolute full-bleed backdrop (object-cover).
+ * Soft desktop-only micro-drift via data-scroll-parallax; mobile stays static.
  */
 export function FantasyPageShell({
   children,

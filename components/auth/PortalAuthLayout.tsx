@@ -11,15 +11,16 @@ export function PortalAuthLayout({ children }: { children: React.ReactNode }) {
     <div className="portal-auth-page">
       {/* Viewport-locked portal — size locked to viewport, not form height */}
       <div className="portal-auth-scene" aria-hidden="true">
-        <Image
-          src="/images/lorepath-login-portal.jpg"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="portal-auth-scene-image"
-        />
-
+        <div className="scroll-parallax-layer">
+          <Image
+            src="/images/lorepath-login-portal.jpg"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="portal-auth-scene-image"
+          />
+        </div>
         <div className="absolute inset-0 bg-[#070e0a]/35" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,_rgba(166,124,45,0.2)_0%,_transparent_55%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_100%,_rgba(7,14,10,0.55)_0%,_transparent_55%)]" />

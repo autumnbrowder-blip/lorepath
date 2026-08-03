@@ -6,11 +6,11 @@ import { useEffect } from "react";
 const SHELL_SCROLL_SELECTOR = ".fantasy-page-shell-scroll";
 const LAYER_SELECTOR = "[data-scroll-parallax]";
 
-/** Soft storybook drift — keep well under typical viewport height. */
-const MAX_SHIFT_PX = 48;
-const SCROLL_FACTOR = 0.09;
-const SWAY_AMPLITUDE = 5;
-const SWAY_PERIOD = 900;
+/** Desktop-only: tiny vertical drift. Mobile stays static (CSS + JS). */
+const DESKTOP_MIN_WIDTH = 1024;
+const MAX_SHIFT_PX = 14;
+const SCROLL_FACTOR = 0.022;
+const LERP = 0.12;
 
 function getShellScrollEl(): HTMLElement | null {
   return document.querySelector<HTMLElement>(SHELL_SCROLL_SELECTOR);
@@ -26,43 +26,84 @@ function currentScrollY(): number {
   );
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function isDesktopMotionAllowed(): boolean {
+  return (
+    window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`).matches &&
+    !prefersReducedMotion()
+  );
+}
+
 /**
- * Subtle transform-based background drift on scroll.
- * Tracks both window scroll (Home/FAQ/Preferences) and FantasyPageShell’s
- * inner scroller. Disabled when prefers-reduced-motion is set.
+ * Near-static backgrounds by default. On desktop only, a tiny smoothed
+ * vertical translate (capped) — no horizontal sway. Mobile + reduced-motion
+ * stay fully static for coverage and comfort.
  */
 export function ScrollParallax() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let attachedShell: HTMLElement | null = null;
     let frame = 0;
+    let currentShift = 0;
+    let targetShift = 0;
+    let ticking = false;
 
     const clearLayers = () => {
+      currentShift = 0;
+      targetShift = 0;
       document.querySelectorAll<HTMLElement>(LAYER_SELECTOR).forEach((el) => {
         el.style.transform = "";
+        el.style.willChange = "";
       });
     };
 
-    const apply = () => {
-      if (reduceMotion.matches) {
+    const paint = () => {
+      ticking = false;
+      if (!isDesktopMotionAllowed()) {
         clearLayers();
         return;
       }
 
-      const y = currentScrollY();
-      const shift = Math.min(MAX_SHIFT_PX, y * SCROLL_FACTOR);
-      const sway = Math.sin(y / SWAY_PERIOD) * SWAY_AMPLITUDE;
+      currentShift += (targetShift - currentShift) * LERP;
+      if (Math.abs(targetShift - currentShift) < 0.05) {
+        currentShift = targetShift;
+      }
 
+      const y = currentShift.toFixed(2);
       document.querySelectorAll<HTMLElement>(LAYER_SELECTOR).forEach((el) => {
-        el.style.transform = `translate3d(${sway.toFixed(2)}px, ${shift.toFixed(2)}px, 0) scale(1.08)`;
+        el.style.willChange = "transform";
+        /* Modest scale bleed so a few px of translate never shows edges */
+        el.style.transform = `translate3d(0, ${y}px, 0) scale(1.04)`;
       });
+
+      if (Math.abs(targetShift - currentShift) >= 0.05) {
+        ticking = true;
+        frame = requestAnimationFrame(paint);
+      } else {
+        document.querySelectorAll<HTMLElement>(LAYER_SELECTOR).forEach((el) => {
+          el.style.willChange = "auto";
+        });
+      }
+    };
+
+    const updateTarget = () => {
+      if (!isDesktopMotionAllowed()) {
+        clearLayers();
+        return;
+      }
+      targetShift = Math.min(MAX_SHIFT_PX, currentScrollY() * SCROLL_FACTOR);
+      if (!ticking) {
+        ticking = true;
+        frame = requestAnimationFrame(paint);
+      }
     };
 
     const onScroll = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(apply);
+      updateTarget();
     };
 
     const syncShellListener = () => {
@@ -71,11 +112,11 @@ export function ScrollParallax() {
       attachedShell?.removeEventListener("scroll", onScroll);
       attachedShell = next;
       attachedShell?.addEventListener("scroll", onScroll, { passive: true });
-      apply();
+      updateTarget();
     };
 
-    const onReduceChange = () => {
-      apply();
+    const onViewportChange = () => {
+      updateTarget();
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -83,13 +124,18 @@ export function ScrollParallax() {
       passive: true,
       capture: true,
     });
-    reduceMotion.addEventListener("change", onReduceChange);
+    window.addEventListener("resize", onViewportChange, { passive: true });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const desktopMq = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`);
+    reduceMotion.addEventListener("change", onViewportChange);
+    desktopMq.addEventListener("change", onViewportChange);
+
     syncShellListener();
-    apply();
+    updateTarget();
 
     const observer = new MutationObserver(() => {
       syncShellListener();
-      apply();
+      updateTarget();
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
@@ -97,8 +143,10 @@ export function ScrollParallax() {
       cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onScroll);
       document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("resize", onViewportChange);
       attachedShell?.removeEventListener("scroll", onScroll);
-      reduceMotion.removeEventListener("change", onReduceChange);
+      reduceMotion.removeEventListener("change", onViewportChange);
+      desktopMq.removeEventListener("change", onViewportChange);
       observer.disconnect();
       clearLayers();
     };

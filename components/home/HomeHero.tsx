@@ -16,7 +16,7 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
   return (
     <section
       aria-labelledby="home-tagline"
-      className="home-hero-page relative flex min-h-[calc(100vh-4.5rem)] flex-col overflow-hidden bg-[#070e0a]"
+      className="home-hero-page relative flex min-h-[calc(100svh-4.5rem)] min-h-[calc(100dvh-4.5rem)] flex-col overflow-hidden bg-[#070e0a]"
     >
       <TrackOnMount event="view_home" />
       {/* Viewport-locked library — never rescales with layout/interaction */}

@@ -49,9 +49,11 @@ export default function RootLayout({
         <ThemeProvider>
           <AnalyticsProvider>
             <PageViewTracker />
-            <div className="flex min-h-screen flex-col">
+            <div className="flex min-h-dvh min-h-screen flex-col overflow-x-clip">
               <Navbar />
-              <main className="flex-1">{children}</main>
+              <main className="relative flex min-h-0 w-full max-w-full flex-1 flex-col">
+                {children}
+              </main>
             </div>
             <BackToTop />
             <ScrollParallax />
