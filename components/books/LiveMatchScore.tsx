@@ -3,6 +3,7 @@
 import { MatchScore } from "@/components/books/MatchScore";
 import { useBookRatings } from "@/components/books/BookRatingsContext";
 import type { ContentRating } from "@/types";
+import { usePathname } from "next/navigation";
 
 type LiveMatchScoreProps = {
   isLoggedIn: boolean;
@@ -15,12 +16,14 @@ export function LiveMatchScore({
   userPreferences,
 }: LiveMatchScoreProps) {
   const { communityRatings } = useBookRatings();
+  const pathname = usePathname();
 
   return (
     <MatchScore
       isLoggedIn={isLoggedIn}
       communityRatings={communityRatings}
       userPreferences={userPreferences}
+      redirectTo={pathname || undefined}
     />
   );
 }

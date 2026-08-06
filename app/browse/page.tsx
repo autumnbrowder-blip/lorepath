@@ -1,6 +1,8 @@
 import { BookSearch } from "@/components/browse/BookSearch";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { fetchNytBestsellers } from "@/lib/nyt-books";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
 
 type BrowsePageProps = {
   searchParams: Promise<{ q?: string; mode?: string }>;
@@ -10,6 +12,19 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   const { q, mode } = await searchParams;
   const initialMode = isGenreSearchMode(mode) ? "genre" : "text";
   const hasQuery = Boolean(q?.trim());
+
+  let isLoggedIn = false;
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      isLoggedIn = !!user;
+    } catch {
+      isLoggedIn = false;
+    }
+  }
 
   // Fail softly — never let NYT errors take down Browse / search.
   // Skip NYT work when the user already has a search query (results hide bestsellers).
@@ -35,6 +50,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
       initialMode={initialMode}
       bestsellers={bestsellers.books}
       bestsellersError={bestsellers.error ?? null}
+      isLoggedIn={isLoggedIn}
     />
   );
 }

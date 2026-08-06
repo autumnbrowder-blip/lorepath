@@ -2,6 +2,7 @@
 
 import { useBookRatingsOptional } from "@/components/books/BookRatingsContext";
 import { RatingSlider } from "@/components/books/RatingSlider";
+import { SignupPrompt } from "@/components/auth/SignupPrompt";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import {
   DEFAULT_RATINGS,
@@ -14,12 +15,10 @@ import type { ContentRating } from "@/types";
 import {
   AlertCircle,
   CheckCircle2,
-  Feather,
   Loader2,
   PenLine,
   Send,
 } from "lucide-react";
-import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -76,8 +75,7 @@ export function RatingForm({
   const router = useRouter();
   const pathname = usePathname();
   const ratingsCtx = useBookRatingsOptional();
-  const registerHref = `/register?redirect=${encodeURIComponent(pathname || `/books/${bookId}`)}`;
-  const loginHref = `/login?redirect=${encodeURIComponent(pathname || `/books/${bookId}`)}`;
+  const redirectTo = pathname || `/books/${bookId}`;
   const [ratings, setRatings] = useState<ContentRating>(
     initialRatings ?? DEFAULT_RATINGS
   );
@@ -310,39 +308,7 @@ export function RatingForm({
 
         <div className="flex min-h-0 flex-1 flex-col px-0.5">
           {!isLoggedIn ? (
-            <div className="relative overflow-hidden rounded-sm border border-gold-600/50 bg-gradient-to-b from-[#1a2e24] to-forest-950/90 px-4 py-4 text-center shadow-[inset_0_1px_0_rgba(212,175,55,0.18)]">
-              <div
-                className="pointer-events-none absolute inset-0 opacity-20 mix-blend-overlay"
-                aria-hidden="true"
-                style={{
-                  backgroundImage:
-                    "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-                }}
-              />
-              <div className="relative z-[1] mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-sm border border-gold-500/55 bg-forest-950/70 text-[#d4af37]">
-                <Feather className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <p className="relative z-[1] font-storybook text-base font-bold tracking-[0.06em] nav-dragon-gold sm:text-lg">
-                Create a free account to leave your marks
-              </p>
-              <p className="relative z-[1] mt-1.5 max-w-sm mx-auto font-heading text-sm leading-relaxed nav-dragon-gold">
-                Join the archives to inscribe content ratings on this tome and
-                unlock your Match Score.
-              </p>
-              <Link href={registerHref} className="btn-primary relative z-[1] mt-4">
-                <Feather className="h-4 w-4" aria-hidden="true" />
-                Create free account
-              </Link>
-              <p className="relative z-[1] mt-2.5 font-heading text-sm nav-dragon-gold">
-                Already a traveler?{" "}
-                <Link
-                  href={loginHref}
-                  className="underline decoration-gold-600/60 underline-offset-4 hover:decoration-gold-500"
-                >
-                  Sign in
-                </Link>
-              </p>
-            </div>
+            <SignupPrompt redirectTo={redirectTo} variant="panel" />
           ) : (
             <>
               <p className="mb-2 shrink-0 font-heading text-sm leading-snug nav-dragon-gold sm:text-base">

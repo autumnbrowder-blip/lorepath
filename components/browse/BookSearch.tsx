@@ -2,6 +2,7 @@
 
 import { BestsellersSection } from "@/components/browse/BestsellersSection";
 import { BookCard } from "@/components/browse/BookCard";
+import { SignupPrompt } from "@/components/auth/SignupPrompt";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { queryHint, track } from "@/lib/analytics";
 import { rankSearchResults } from "@/lib/book-utils";
@@ -52,6 +53,8 @@ type BookSearchProps = {
   /** Prefetched NYT lists — display-only; does not affect search. */
   bestsellers?: BookSummary[];
   bestsellersError?: string | null;
+  /** Hide signup nudge when the reader already has an account. */
+  isLoggedIn?: boolean;
 };
 
 export function BookSearch({
@@ -59,6 +62,7 @@ export function BookSearch({
   initialMode = "text",
   bestsellers = [],
   bestsellersError = null,
+  isLoggedIn = false,
 }: BookSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
@@ -327,6 +331,14 @@ export function BookSearch({
               </button>
             </div>
           </form>
+
+          {!isLoggedIn ? (
+            <SignupPrompt
+              variant="inline"
+              redirectTo="/browse"
+              className="mt-4 max-w-xl sm:mt-5"
+            />
+          ) : null}
         </div>
 
         <div className="mx-auto w-full max-w-5xl px-4 pb-12 sm:px-6 sm:pb-16">

@@ -8,12 +8,14 @@ import type { ContentRating } from "@/types";
 import { Target } from "lucide-react";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { MatchScorePercent } from "@/components/books/MatchScorePercent";
-import { SignInPrompt } from "@/components/preferences/SignInPrompt";
+import { SignupPrompt } from "@/components/auth/SignupPrompt";
 
 type MatchScoreProps = {
   isLoggedIn: boolean;
   communityRatings: CommunityRatingsSummary;
   userPreferences: ContentRating | null;
+  /** Current book path for post-signup return. */
+  redirectTo?: string;
 };
 
 function MatchScoreShell({ children }: { children: React.ReactNode }) {
@@ -37,14 +39,15 @@ export function MatchScore({
   isLoggedIn,
   communityRatings,
   userPreferences,
+  redirectTo,
 }: MatchScoreProps) {
   if (!isLoggedIn) {
     return (
       <MatchScoreShell>
-        <SignInPrompt
-          title="Sign in to see your Match Score"
-          description="During Beta, Match Score is free for every account. Sign in to see how well books match your content preferences."
-          compact
+        <SignupPrompt
+          redirectTo={redirectTo}
+          variant="compact"
+          description="Create a free account to unlock Match Scores for this tome."
         />
       </MatchScoreShell>
     );
