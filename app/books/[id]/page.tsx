@@ -6,8 +6,8 @@ import { LiveMatchScore } from "@/components/books/LiveMatchScore";
 import { RatingForm } from "@/components/books/RatingForm";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
-import { getBookById } from "@/lib/books";
-import { RateLimitError } from "@/lib/google-books";
+import { loadBookDetail } from "@/lib/books";
+import { summarizeFailures } from "@/lib/provider-resilience";
 import { getCommunityRatings, getUserRatingForBook } from "@/lib/ratings";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -20,7 +20,8 @@ import type { ContentRating } from "@/types";
 
 type BookDetailPageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; from?: string }>;
+  /** `hint` is a provider-recovery title from cards opened without a search. */
+  searchParams: Promise<{ q?: string; from?: string; hint?: string }>;
 };
 
 function browseBackHref(searchQuery: string): string {
@@ -103,11 +104,11 @@ export async function generateMetadata({
   searchParams,
 }: BookDetailPageProps): Promise<Metadata> {
   const { id } = await params;
-  const { q } = await searchParams;
+  const { q, hint } = await searchParams;
 
   try {
-    const book = await getBookById(id, {
-      searchHint: q?.trim() || undefined,
+    const { book } = await loadBookDetail(id, {
+      searchHint: q?.trim() || hint?.trim() || undefined,
     });
     if (!book) {
       return { title: "Tome Unopened | LorePath" };
@@ -123,31 +124,56 @@ export async function generateMetadata({
   }
 }
 
-async function loadViewerState(bookExternalId: string): Promise<{
+type ViewerState = {
   user: User | null;
   userPreferences: ContentRating | null;
   userRating: ContentRating | null;
-}> {
+};
+
+const ANONYMOUS_VIEWER: ViewerState = {
+  user: null,
+  userPreferences: null,
+  userRating: null,
+};
+
+/**
+ * Viewer extras are optional: a Supabase hiccup must degrade to the
+ * logged-out view rather than replace the whole tome with an error page.
+ */
+async function loadViewerState(bookExternalId: string): Promise<ViewerState> {
   if (!isSupabaseConfigured()) {
-    return { user: null, userPreferences: null, userRating: null };
+    return ANONYMOUS_VIEWER;
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { user: null, userPreferences: null, userRating: null };
+    if (!user) {
+      return ANONYMOUS_VIEWER;
+    }
+
+    // During Beta, every signed-in reader gets Match Score + preferences.
+    const [preferences, rating] = await Promise.allSettled([
+      getUserPreferences(user.id),
+      getUserRatingForBook(bookExternalId, user.id),
+    ]);
+
+    return {
+      user,
+      userPreferences:
+        preferences.status === "fulfilled" ? preferences.value : null,
+      userRating: rating.status === "fulfilled" ? rating.value : null,
+    };
+  } catch (error) {
+    console.error("[books/[id]] viewer state failed:", {
+      id: bookExternalId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return ANONYMOUS_VIEWER;
   }
-
-  // During Beta, every signed-in reader gets Match Score + preferences.
-  const [userPreferences, userRating] = await Promise.all([
-    getUserPreferences(user.id),
-    getUserRatingForBook(bookExternalId, user.id),
-  ]);
-
-  return { user, userPreferences, userRating };
 }
 
 export default async function BookDetailPage({
@@ -155,40 +181,42 @@ export default async function BookDetailPage({
   searchParams,
 }: BookDetailPageProps) {
   const { id } = await params;
-  const { q, from } = await searchParams;
+  const { q, from, hint } = await searchParams;
   const searchQuery = q?.trim() ?? "";
   const fromFirstRating = from === "first-rating";
 
-  let book = null;
-  try {
-    book = await getBookById(id, {
-      searchHint: searchQuery || undefined,
-    });
-  } catch (error) {
-    console.error("[books/[id]] getBookById failed:", {
+  const { book, failures, transient } = await loadBookDetail(id, {
+    searchHint: searchQuery || hint?.trim() || undefined,
+  });
+
+  // Only reach the fantasy page when no usable record could be loaded at all.
+  if (!book) {
+    console.error("[books/[id]] tome unavailable:", {
       id,
       q: searchQuery || null,
-      message: error instanceof Error ? error.message : String(error),
-      status:
-        error instanceof RateLimitError
-          ? error.status
-          : (error as Error & { status?: number })?.status,
+      reason: transient ? "busy" : "missing",
+      reasons: summarizeFailures(failures),
     });
-    if (error instanceof RateLimitError) {
-      return <TomeUnavailable searchQuery={searchQuery} reason="busy" />;
-    }
-    return <TomeUnavailable searchQuery={searchQuery} reason="missing" />;
+    return (
+      <TomeUnavailable
+        searchQuery={searchQuery}
+        reason={transient ? "busy" : "missing"}
+      />
+    );
   }
 
-  if (!book) {
-    return <TomeUnavailable searchQuery={searchQuery} reason="missing" />;
-  }
-
-  const [communityRatings, viewer] = await Promise.all([
-    getCommunityRatings(id),
+  const [ratingsResult, viewer] = await Promise.all([
+    getCommunityRatings(id).catch((error) => {
+      console.error("[books/[id]] community ratings failed:", {
+        id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { averages: null, count: 0 };
+    }),
     loadViewerState(id),
   ]);
 
+  const communityRatings = ratingsResult;
   const { user, userPreferences, userRating } = viewer;
   const back = detailBackHref(searchQuery, from);
 

@@ -12,17 +12,21 @@ import {
   findKnownWorkEditions,
   getPopularReprintIsbns,
 } from "@/lib/known-editions";
+import { toDisplayText } from "@/lib/book-normalize";
 import { fetchIsbndbByIsbn, hasIsbndbApiKey } from "@/lib/isbndb";
 import { fetchOpenLibrary } from "@/lib/open-library";
 import type { BookDetail } from "@/types/book";
 
+/** `jscmd=data` returns objects where other OL endpoints return plain strings. */
+type OpenLibraryTextValue = string | { name?: string } | null | undefined;
+
 type OpenLibraryIsbnEntry = {
   title?: string;
-  authors?: { name: string }[];
-  publishers?: string[];
+  authors?: OpenLibraryTextValue[];
+  publishers?: OpenLibraryTextValue[];
   publish_date?: string;
   number_of_pages?: number;
-  subjects?: { name: string }[];
+  subjects?: OpenLibraryTextValue[];
   excerpt?: string;
   cover?: { medium?: string; large?: string };
 };
@@ -141,10 +145,14 @@ function parseIsbnEntry(
 ): Partial<BookDetail> {
   return {
     title: cleanTitle(entry.title),
-    authors: cleanAuthors(entry.authors?.map((a) => a.name) ?? []),
+    authors: cleanAuthors(
+      (entry.authors ?? [])
+        .map((author) => toDisplayText(author))
+        .filter((name): name is string => Boolean(name))
+    ),
     description: entry.excerpt ? cleanDescription(entry.excerpt) : null,
     genres: [],
-    publisher: entry.publishers?.[0] ?? null,
+    publisher: toDisplayText(entry.publishers),
     publishedYear: parsePublishedYear(entry.publish_date),
     pageCount: entry.number_of_pages ?? null,
     isbn,
@@ -207,7 +215,7 @@ export async function fetchOpenLibraryByTitleAuthor(
       ? cleanDescription(doc.first_sentence[0])
       : null,
     genres: [],
-    publisher: doc.publisher?.[0] ?? null,
+    publisher: toDisplayText(doc.publisher),
     publishedYear: firstYear,
     firstPublishYear: firstYear,
     pageCount: doc.number_of_pages_median ?? null,
@@ -258,7 +266,7 @@ export async function fetchOpenLibraryEditionForWork(
   const isbn = best.isbn_13?.[0] ?? best.isbn_10?.[0] ?? null;
 
   return {
-    publisher: best.publishers?.[0] ?? null,
+    publisher: toDisplayText(best.publishers),
     publishedYear: parsePublishedYear(best.publish_date),
     pageCount: best.number_of_pages ?? null,
     language: best.languages?.[0]?.key?.replace(/^\/languages\//, "") ?? null,

@@ -31,9 +31,11 @@ export function BookCard({
     : null;
 
   const encodedId = encodeURIComponent(book.id);
+  // Without a search query, pass the title as a recovery hint so the detail
+  // page can resolve this work from another provider if its own id fails.
   const bookHref = searchQuery?.trim()
     ? `/books/${encodedId}?q=${encodeURIComponent(searchQuery.trim())}`
-    : `/books/${encodedId}`;
+    : `/books/${encodedId}?hint=${encodeURIComponent(book.title)}`;
 
   const { displayYear, firstPublishYear, latestEditionYear } =
     resolvePublicationYears(book);

@@ -57,10 +57,13 @@ export const OPEN_LIBRARY_USER_AGENT = "LorePath (support@lorepath.net)";
 
 export async function fetchOpenLibrary(
   url: string,
-  options?: { revalidate?: number; noStore?: boolean }
+  options?: { revalidate?: number; noStore?: boolean; timeoutMs?: number }
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options?.timeoutMs ?? FETCH_TIMEOUT_MS
+  );
   const headers = { "User-Agent": OPEN_LIBRARY_USER_AGENT };
 
   try {
@@ -192,25 +195,35 @@ export async function searchOpenLibrary(
   }
 }
 
+/** Author names are decoration — a slow/failed author call must not fail the work. */
 async function fetchAuthorName(authorKey?: string): Promise<string | null> {
   if (!authorKey) return null;
 
   const authorId = authorKey.split("/").pop();
   if (!authorId) return null;
 
-  const response = await fetchOpenLibrary(
-    `https://openlibrary.org/authors/${authorId}.json`,
-    { revalidate: 86400 }
-  );
+  try {
+    const response = await fetchOpenLibrary(
+      `https://openlibrary.org/authors/${authorId}.json`,
+      { revalidate: 86400 }
+    );
 
-  if (!response.ok) return null;
+    if (!response.ok) return null;
 
-  const data: OpenLibraryAuthor = await response.json();
-  return data.name ?? null;
+    const data: OpenLibraryAuthor = await response.json();
+    return data.name ?? null;
+  } catch (error) {
+    console.error("[open-library] author lookup failed:", {
+      authorId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 export async function getOpenLibraryBookById(
-  id: string
+  id: string,
+  options?: { timeoutMs?: number }
 ): Promise<BookDetail | null> {
   const workId = id.startsWith(OPEN_LIBRARY_ID_PREFIX)
     ? id.slice(OPEN_LIBRARY_ID_PREFIX.length)
@@ -218,7 +231,7 @@ export async function getOpenLibraryBookById(
 
   const response = await fetchOpenLibrary(
     `https://openlibrary.org/works/${workId}.json`,
-    { revalidate: 3600 }
+    { revalidate: 3600, timeoutMs: options?.timeoutMs }
   );
 
   if (response.status === 404) return null;
@@ -227,13 +240,16 @@ export async function getOpenLibraryBookById(
   }
 
   const data: OpenLibraryWork = await response.json();
+  const title = cleanTitle(data.title);
+  if (!title.trim()) return null;
+
   const authorNames = await Promise.all(
     (data.authors ?? []).map((entry) => fetchAuthorName(entry.author?.key))
   );
 
   return {
     id: toOpenLibraryId(workId),
-    title: cleanTitle(data.title),
+    title,
     authors: cleanAuthors(
       authorNames.filter((name): name is string => Boolean(name))
     ),

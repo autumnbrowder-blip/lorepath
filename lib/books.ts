@@ -5,6 +5,7 @@ import {
   searchBigBook,
 } from "@/lib/big-book";
 import { enrichBookDetail } from "@/lib/book-enrichment";
+import { normalizeBookDetailForDisplay } from "@/lib/book-normalize";
 import { withFinalizedTags } from "@/lib/book-tags";
 import { enrichBooksWithCovers } from "@/lib/bookcover";
 import { fillMissingCoverUrl } from "@/lib/cover-resolve";
@@ -43,6 +44,12 @@ import {
   searchOpenLibrary,
 } from "@/lib/open-library";
 import { cacheBookDetail, getCachedBookBySlug } from "@/lib/book-cache";
+import {
+  softStep,
+  summarizeFailures,
+  withProviderRetry,
+  type ProviderFailure,
+} from "@/lib/provider-resilience";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createAuthenticatedClient } from "@/lib/supabase/server";
 import { rankSearchResults } from "@/lib/book-utils";
@@ -384,58 +391,144 @@ export type GetBookByIdOptions = {
   searchHint?: string;
 };
 
-export const getBookById = cache(async function getBookById(
+export type BookDetailResult = {
+  book: BookDetail | null;
+  /** Every provider/step failure seen while resolving this id. */
+  failures: ProviderFailure[];
+  /**
+   * No record loaded and every failure looked temporary (429 / 5xx / timeout).
+   * The detail page uses this to choose "archives are resting" over a dead id.
+   */
+  transient: boolean;
+};
+
+/** Enough of a record to render the tome: id, title, and an author line. */
+function isUsableCoreBook(book: BookDetail | null): book is BookDetail {
+  return Boolean(book?.title?.trim());
+}
+
+/**
+ * Core record only (title, authors, cover, description, year, id).
+ * Tries the id's own provider with one retry, then any other source that can
+ * resolve the same id/isbn/title. Never throws — failures are collected.
+ */
+async function loadCoreBook(
+  bookId: string,
+  searchHint: string | undefined,
+  onFailure: (failure: ProviderFailure) => void
+): Promise<BookDetail | null> {
+  const attempt = <T,>(
+    provider: string,
+    run: (tries: number) => Promise<T>,
+    timeoutMs = 5000
+  ) => withProviderRetry({ provider, id: bookId, timeoutMs, onFailure }, run);
+
+  if (isBigBookId(bookId)) {
+    const primary = await attempt("bigbook", () => getBigBookBookById(bookId));
+    if (isUsableCoreBook(primary)) return primary;
+  } else if (isOpenLibraryId(bookId)) {
+    // Retry gets a longer OL budget — most misses here are slow work JSON.
+    const primary = await attempt("openlibrary", (tries) =>
+      getOpenLibraryBookById(bookId, { timeoutMs: tries === 1 ? 3000 : 6000 })
+    );
+    if (isUsableCoreBook(primary)) return primary;
+  } else if (isGutendexId(bookId)) {
+    const primary = await attempt("gutendex", () => getGutendexBookById(bookId));
+    if (isUsableCoreBook(primary)) return primary;
+  } else if (isIsbndbId(bookId)) {
+    const primary = await attempt("isbndb", () => resolveIsbndbBook(bookId));
+    if (isUsableCoreBook(primary)) return primary;
+  } else if (isNytId(bookId)) {
+    const primary = await attempt("nyt", () => resolveNytBook(bookId));
+    if (isUsableCoreBook(primary)) return primary;
+  } else {
+    // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
+    const primary = await attempt("google", () =>
+      resolveGoogleVolume(bookId, searchHint)
+    );
+    if (isUsableCoreBook(primary)) return primary;
+  }
+
+  // Cross-provider recovery: any source that can answer for this id/isbn/title.
+  const isbn = isbnFromIsbndbId(bookId) ?? isbnFromNytId(bookId) ?? null;
+  if (isbn) {
+    const viaGoogleIsbn = await attempt("google-isbn", () =>
+      getGoogleBookByIsbn(isbn)
+    );
+    if (isUsableCoreBook(viaGoogleIsbn)) return { ...viaGoogleIsbn, id: bookId };
+
+    const viaOlIsbn = await attempt("openlibrary-isbn", () =>
+      getOpenLibraryBookByIsbn(isbn)
+    );
+    if (isUsableCoreBook(viaOlIsbn)) return { ...viaOlIsbn, id: bookId };
+  }
+
+  if (searchHint) {
+    const viaHint = await attempt(
+      "search-hint",
+      () => resolveViaSearchHint(bookId, searchHint),
+      8000
+    );
+    if (isUsableCoreBook(viaHint)) return { ...viaHint, id: bookId };
+  }
+
+  const viaOl = await attempt(
+    "openlibrary-fallback",
+    () => resolveOpenLibraryFallback({ bookId, searchHint }),
+    8000
+  );
+  if (isUsableCoreBook(viaOl)) return { ...viaOl, id: bookId };
+
+  return null;
+}
+
+/**
+ * Resolve a `/books/[id]` record with provider failures reported instead of
+ * thrown. Core data loads first; enrichment is best-effort and isolated, so a
+ * struggling secondary API can never blank a tome that did resolve.
+ */
+export const loadBookDetail = cache(async function loadBookDetail(
   id: string,
   options?: GetBookByIdOptions
-): Promise<BookDetail | null> {
+): Promise<BookDetailResult> {
   const bookId = decodeBookRouteId(id);
-  if (!bookId) return null;
+  if (!bookId) return { book: null, failures: [], transient: false };
 
   const searchHint = options?.searchHint?.trim() || undefined;
+  const failures: ProviderFailure[] = [];
+  const onFailure = (failure: ProviderFailure) => failures.push(failure);
+
   let book: BookDetail | null = null;
   let fromCache = false;
 
-  // 1) Prefer previously resolved books in Supabase.
-  try {
-    const cached = await getCachedBookBySlug(bookId);
-    if (cached?.title?.trim()) {
-      book = cached;
-      fromCache = true;
-    }
-  } catch (error) {
-    console.error("[getBookById] cache read failed:", error);
+  // 1) Prefer previously resolved books in Supabase — survives provider outages.
+  const cached = await softStep(
+    { provider: "book-cache", id: bookId, timeoutMs: 4000, onFailure },
+    null as BookDetail | null,
+    () => getCachedBookBySlug(bookId)
+  );
+  if (isUsableCoreBook(cached)) {
+    book = cached;
+    fromCache = true;
   }
 
-  // 2) Live provider lookup when cache misses.
+  // 2) Core provider data (with retry + cross-provider fallback).
   if (!book) {
-    try {
-      if (isBigBookId(bookId)) {
-        book = await getBigBookBookById(bookId);
-      } else if (isOpenLibraryId(bookId)) {
-        book = await getOpenLibraryBookById(bookId);
-      } else if (isGutendexId(bookId)) {
-        book = await getGutendexBookById(bookId);
-      } else if (isIsbndbId(bookId)) {
-        book = await resolveIsbndbBook(bookId);
-      } else if (isNytId(bookId)) {
-        book = await resolveNytBook(bookId);
-      } else {
-        // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
-        book = await resolveGoogleVolume(bookId, searchHint);
-      }
-    } catch (error) {
-      // Google RateLimitError may still throw after OL fallbacks fail —
-      // let the page map it to "archives are resting". Soft-fail others.
-      if (error instanceof RateLimitError) throw error;
-      console.error("[getBookById] provider lookup failed:", {
-        bookId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      book = null;
-    }
+    book = await loadCoreBook(bookId, searchHint, onFailure);
   }
 
-  if (!book) return null;
+  if (!isUsableCoreBook(book)) {
+    const transient =
+      failures.length > 0 && failures.every((failure) => failure.transient);
+    console.error("[getBookById] no usable record:", {
+      id: bookId,
+      searchHint: searchHint ?? null,
+      transient,
+      reasons: summarizeFailures(failures),
+      failures,
+    });
+    return { book: null, failures, transient };
+  }
 
   // Keep the route/external id stable. NYT and ISBNdb lookups may resolve via
   // Google Books and temporarily swap `book.id`; ratings are keyed by slug, so
@@ -445,60 +538,104 @@ export const getBookById = cache(async function getBookById(
   // Sync cover fill (provider → OL ISBN → OL OLID) before slower enrichment.
   book = fillMissingCoverUrl(book);
 
-  // Soft enrichment — never block the page on secondary APIs.
+  // 3) Enrichment — every step optional, isolated, and time-boxed.
   // Cached complete books still get known-edition year enrichment so reprints
   // can show First published + Latest edition without a schema migration.
-  try {
-    if (!fromCache || needsIsbndbEnrichment(book)) {
-      book = await enrichBookDetail(book);
-      book = fillMissingCoverUrl(book);
-    } else {
-      const { enrichKnownEditionMetadata } = await import(
-        "@/lib/book-enrichment"
-      );
-      book = await enrichKnownEditionMetadata(book);
-      book = fillMissingCoverUrl(book);
-    }
-  } catch (error) {
-    console.error("[getBookById] Open Library enrichment failed:", error);
+  const core = book;
+  if (!fromCache || needsIsbndbEnrichment(core)) {
+    book = await softStep(
+      { provider: "enrichment", id: bookId, onFailure },
+      core,
+      async () => fillMissingCoverUrl(await enrichBookDetail(core))
+    );
+  } else {
+    book = await softStep(
+      { provider: "known-edition-enrichment", id: bookId, onFailure },
+      core,
+      async () => {
+        const { enrichKnownEditionMetadata } = await import(
+          "@/lib/book-enrichment"
+        );
+        return fillMissingCoverUrl(await enrichKnownEditionMetadata(core));
+      }
+    );
   }
 
-  try {
-    if (needsIsbndbEnrichment(book)) {
-      book = await enrichBookDetailWithIsbndb(book);
-      book = fillMissingCoverUrl(book);
-    }
-  } catch (error) {
-    console.error("[getBookById] ISBNdb enrichment failed:", error);
+  if (needsIsbndbEnrichment(book)) {
+    const beforeIsbndb = book;
+    book = await softStep(
+      { provider: "isbndb-enrichment", id: bookId, onFailure },
+      beforeIsbndb,
+      async () =>
+        fillMissingCoverUrl(await enrichBookDetailWithIsbndb(beforeIsbndb))
+    );
   }
 
   // Final sync catalog year pass after ISBNdb so older ISBN years cannot wipe
   // First published / Latest edition on popular reprints.
-  try {
-    const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
-    book = applyKnownEditionYears(book);
-  } catch (error) {
-    console.error("[getBookById] known-edition year pass failed:", error);
-  }
+  const beforeYears = book;
+  book = await softStep(
+    { provider: "known-edition-years", id: bookId, onFailure },
+    beforeYears,
+    async () => {
+      const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
+      return applyKnownEditionYears(beforeYears);
+    }
+  );
 
   const canonical = { ...book, id: bookId };
 
   // Fire-and-forget cache write — soft-fail.
   void cacheBookDetail(bookId, canonical).catch((error) => {
-    console.error("[getBookById] cache write failed:", error);
+    console.error("[getBookById] cache write failed:", {
+      id: bookId,
+      message: error instanceof Error ? error.message : String(error),
+    });
   });
 
-  let sexualContentAverage: number | null = null;
+  const sexualContentAverage = await softStep(
+    { provider: "community-ratings", id: bookId, timeoutMs: 3000 },
+    null as number | null,
+    async () => {
+      const { getCommunityRatings } = await import("@/lib/ratings");
+      const community = await getCommunityRatings(bookId);
+      return community.averages?.sexual_content ?? null;
+    }
+  );
+
+  let tagged = canonical;
   try {
-    const { getCommunityRatings } = await import("@/lib/ratings");
-    const community = await getCommunityRatings(bookId);
-    sexualContentAverage = community.averages?.sexual_content ?? null;
-  } catch {
-    // Ratings are optional for tagging.
+    tagged = withFinalizedTags(canonical, { sexualContentAverage });
+  } catch (error) {
+    console.error("[getBookById] tag finalize failed:", {
+      id: bookId,
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 
-  return withFinalizedTags(canonical, { sexualContentAverage });
+  // Providers occasionally return objects where the types promise strings
+  // (OL `publishers: [{ name }]`). Coerce before render — an unrenderable
+  // field would otherwise crash the whole tome page.
+  tagged = normalizeBookDetailForDisplay(tagged);
+
+  if (failures.length > 0) {
+    console.warn("[getBookById] recovered after provider failures:", {
+      id: bookId,
+      reasons: summarizeFailures(failures),
+    });
+  }
+
+  return { book: tagged, failures, transient: false };
 });
+
+/** Book record only. Returns null instead of throwing on provider failures. */
+export async function getBookById(
+  id: string,
+  options?: GetBookByIdOptions
+): Promise<BookDetail | null> {
+  const { book } = await loadBookDetail(id, options);
+  return book;
+}
 
 /** Decode a `/books/[id]` segment safely (handles encodeURIComponent links). */
 function decodeBookRouteId(raw: string): string {
@@ -594,14 +731,16 @@ async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
       const viaGoogle = await getGoogleBookByIsbn(isbn);
       if (viaGoogle) return viaGoogle;
     } catch (error) {
+      // Keep going: OL and ISBNdb below can still resolve this ISBN.
       console.error("[getBookById] ISBNdb→Google ISBN failed:", {
         bookId,
         isbn,
         message: error instanceof Error ? error.message : String(error),
+        status:
+          error instanceof RateLimitError
+            ? error.status
+            : (error as Error & { status?: number })?.status,
       });
-      if (!(error instanceof RateLimitError)) {
-        throw error;
-      }
     }
 
     const viaOl = await resolveOpenLibraryFallback({ bookId, isbn });
@@ -639,14 +778,16 @@ async function resolveNytBook(bookId: string): Promise<BookDetail | null> {
       const viaGoogle = await getGoogleBookByIsbn(isbn);
       if (viaGoogle) return viaGoogle;
     } catch (error) {
+      // Keep going: OL by ISBN and the NYT list record are still available.
       console.error("[getBookById] NYT→Google ISBN failed:", {
         bookId,
         isbn,
         message: error instanceof Error ? error.message : String(error),
+        status:
+          error instanceof RateLimitError
+            ? error.status
+            : (error as Error & { status?: number })?.status,
       });
-      if (!(error instanceof RateLimitError)) {
-        throw error;
-      }
     }
 
     const viaOl = await resolveOpenLibraryFallback({ bookId, isbn });
@@ -656,8 +797,8 @@ async function resolveNytBook(bookId: string): Promise<BookDetail | null> {
 }
 
 /**
- * Resolve a Google Books volume id with retries + OL/search-hint fallback.
- * Never swallows RateLimitError into a silent null — but always tries OL first.
+ * Resolve a Google Books volume id with OL/search-hint fallback.
+ * The caller (loadCoreBook) supplies the transient-error retry.
  */
 async function resolveGoogleVolume(
   bookId: string,
@@ -665,28 +806,19 @@ async function resolveGoogleVolume(
 ): Promise<BookDetail | null> {
   let lastError: unknown = null;
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const book = await getGoogleBookById(bookId);
-      if (book) return book;
-      break;
-    } catch (error) {
-      lastError = error;
-      console.error(
-        `[getBookById] Google volume fetch failed (attempt ${attempt}):`,
-        {
-          bookId,
-          message: error instanceof Error ? error.message : String(error),
-          status:
-            error instanceof RateLimitError
-              ? error.status
-              : (error as Error & { status?: number })?.status,
-        }
-      );
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
-      }
-    }
+  try {
+    const book = await getGoogleBookById(bookId);
+    if (book) return book;
+  } catch (error) {
+    lastError = error;
+    console.error("[getBookById] Google volume fetch failed:", {
+      bookId,
+      message: error instanceof Error ? error.message : String(error),
+      status:
+        error instanceof RateLimitError
+          ? error.status
+          : (error as Error & { status?: number })?.status,
+    });
   }
 
   if (searchHint) {
