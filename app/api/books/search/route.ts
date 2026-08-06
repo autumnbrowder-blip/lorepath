@@ -39,6 +39,7 @@ export async function GET(request: Request) {
           books: result.books,
           page: result.page,
           hasMore: result.hasMore,
+          userRatedSlugs: result.userRatedSlugs ?? [],
         };
 
     return NextResponse.json(payload, {

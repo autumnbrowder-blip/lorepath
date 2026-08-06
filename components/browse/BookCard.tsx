@@ -47,22 +47,6 @@ export function BookCard({
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-forest-950/50 via-transparent to-transparent opacity-80" />
-
-        {alreadyRated ? (
-          <div
-            className="absolute right-2 top-2 z-20 inline-flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-sm border border-gold-600/65 bg-[#0c1f19]/92 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,230,150,0.12)] backdrop-blur-[2px]"
-            aria-label="Inscribed — you have rated this tome"
-          >
-            <Feather
-              className="h-3 w-3 shrink-0 text-[#e2c06a]"
-              aria-hidden="true"
-              strokeWidth={2}
-            />
-            <span className="truncate font-storybook text-[9px] font-bold uppercase tracking-[0.14em] text-[#e2c06a] sm:text-[10px]">
-              Inscribed
-            </span>
-          </div>
-        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col border-t border-gold-600/30 bg-gradient-to-b from-[#123229] to-[#0c1f19] p-4 pl-5">
@@ -106,12 +90,31 @@ export function BookCard({
           </div>
         )}
 
-        <Link
-          href={bookHref}
-          className="btn-secondary mt-auto px-3 py-2 text-[10px]"
-        >
-          Open the Tome
-        </Link>
+        <div className="mt-auto flex flex-col gap-1.5">
+          {alreadyRated ? (
+            <div
+              className="tome-card-inscribed inline-flex w-full items-center justify-center gap-1.5 rounded-sm border border-gold-500/75 bg-gradient-to-b from-[#214a38] via-[#163529] to-[#0f241c] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,230,150,0.16),0_0_12px_rgba(166,124,45,0.18)]"
+              role="status"
+              aria-label="Inscribed — you have rated this tome"
+            >
+              <Feather
+                className="h-3.5 w-3.5 shrink-0 text-[#e2c06a]"
+                aria-hidden="true"
+                strokeWidth={2.25}
+              />
+              <span className="font-storybook text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2c06a] sm:text-[11px]">
+                Inscribed
+              </span>
+            </div>
+          ) : null}
+
+          <Link
+            href={bookHref}
+            className="btn-secondary w-full px-3 py-2 text-[10px]"
+          >
+            Open the Tome
+          </Link>
+        </div>
       </div>
     </article>
   );

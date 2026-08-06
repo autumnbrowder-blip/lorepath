@@ -16,6 +16,7 @@ type SearchPagePayload = {
   books?: BookSummary[];
   hasMore?: boolean;
   page?: number;
+  userRatedSlugs?: string[];
 };
 
 const CLIENT_SEARCH_CACHE_TTL_MS = 90_000;
@@ -88,6 +89,20 @@ export function BookSearch({
   const searchRequestIdRef = useRef(0);
 
   const ratedSlugSet = useMemo(() => new Set(ratedSlugs), [ratedSlugs]);
+
+  function mergeRatedSlugs(extra: string[] | undefined) {
+    if (!isLoggedIn || !extra?.length) return;
+    setRatedSlugs((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (const slug of extra) {
+        if (!slug || next.has(slug)) continue;
+        next.add(slug);
+        changed = true;
+      }
+      return changed ? Array.from(next) : current;
+    });
+  }
 
   const refreshRatedSlugs = useCallback(async () => {
     if (!isLoggedIn) {
@@ -218,6 +233,7 @@ export function BookSearch({
       setBooks(results);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
+      mergeRatedSlugs(data.userRatedSlugs);
       track("search_performed", {
         ...queryHint(trimmed),
         mode,
@@ -265,6 +281,7 @@ export function BookSearch({
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
+      mergeRatedSlugs(data.userRatedSlugs);
     } catch (err) {
       const aborted =
         (err instanceof DOMException && err.name === "AbortError") ||

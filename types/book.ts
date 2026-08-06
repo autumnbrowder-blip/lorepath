@@ -62,6 +62,11 @@ export type BookSearchResult = {
   page: number;
   /** True when any provider still has another page. */
   hasMore: boolean;
+  /**
+   * External ids in this result page that the signed-in user has already rated.
+   * Empty / omitted when logged out. Used for Inscribed badges on browse cards.
+   */
+  userRatedSlugs?: string[];
   /** Temporary: Google failure details (message/status) when the provider errors. */
   googleError?: GoogleBooksSearchDebug | null;
   /** Temporary: Google item count before local quality filtering. */

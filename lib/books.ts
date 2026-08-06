@@ -333,6 +333,22 @@ export async function searchBooks(
       : {}),
   };
 
+  // User-only rated slugs for Inscribed badges on this result page (one query).
+  let userRatedSlugs: string[] = [];
+  try {
+    const userId = await userIdPromise;
+    if (userId) {
+      const { getUserRatedSlugs } = await import("@/lib/ratings");
+      const allRated = await getUserRatedSlugs(userId);
+      if (allRated.length > 0) {
+        const pageIds = new Set(books.map((book) => book.id));
+        userRatedSlugs = allRated.filter((slug) => pageIds.has(slug));
+      }
+    }
+  } catch (error) {
+    console.error("[searchBooks] user rated-slug lookup failed:", error);
+  }
+
   return {
     books,
     sources: SEARCH_SOURCES,
@@ -344,6 +360,7 @@ export async function searchBooks(
       openLibraryResult.hasMore ||
       gutendexResult.hasMore ||
       bigBookResult.hasMore,
+    userRatedSlugs,
     // Temporary debug fields — remove once Google search stability is confirmed.
     googleError: googleResult.error,
     googleRawCount: googleResult.rawCount,
