@@ -9,13 +9,16 @@ type HomeHeroProps = {
 };
 
 export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
-  const preferencesCtaHref = isLoggedIn
+  const primaryCtaHref = isLoggedIn
     ? "/preferences"
     : "/register?redirect=/preferences";
+  const primaryCtaLabel = isLoggedIn
+    ? "Set your preferences"
+    : "Create free account";
 
   return (
     <section
-      aria-labelledby="home-tagline"
+      aria-labelledby="home-headline"
       className="home-hero-page relative flex min-h-[calc(100svh-4.5rem)] min-h-[calc(100dvh-4.5rem)] flex-col overflow-hidden bg-[#070e0a]"
     >
       <TrackOnMount event="view_home" />
@@ -57,11 +60,11 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
         ))}
       </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-12">
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-5 sm:px-6 sm:py-12">
         <div className="flex flex-1 flex-col items-center justify-center text-center">
           <div className="animate-fade-in-up w-full">
-            {/* Translucent antique-gold LorePath mark */}
-            <div className="relative mx-auto w-full max-w-[220px] sm:max-w-[360px] md:max-w-[500px] lg:max-w-[580px]">
+            {/* Brand mark — sized so value + primary CTA stay in the first viewport on mobile */}
+            <div className="relative mx-auto w-full max-w-[160px] sm:max-w-[300px] md:max-w-[420px] lg:max-w-[500px]">
               <div className="pointer-events-none absolute left-1/2 top-1/2 h-[125%] w-[125%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(212,175,55,0.28)_0%,_transparent_65%)] blur-3xl" />
               <Image
                 src="/images/lorepath-logo.png"
@@ -73,49 +76,46 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
               />
             </div>
 
-            <p
-              id="home-tagline"
-              className="nav-dragon-gold mx-auto mt-3 max-w-xl font-storybook text-lg leading-relaxed tracking-[0.06em] sm:mt-6 sm:text-2xl md:text-[1.75rem]"
+            <h1
+              id="home-headline"
+              className="nav-dragon-gold mx-auto mt-3 max-w-2xl font-storybook text-xl leading-snug tracking-[0.04em] sm:mt-5 sm:text-3xl md:text-[2rem]"
             >
-              Know before you turn the page
+              Preview spice, pacing, horror, and more
+            </h1>
+            <p className="mx-auto mt-2 max-w-lg font-heading text-sm leading-relaxed text-gold-200/85 sm:mt-3 sm:text-base md:text-lg">
+              Rate books by content, set your preferences, and get a Match Score
+              on every book.
             </p>
+
+            {/* CTAs sit with the value copy so signup is visible without scrolling on mobile */}
+            <div className="mx-auto mt-5 flex w-full max-w-sm flex-col items-center gap-2.5 sm:mt-8 sm:max-w-md sm:gap-3.5">
+              <Link
+                href={primaryCtaHref}
+                className="btn-primary w-full min-h-[3rem] px-8 py-3.5 text-center text-sm tracking-[0.14em] sm:min-h-[3.25rem] sm:px-10 sm:py-4"
+              >
+                <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {primaryCtaLabel}
+              </Link>
+
+              <Link
+                href="/browse"
+                className="inline-flex w-auto min-h-[2.4rem] items-center justify-center gap-2 rounded-sm border border-gold-500/40 bg-transparent px-5 py-2 font-storybook text-[11px] font-normal uppercase tracking-[0.16em] text-gold-200/75 transition hover:border-gold-500/60 hover:bg-forest-950/35 hover:text-gold-100 sm:min-h-[2.5rem] sm:px-6 sm:py-2.5 sm:text-xs"
+              >
+                <BookOpen
+                  className="h-3.5 w-3.5 opacity-70"
+                  aria-hidden="true"
+                />
+                Browse books
+              </Link>
+            </div>
           </div>
         </div>
 
         <div
-          className="animate-fade-in-up pb-3 pt-6 sm:pb-8 sm:pt-8"
+          className="animate-fade-in-up pb-3 pt-5 sm:pb-8 sm:pt-8"
           style={{ animationDelay: "120ms" }}
         >
-          <div className="flex flex-col items-center justify-center gap-3 sm:gap-4">
-            <Link
-              href="/browse"
-              className="group relative inline-flex w-full max-w-xs min-h-[2.75rem] items-center justify-center gap-2 overflow-hidden rounded-sm border border-gold-500/70 px-8 py-3.5 font-storybook text-xs font-normal uppercase tracking-[0.2em] text-forest-950 transition hover:-translate-y-1 sm:w-auto sm:py-4"
-              style={{
-                background:
-                  "linear-gradient(180deg, #d0b67a 0%, #b38b4d 42%, #a67c2d 100%)",
-                boxShadow:
-                  "0 10px 28px rgba(166,124,45,0.35), inset 0 1px 0 rgba(255,245,210,0.4), inset 0 -2px 4px rgba(90,60,10,0.35)",
-              }}
-            >
-              <span
-                className="pointer-events-none absolute inset-0 opacity-30 mix-blend-overlay"
-                style={{
-                  backgroundImage:
-                    "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-                }}
-              />
-              <BookOpen className="relative h-4 w-4" />
-              <span className="relative">Browse the Archives</span>
-            </Link>
-
-            <Link
-              href={preferencesCtaHref}
-              className="btn-primary w-full max-w-md min-h-[2.75rem] px-5 py-3 text-center normal-case tracking-[0.06em] sm:w-auto sm:px-6 sm:py-3.5"
-            >
-              <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Create your free account to set preferences
-            </Link>
-
+          <div className="flex flex-col items-center justify-center">
             <ContactArchivesNote />
           </div>
         </div>
