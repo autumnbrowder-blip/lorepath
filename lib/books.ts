@@ -266,7 +266,36 @@ export async function searchBooks(
     ratedIds: new Set(ratedSlugs),
     protectedBooks: ratedBooks,
     debug: SEARCH_DEBUG,
+    query: genreMode ? undefined : searchQuery,
   });
+
+  // Known-title / exact-phrase fallback when the flood missed an exact title
+  // (e.g. provider outage, or a prior author-misclassification miss).
+  if (!genreMode && pageNumber === 1) {
+    try {
+      const { fetchTitleSearchFallbacks } = await import(
+        "@/lib/search-title-fallback"
+      );
+      const fallbackHits = await fetchTitleSearchFallbacks(searchQuery, books);
+      if (fallbackHits.length > 0) {
+        books = finalizeSearchBooks([...books, ...fallbackHits], {
+          ratedIds: new Set(ratedSlugs),
+          protectedBooks: ratedBooks,
+          debug: SEARCH_DEBUG,
+          query: searchQuery,
+        });
+        if (SEARCH_DEBUG) {
+          console.info("[searchBooks] title fallback merged", {
+            query: searchQuery,
+            fallbackHits: fallbackHits.length,
+            afterMerge: books.length,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("[searchBooks] title fallback failed:", error);
+    }
+  }
 
   // Relevance ranking for text search (genre mode keeps year-forward order
   // from finalize, then preferMatchingGenreTags).

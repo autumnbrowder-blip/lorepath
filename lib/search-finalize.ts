@@ -3,6 +3,7 @@ import { mergePreferredBookFields } from "@/lib/book-merge";
 import {
   getBookDedupeKey,
   getBookIsbnKey,
+  isExactTitleMatch,
   isMerchandiseOrCompanion,
   isWeakDescription,
   pickPreferredDuplicate,
@@ -42,15 +43,48 @@ function withDescriptionFallback(book: BookSummary): BookSummary {
 /**
  * Prefer complete records. If none survive, fall back to cover-only
  * (with a short description stub), then description-only — never junk with neither.
+ * Exact title matches for the active query always survive (even thin metadata).
  */
-function selectQualityBooks(books: BookSummary[]): BookSummary[] {
+function selectQualityBooks(
+  books: BookSummary[],
+  query?: string
+): BookSummary[] {
+  const exactTitleHits = query
+    ? books.filter((book) => isExactTitleMatch(query, book.title))
+    : [];
+
   const withBoth = books.filter(hasDescriptionAndCover);
-  if (withBoth.length > 0) return withBoth;
+  if (withBoth.length > 0) {
+    return mergeExactTitleSurvivors(withBoth, exactTitleHits);
+  }
 
   const withCover = books.filter(hasCover).map(withDescriptionFallback);
-  if (withCover.length > 0) return withCover;
+  if (withCover.length > 0) {
+    return mergeExactTitleSurvivors(withCover, exactTitleHits);
+  }
 
-  return books.filter(hasAnyDescription);
+  const withDesc = books.filter(hasAnyDescription);
+  if (withDesc.length > 0) {
+    return mergeExactTitleSurvivors(withDesc, exactTitleHits);
+  }
+
+  // Nothing else survived — still keep exact title hits with a stub description.
+  return exactTitleHits.map(withDescriptionFallback);
+}
+
+function mergeExactTitleSurvivors(
+  selected: BookSummary[],
+  exactTitleHits: BookSummary[]
+): BookSummary[] {
+  if (exactTitleHits.length === 0) return selected;
+  const ids = new Set(selected.map((book) => book.id));
+  const keys = new Set(selected.map((book) => getBookDedupeKey(book)));
+  const extras = exactTitleHits
+    .filter(
+      (book) => !ids.has(book.id) && !keys.has(getBookDedupeKey(book))
+    )
+    .map(withDescriptionFallback);
+  return extras.length > 0 ? [...selected, ...extras] : selected;
 }
 
 /**
@@ -73,6 +107,11 @@ export type FinalizeSearchOptions = PickPreferredOptions & {
   protectedBooks?: BookSummary[];
   /** When true, emit temporary [finalizeSearchBooks] debug logs. */
   debug?: boolean;
+  /**
+   * Active search query — exact title matches for this query always survive
+   * quality filtering (thin/missing description must not hide them).
+   */
+  query?: string;
 };
 
 function dedupeCandidates(
@@ -220,10 +259,12 @@ export function finalizeSearchBooks(
   const debug = options?.debug ?? false;
 
   const inputCount = books.length;
+  const query = options?.query?.trim() || undefined;
   const candidates = books.filter((book) => {
     const protectedHit =
       (ratedIds?.has(book.id) ?? false) || protectedIds.has(book.id);
     if (protectedHit) return true;
+    if (query && isExactTitleMatch(query, book.title)) return true;
     if (isMerchandiseOrCompanion(book)) return false;
     return hasUsableSearchFields(book);
   });
@@ -236,7 +277,7 @@ export function finalizeSearchBooks(
   } = dedupeCandidates(candidates, pickOptions);
 
   const merged = deduped.map((book) => withFinalizedTags(book));
-  const qualitySelected = selectQualityBooks(merged);
+  const qualitySelected = selectQualityBooks(merged, query);
 
   const { books: withProtected, forcedCount } = forceProtectedBooks(
     qualitySelected,

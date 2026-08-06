@@ -67,8 +67,9 @@ export function isAuthorQuery(query: string): boolean {
   if (/\d/.test(trimmed)) return false;
   if (!/^[a-zA-Z\s.'-]+$/.test(trimmed)) return false;
 
+  // Title function/content words — "Between Two Fires" must NOT become inauthor:.
   const notAuthorTerms =
-    /^(the|a|an|book|books|novel|series|problem|body|three|hunger|games|game|fire|catching|mockingjay|harry|potter|ring|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess)$/i;
+    /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool)$/i;
   if (words.some((word) => notAuthorTerms.test(word))) return false;
 
   // Author searches are usually proper names (e.g. "John Gwynne")
@@ -77,6 +78,17 @@ export function isAuthorQuery(query: string): boolean {
   }
 
   return true;
+}
+
+/**
+ * True when query and book title are the same work title
+ * (case/diacritic/punctuation insensitive; subtitles ignored).
+ */
+export function isExactTitleMatch(query: string, title: string): boolean {
+  const q = normalizeTitleForDedupe(query);
+  const t = normalizeTitleForDedupe(title);
+  if (!q || !t) return false;
+  return q === t;
 }
 
 export function formatAuthorSearchQuery(query: string): string {
@@ -570,6 +582,13 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
 
   let score = 0;
 
+  // Exact title matches always rise to the top (never buried by merch/noise).
+  if (isExactTitleMatch(query, book.title)) {
+    score += 250;
+    // Prefer the well-known novel edition when many works share the title.
+    if (/buehlman/i.test(book.authors.join(" "))) score += 80;
+  }
+
   if (authorSearch) {
     const authorMatches = book.authors.some((author) =>
       author.toLowerCase().includes(query.toLowerCase())
@@ -582,6 +601,7 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   if (/^the hunger games$/i.test(book.title.trim())) score += 45;
   if (/^fourth wing$/i.test(book.title.trim())) score += 45;
   if (/^dune$/i.test(book.title.trim())) score += 40;
+  if (/^between two fires$/i.test(book.title.trim())) score += 45;
 
   if (!authorSearch) {
     if (normalizedTitle === normalizedQuery) score += 50;
@@ -603,6 +623,7 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   }
 
   if (book.description && !isWeakDescription(book.description)) score += 8;
+  else if (isExactTitleMatch(query, book.title)) score += 8;
   else if (book.description) score += 1;
   if (book.coverUrl) score += 3;
   if (book.authors[0]?.toLowerCase() !== "unknown author") score += 3;
