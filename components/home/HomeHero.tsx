@@ -4,18 +4,7 @@ import { BookOpen, ScrollText } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
-type HomeHeroProps = {
-  isLoggedIn?: boolean;
-};
-
-export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
-  const primaryCtaHref = isLoggedIn
-    ? "/preferences"
-    : "/register?redirect=/preferences";
-  const primaryCtaLabel = isLoggedIn
-    ? "Set your preferences"
-    : "Create free account";
-
+export function HomeHero() {
   return (
     <section
       aria-labelledby="home-headline"
@@ -87,15 +76,20 @@ export function HomeHero({ isLoggedIn = false }: HomeHeroProps) {
               on every book.
             </p>
 
-            {/* CTAs sit with the value copy so signup is visible without scrolling on mobile */}
+            {/* Signup is always the dominant hero action */}
             <div className="mx-auto mt-5 flex w-full max-w-sm flex-col items-center gap-2.5 sm:mt-8 sm:max-w-md sm:gap-3.5">
-              <Link
-                href={primaryCtaHref}
-                className="btn-primary w-full min-h-[3rem] px-8 py-3.5 text-center text-sm tracking-[0.14em] sm:min-h-[3.25rem] sm:px-10 sm:py-4"
-              >
-                <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {primaryCtaLabel}
-              </Link>
+              <div className="flex w-full flex-col items-center gap-1.5">
+                <Link
+                  href="/register"
+                  className="btn-primary w-full min-h-[3rem] px-8 py-3.5 text-center text-sm tracking-[0.14em] sm:min-h-[3.25rem] sm:px-10 sm:py-4"
+                >
+                  <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Create free account
+                </Link>
+                <p className="font-heading text-[11px] tracking-[0.04em] text-gold-200/60 sm:text-xs">
+                  Free to start · Takes less than a minute
+                </p>
+              </div>
 
               <Link
                 href="/browse"
