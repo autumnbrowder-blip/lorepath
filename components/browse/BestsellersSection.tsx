@@ -5,11 +5,14 @@ import { Crown, ScrollText } from "lucide-react";
 type BestsellersSectionProps = {
   books: BookSummary[];
   error?: string | null;
+  /** External book ids the logged-in user has already rated. */
+  ratedSlugSet?: ReadonlySet<string>;
 };
 
 export function BestsellersSection({
   books,
   error = null,
+  ratedSlugSet,
 }: BestsellersSectionProps) {
   if (!books.length && !error) return null;
 
@@ -47,7 +50,11 @@ export function BestsellersSection({
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {books.map((book) => (
-            <BookCard key={book.id} book={book} />
+            <BookCard
+              key={book.id}
+              book={book}
+              alreadyRated={Boolean(ratedSlugSet?.has(book.id))}
+            />
           ))}
         </div>
       )}

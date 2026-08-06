@@ -589,6 +589,59 @@ export async function getUserRatedBooks(
   }
 }
 
+/**
+ * Lightweight slug list of works the current user has rated.
+ * Used for browse/search "Inscribed" badges — one query, then Set.has.
+ * Prefers service-role read (same pattern as getUserRatingForBook) so
+ * JWT/RLS gaps cannot hide badges; always filters by the verified userId.
+ */
+export async function getUserRatedSlugs(userId: string): Promise<string[]> {
+  noStore();
+
+  if (!userId.trim() || !isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const admin = createServiceRoleClient();
+    const auth = await createAuthenticatedClient();
+    const supabase =
+      "error" in admin
+        ? "error" in auth
+          ? await createClient()
+          : auth.supabase
+        : admin.supabase;
+
+    const { data, error } = await supabase
+      .from("ratings")
+      .select(
+        `
+        books (
+          slug
+        )
+      `
+      )
+      .eq("rated_by", userId);
+
+    if (error || !data) {
+      return [];
+    }
+
+    const slugs = new Set<string>();
+    for (const row of data) {
+      const book = Array.isArray(row.books) ? row.books[0] : row.books;
+      const slug =
+        book && typeof (book as { slug?: unknown }).slug === "string"
+          ? ((book as { slug: string }).slug).trim()
+          : "";
+      if (slug) slugs.add(slug);
+    }
+    return Array.from(slugs);
+  } catch {
+    return [];
+  }
+}
+
 export async function getUserReadingStats(
   userId: string
 ): Promise<UserReadingStats> {

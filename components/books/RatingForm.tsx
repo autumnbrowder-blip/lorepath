@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Loader2,
   PenLine,
+  ScrollText,
   Send,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -333,6 +334,16 @@ export function RatingForm({
                       {wasUpdatingRef.current
                         ? "Your marks have been rewritten in the tome."
                         : "Your marks have been recorded in the tome."}
+                    </p>
+                  </div>
+                ) : hasExistingRating ? (
+                  <div className="flex h-full items-start gap-2 rounded-sm border border-gold-600/45 bg-[#0c1f19]/75 px-3 py-2">
+                    <ScrollText
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[#e2c06a]"
+                      aria-hidden="true"
+                    />
+                    <p className="font-heading text-sm leading-snug nav-dragon-gold">
+                      Your marks are in this tome
                     </p>
                   </div>
                 ) : null}

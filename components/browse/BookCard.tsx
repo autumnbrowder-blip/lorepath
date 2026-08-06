@@ -3,15 +3,25 @@ import { BookCover } from "@/components/books/BookCover";
 import { GenreTag } from "@/components/theme/GenreTag";
 import { resolvePublicationYears, truncateText } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
+import { Feather } from "lucide-react";
 import Link from "next/link";
 
 type BookCardProps = {
   book: BookSummary;
   /** Active browse search query — preserved on the book detail URL. */
   searchQuery?: string;
+  /**
+   * Logged-in reader has already inscribed marks on this work.
+   * Never set for logged-out users.
+   */
+  alreadyRated?: boolean;
 };
 
-export function BookCard({ book, searchQuery }: BookCardProps) {
+export function BookCard({
+  book,
+  searchQuery,
+  alreadyRated = false,
+}: BookCardProps) {
   const description = book.description
     ? truncateText(book.description, 120)
     : null;
@@ -37,6 +47,22 @@ export function BookCard({ book, searchQuery }: BookCardProps) {
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-forest-950/50 via-transparent to-transparent opacity-80" />
+
+        {alreadyRated ? (
+          <div
+            className="absolute right-2 top-2 z-20 inline-flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-sm border border-gold-600/65 bg-[#0c1f19]/92 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,230,150,0.12)] backdrop-blur-[2px]"
+            aria-label="Inscribed — you have rated this tome"
+          >
+            <Feather
+              className="h-3 w-3 shrink-0 text-[#e2c06a]"
+              aria-hidden="true"
+              strokeWidth={2}
+            />
+            <span className="truncate font-storybook text-[9px] font-bold uppercase tracking-[0.14em] text-[#e2c06a] sm:text-[10px]">
+              Inscribed
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col border-t border-gold-600/30 bg-gradient-to-b from-[#123229] to-[#0c1f19] p-4 pl-5">

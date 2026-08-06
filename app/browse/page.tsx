@@ -1,6 +1,7 @@
 import { BookSearch } from "@/components/browse/BookSearch";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { fetchNytBestsellers } from "@/lib/nyt-books";
+import { getUserRatedSlugs } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,6 +15,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   const hasQuery = Boolean(q?.trim());
 
   let isLoggedIn = false;
+  let initialRatedSlugs: string[] = [];
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
@@ -21,8 +23,12 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
         data: { user },
       } = await supabase.auth.getUser();
       isLoggedIn = !!user;
+      if (user) {
+        initialRatedSlugs = await getUserRatedSlugs(user.id);
+      }
     } catch {
       isLoggedIn = false;
+      initialRatedSlugs = [];
     }
   }
 
@@ -51,6 +57,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
       bestsellers={bestsellers.books}
       bestsellersError={bestsellers.error ?? null}
       isLoggedIn={isLoggedIn}
+      initialRatedSlugs={isLoggedIn ? initialRatedSlugs : []}
     />
   );
 }

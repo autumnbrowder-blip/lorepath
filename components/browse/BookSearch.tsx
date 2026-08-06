@@ -9,7 +9,7 @@ import { rankSearchResults } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import type { BookSummary } from "@/types/book";
 import { AlertCircle, Loader2, Search } from "lucide-react";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type SearchPagePayload = {
@@ -55,6 +55,11 @@ type BookSearchProps = {
   bestsellersError?: string | null;
   /** Hide signup nudge when the reader already has an account. */
   isLoggedIn?: boolean;
+  /**
+   * Work slugs the logged-in user has already rated (from RSC).
+   * Empty for logged-out users.
+   */
+  initialRatedSlugs?: string[];
 };
 
 export function BookSearch({
@@ -63,6 +68,7 @@ export function BookSearch({
   bestsellers = [],
   bestsellersError = null,
   isLoggedIn = false,
+  initialRatedSlugs = [],
 }: BookSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
@@ -74,11 +80,61 @@ export function BookSearch({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [ratedSlugs, setRatedSlugs] = useState<string[]>(initialRatedSlugs);
   const initialSearchDone = useRef(false);
   const searchModeRef = useRef<"text" | "genre">(initialMode);
   const abortRef = useRef<AbortController | null>(null);
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
   const searchRequestIdRef = useRef(0);
+
+  const ratedSlugSet = useMemo(() => new Set(ratedSlugs), [ratedSlugs]);
+
+  const refreshRatedSlugs = useCallback(async () => {
+    if (!isLoggedIn) {
+      setRatedSlugs([]);
+      return;
+    }
+    try {
+      const response = await fetch("/api/me/rated-slugs", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as { slugs?: string[] };
+      if (Array.isArray(data.slugs)) {
+        setRatedSlugs(data.slugs);
+      }
+    } catch {
+      // Keep SSR / last-known slugs.
+    }
+  }, [isLoggedIn]);
+
+  // Refresh after rating a book and returning to browse (bfcache / focus).
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    void refreshRatedSlugs();
+
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        void refreshRatedSlugs();
+      }
+    }
+    function onPageShow() {
+      void refreshRatedSlugs();
+    }
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [isLoggedIn, refreshRatedSlugs]);
+
+  // Keep in sync if the server re-renders with a newer slug list.
+  useEffect(() => {
+    setRatedSlugs(initialRatedSlugs);
+  }, [initialRatedSlugs]);
 
   async function fetchSearchPage(
     searchQuery: string,
@@ -346,6 +402,7 @@ export function BookSearch({
             <BestsellersSection
               books={bestsellers}
               error={bestsellersError}
+              ratedSlugSet={isLoggedIn ? ratedSlugSet : undefined}
             />
           )}
 
@@ -400,7 +457,14 @@ export function BookSearch({
                 }`}
               >
                 {books.map((book) => (
-                  <BookCard key={book.id} book={book} searchQuery={query} />
+                  <BookCard
+                    key={book.id}
+                    book={book}
+                    searchQuery={query}
+                    alreadyRated={
+                      isLoggedIn ? ratedSlugSet.has(book.id) : false
+                    }
+                  />
                 ))}
               </div>
 

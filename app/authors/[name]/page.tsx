@@ -2,6 +2,9 @@ import { BookCard } from "@/components/browse/BookCard";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { searchBooks } from "@/lib/books";
 import { decodeAuthorName } from "@/lib/book-links";
+import { getUserRatedSlugs } from "@/lib/ratings";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft, User } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -27,6 +30,21 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
   const authorName = decodeAuthorName(name);
   const { books } = await searchBooks(authorName);
 
+  let ratedSlugSet: Set<string> | null = null;
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        ratedSlugSet = new Set(await getUserRatedSlugs(user.id));
+      }
+    } catch {
+      ratedSlugSet = null;
+    }
+  }
+
   return (
     <FantasyPageShell>
       <div className="mx-auto max-w-5xl px-6 py-12">
@@ -51,7 +69,11 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
         {books.length > 0 ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {books.map((book) => (
-              <BookCard key={book.id} book={book} />
+              <BookCard
+                key={book.id}
+                book={book}
+                alreadyRated={Boolean(ratedSlugSet?.has(book.id))}
+              />
             ))}
           </div>
         ) : (
