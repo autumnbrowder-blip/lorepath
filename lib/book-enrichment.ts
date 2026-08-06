@@ -8,7 +8,11 @@ import {
   pickPublishedYear,
 } from "@/lib/book-utils";
 import { getGoogleBookByIsbn } from "@/lib/google-books";
-import { findKnownWorkEditions } from "@/lib/known-editions";
+import {
+  findKnownWorkEditions,
+  getPopularReprintIsbns,
+} from "@/lib/known-editions";
+import { fetchIsbndbByIsbn, hasIsbndbApiKey } from "@/lib/isbndb";
 import { fetchOpenLibrary } from "@/lib/open-library";
 import type { BookDetail } from "@/types/book";
 
@@ -79,6 +83,30 @@ export function mergeBookDetails(
   base: BookDetail,
   supplement: Partial<BookDetail>
 ): BookDetail {
+  const publishedYear = pickPublishedYear(
+    base.publishedYear,
+    supplement.publishedYear,
+    base.latestEditionYear,
+    supplement.latestEditionYear
+  );
+  const firstPublishYear = pickEarliestYear(
+    base.firstPublishYear,
+    supplement.firstPublishYear,
+    // Establish an original year from single-year records without letting a
+    // newer reprint year become "first published".
+    base.firstPublishYear == null ? base.publishedYear : null,
+    supplement.firstPublishYear == null ? supplement.publishedYear : null
+  );
+  const latestEditionYear = pickPublishedYear(
+    base.latestEditionYear,
+    supplement.latestEditionYear,
+    publishedYear != null &&
+      firstPublishYear != null &&
+      publishedYear > firstPublishYear
+      ? publishedYear
+      : null
+  );
+
   return {
     ...base,
     title: base.title || supplement.title || "Untitled",
@@ -92,16 +120,9 @@ export function mergeBookDetails(
         ? base.genres
         : supplement.genres ?? base.genres,
     coverUrl: base.coverUrl?.trim() || supplement.coverUrl?.trim() || null,
-    publishedYear: pickPublishedYear(
-      base.publishedYear,
-      supplement.publishedYear
-    ),
-    firstPublishYear: pickEarliestYear(
-      base.firstPublishYear,
-      supplement.firstPublishYear,
-      base.publishedYear,
-      supplement.publishedYear
-    ),
+    publishedYear,
+    firstPublishYear,
+    latestEditionYear,
     publisher: base.publisher ?? supplement.publisher ?? null,
     pageCount: base.pageCount ?? supplement.pageCount ?? null,
     language: base.language ?? supplement.language ?? null,
@@ -256,6 +277,7 @@ async function softGoogleIsbn(isbn: string): Promise<Partial<BookDetail> | null>
       description: detail.description,
       coverUrl: detail.coverUrl,
       publishedYear: detail.publishedYear,
+      latestEditionYear: detail.publishedYear,
       publisher: detail.publisher,
       pageCount: detail.pageCount,
       language: detail.language,
@@ -267,36 +289,94 @@ async function softGoogleIsbn(isbn: string): Promise<Partial<BookDetail> | null>
   }
 }
 
+async function softIsbndbIsbn(isbn: string): Promise<Partial<BookDetail> | null> {
+  if (!hasIsbndbApiKey()) return null;
+  try {
+    const detail = await fetchIsbndbByIsbn(isbn);
+    if (!detail) return null;
+    return {
+      title: detail.title,
+      authors: detail.authors,
+      description: detail.description,
+      coverUrl: detail.coverUrl,
+      publishedYear: detail.publishedYear,
+      latestEditionYear: detail.publishedYear,
+      publisher: detail.publisher,
+      pageCount: detail.pageCount,
+      language: detail.language,
+      isbn: detail.isbn ?? isbn,
+      genres: detail.genres,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function applyKnownCatalogYears(
+  book: BookDetail,
+  known: NonNullable<ReturnType<typeof findKnownWorkEditions>>
+): BookDetail {
+  const firstPublishYear = pickEarliestYear(
+    book.firstPublishYear,
+    known.firstPublishYear,
+    book.publishedYear
+  );
+  const latestEditionYear = pickPublishedYear(
+    book.latestEditionYear,
+    book.publishedYear,
+    known.latestEditionYear
+  );
+  return {
+    ...book,
+    firstPublishYear,
+    latestEditionYear,
+    // Keep publishedYear as the latest edition for cache/search consumers.
+    publishedYear: pickPublishedYear(book.publishedYear, latestEditionYear),
+    id: book.id,
+  };
+}
+
+/**
+ * Sync catalog-only year fixup (no network). Safe to run after other enrichers
+ * so older ISBN years cannot wipe First published / Latest edition.
+ */
+export function applyKnownEditionYears(book: BookDetail): BookDetail {
+  const known = findKnownWorkEditions(book.title, book.authors, {
+    id: book.id,
+    isbn: book.isbn,
+  });
+  if (!known) return book;
+  return applyKnownCatalogYears(book, known);
+}
+
 /**
  * For known works (e.g. Between Two Fires), pull newer edition years/covers
  * from catalog ISBNs while keeping the same work id and original year.
  *
  * Catalog years are always applied so First published + Latest edition still
- * render when Google/OL ISBN lookups are rate-limited or incomplete.
+ * render when Google/OL/ISBNdb ISBN lookups are rate-limited or incomplete.
  */
 export async function enrichKnownEditionMetadata(
   book: BookDetail
 ): Promise<BookDetail> {
-  const known = findKnownWorkEditions(book.title, book.authors);
+  const known = findKnownWorkEditions(book.title, book.authors, {
+    id: book.id,
+    isbn: book.isbn,
+  });
   if (!known) return book;
 
-  let enriched: BookDetail = {
-    ...book,
-    firstPublishYear: pickEarliestYear(
-      book.firstPublishYear,
-      known.firstPublishYear,
-      book.publishedYear
-    ),
-    publishedYear: pickPublishedYear(
-      book.publishedYear,
-      known.latestEditionYear
-    ),
-  };
+  // Apply catalog years first so detail never depends on live ISBN APIs.
+  let enriched = applyKnownCatalogYears(book, known);
 
+  const reprintIsbns = getPopularReprintIsbns(known);
   const lookups = await Promise.all(
-    known.isbns.map(async (isbn) => {
+    reprintIsbns.map(async (isbn) => {
       const fromGoogle = await softGoogleIsbn(isbn);
-      if (fromGoogle) return fromGoogle;
+      if (fromGoogle?.publishedYear || fromGoogle?.description || fromGoogle?.coverUrl) {
+        return fromGoogle;
+      }
+      const fromIsbndb = await softIsbndbIsbn(isbn);
+      if (fromIsbndb) return fromIsbndb;
       return fetchOpenLibraryByIsbn(isbn);
     })
   );
@@ -304,35 +384,32 @@ export async function enrichKnownEditionMetadata(
   for (const hit of lookups) {
     if (!hit) continue;
     enriched = mergeBookDetails(enriched, hit);
-    // Prefer richer reprint covers when the work cover is missing/empty.
-    if (!enriched.coverUrl?.trim() && hit.coverUrl?.trim()) {
-      enriched = { ...enriched, coverUrl: hit.coverUrl.trim() };
-    } else if (
-      hit.coverUrl?.trim() &&
-      hit.publishedYear != null &&
-      (enriched.publishedYear == null ||
-        hit.publishedYear >= enriched.publishedYear)
-    ) {
-      // Newer edition cover often matches the currently popular reprint.
-      enriched = { ...enriched, coverUrl: hit.coverUrl.trim() };
+    if (hit.coverUrl?.trim()) {
+      const hitYear = pickPublishedYear(hit.publishedYear, hit.latestEditionYear);
+      const currentLatest = pickPublishedYear(
+        enriched.latestEditionYear,
+        enriched.publishedYear
+      );
+      if (
+        !enriched.coverUrl?.trim() ||
+        (hitYear != null &&
+          currentLatest != null &&
+          hitYear >= currentLatest)
+      ) {
+        enriched = { ...enriched, coverUrl: hit.coverUrl.trim() };
+      }
     }
   }
 
-  // Re-assert catalog years after max/min merges from live rows.
-  enriched = {
-    ...enriched,
-    firstPublishYear: pickEarliestYear(
-      enriched.firstPublishYear,
-      known.firstPublishYear
-    ),
-    publishedYear: pickPublishedYear(
-      enriched.publishedYear,
-      known.latestEditionYear
-    ),
-    id: book.id,
-  };
+  // Prefer a popular reprint ISBN on the work page when we only had an older one.
+  const preferredIsbn =
+    lookups.find((hit) => hit?.isbn && reprintIsbns.includes(hit.isbn.replace(/\D/g, "")))
+      ?.isbn ?? enriched.isbn;
 
-  return enriched;
+  return applyKnownCatalogYears(
+    { ...enriched, isbn: preferredIsbn ?? enriched.isbn, id: book.id },
+    known
+  );
 }
 
 export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
@@ -342,7 +419,9 @@ export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
   // so reprints can surface a newer latest-edition year on detail pages.
   enriched = await enrichKnownEditionMetadata(enriched);
 
-  if (!isSparseBookDetail(enriched)) return enriched;
+  if (!isSparseBookDetail(enriched)) {
+    return { ...enriched, id: book.id };
+  }
 
   if (enriched.isbn) {
     const byIsbn = await fetchOpenLibraryByIsbn(enriched.isbn);
@@ -368,7 +447,7 @@ export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
     if (byIsbn) enriched = mergeBookDetails(enriched, byIsbn);
   }
 
-  // Re-assert known original year after other merges.
+  // Re-assert known original + latest years after other merges.
   enriched = await enrichKnownEditionMetadata(enriched);
 
   return { ...enriched, id: book.id };

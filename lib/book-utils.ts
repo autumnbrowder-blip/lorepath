@@ -206,16 +206,20 @@ export function pickEarliestYear(
  */
 export function resolvePublicationYears(book: Pick<
   BookSummary,
-  "publishedYear" | "firstPublishYear"
+  "publishedYear" | "firstPublishYear" | "latestEditionYear"
 >): {
   displayYear: number | null;
   firstPublishYear: number | null;
   latestEditionYear: number | null;
 } {
-  const latest = normalizePublishedYear(book.publishedYear);
+  const published = normalizePublishedYear(book.publishedYear);
+  const explicitLatest = normalizePublishedYear(book.latestEditionYear);
+  const latest = pickPublishedYear(explicitLatest, published);
   const first =
     normalizePublishedYear(book.firstPublishYear) ??
-    latest;
+    (explicitLatest != null && published != null && published < explicitLatest
+      ? published
+      : latest);
   const latestEdition =
     latest != null && first != null && latest > first ? latest : null;
   return {

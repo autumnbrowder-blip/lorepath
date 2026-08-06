@@ -4,6 +4,8 @@ import {
   cleanTitle,
   keepProviderSubjects,
   parsePublishedYear,
+  pickEarliestYear,
+  pickPublishedYear,
 } from "@/lib/book-utils";
 import { finalizeBookTags } from "@/lib/book-tags";
 import {
@@ -46,7 +48,7 @@ async function withIsbndbThrottle<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function hasIsbndbApiKey(): boolean {
+export function hasIsbndbApiKey(): boolean {
   return Boolean(process.env.ISBNDB_API_KEY?.trim());
 }
 
@@ -412,8 +414,9 @@ export async function fetchIsbndbByTitle(
 }
 
 /**
- * Prefer ISBNdb values for description, cover, published year, and page count
- * when present. Other fields only fill gaps.
+ * Prefer ISBNdb values for description, cover, and page count when present.
+ * Publication years never move backward — keep the newest known edition year
+ * and preserve firstPublishYear / latestEditionYear from prior enrichment.
  */
 export function preferIsbndbDetailFields(
   base: BookDetail,
@@ -422,16 +425,34 @@ export function preferIsbndbDetailFields(
   const description = isbndb.description?.trim()
     ? isbndb.description
     : base.description;
-  const publishedYear =
-    typeof isbndb.publishedYear === "number"
-      ? isbndb.publishedYear
-      : base.publishedYear;
+  const publishedYear = pickPublishedYear(
+    base.publishedYear,
+    isbndb.publishedYear,
+    base.latestEditionYear
+  );
+  const firstPublishYear = pickEarliestYear(
+    base.firstPublishYear,
+    isbndb.firstPublishYear,
+    base.publishedYear,
+    isbndb.publishedYear
+  );
+  const latestEditionYear = pickPublishedYear(
+    base.latestEditionYear,
+    isbndb.latestEditionYear,
+    publishedYear != null &&
+      firstPublishYear != null &&
+      publishedYear > firstPublishYear
+      ? publishedYear
+      : null
+  );
 
   return {
     ...base,
     description,
     coverUrl: isbndb.coverUrl?.trim() ? isbndb.coverUrl : base.coverUrl,
     publishedYear,
+    firstPublishYear,
+    latestEditionYear,
     pageCount:
       typeof isbndb.pageCount === "number" ? isbndb.pageCount : base.pageCount,
     publisher: base.publisher ?? isbndb.publisher ?? null,

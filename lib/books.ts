@@ -446,6 +446,15 @@ export const getBookById = cache(async function getBookById(
     console.error("[getBookById] ISBNdb enrichment failed:", error);
   }
 
+  // Final sync catalog year pass after ISBNdb so older ISBN years cannot wipe
+  // First published / Latest edition on popular reprints.
+  try {
+    const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
+    book = applyKnownEditionYears(book);
+  } catch (error) {
+    console.error("[getBookById] known-edition year pass failed:", error);
+  }
+
   const canonical = { ...book, id: bookId };
 
   // Fire-and-forget cache write — soft-fail.

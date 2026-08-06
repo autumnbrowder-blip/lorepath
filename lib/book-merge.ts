@@ -67,7 +67,10 @@ export function mergePreferredBookFields(
   const publishedYear = pickPublishedYear(
     identity.publishedYear,
     a.publishedYear,
-    b.publishedYear
+    b.publishedYear,
+    identity.latestEditionYear,
+    a.latestEditionYear,
+    b.latestEditionYear
   );
 
   // Earliest known year — prefer explicit firstPublishYear, else any year.
@@ -79,6 +82,17 @@ export function mergePreferredBookFields(
     a.publishedYear,
     b.publishedYear
   );
+
+  const latestEditionYear =
+    publishedYear != null &&
+    firstPublishYear != null &&
+    publishedYear > firstPublishYear
+      ? publishedYear
+      : pickPublishedYear(
+          identity.latestEditionYear,
+          a.latestEditionYear,
+          b.latestEditionYear
+        );
 
   const pageCount =
     identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;
@@ -98,6 +112,7 @@ export function mergePreferredBookFields(
     description,
     publishedYear,
     firstPublishYear,
+    latestEditionYear,
     pageCount,
     genres: finalizeBookTags({
       genreEvidence,

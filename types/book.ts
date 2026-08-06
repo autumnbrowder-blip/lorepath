@@ -23,6 +23,12 @@ export type BookSummary = {
    * first_publish_year). When absent, UI falls back to publishedYear.
    */
   firstPublishYear?: number | null;
+  /**
+   * Newest edition year when it differs from firstPublishYear.
+   * When set, detail UI shows First published + Latest edition.
+   * Falls back to publishedYear when absent.
+   */
+  latestEditionYear?: number | null;
   source: BookSource;
   downloadCount?: number | null;
   /** ISBN-10 or ISBN-13 when known (used for search dedupe). */
