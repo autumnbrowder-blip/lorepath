@@ -1,9 +1,10 @@
 import { BookSearch } from "@/components/browse/BookSearch";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { fetchNytBestsellers } from "@/lib/nyt-books";
-import { getUserRatedSlugs } from "@/lib/ratings";
+import { getUserRatedIdentities } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
+import type { UserRatedIdentity } from "@/lib/user-rated-identity";
 
 type BrowsePageProps = {
   searchParams: Promise<{ q?: string; mode?: string }>;
@@ -15,7 +16,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   const hasQuery = Boolean(q?.trim());
 
   let isLoggedIn = false;
-  let initialRatedSlugs: string[] = [];
+  let initialRatedIdentities: UserRatedIdentity[] = [];
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
@@ -24,11 +25,11 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
       } = await supabase.auth.getUser();
       isLoggedIn = !!user;
       if (user) {
-        initialRatedSlugs = await getUserRatedSlugs(user.id);
+        initialRatedIdentities = await getUserRatedIdentities(user.id);
       }
     } catch {
       isLoggedIn = false;
-      initialRatedSlugs = [];
+      initialRatedIdentities = [];
     }
   }
 
@@ -57,7 +58,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
       bestsellers={bestsellers.books}
       bestsellersError={bestsellers.error ?? null}
       isLoggedIn={isLoggedIn}
-      initialRatedSlugs={isLoggedIn ? initialRatedSlugs : []}
+      initialRatedIdentities={isLoggedIn ? initialRatedIdentities : []}
     />
   );
 }

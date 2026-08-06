@@ -596,6 +596,19 @@ export async function getUserRatedBooks(
  * JWT/RLS gaps cannot hide badges; always filters by the verified userId.
  */
 export async function getUserRatedSlugs(userId: string): Promise<string[]> {
+  const identities = await getUserRatedIdentities(userId);
+  return identities.map((row) => row.slug);
+}
+
+export type { UserRatedIdentity } from "@/lib/user-rated-identity";
+
+/**
+ * Rated works for Inscribed badges: slug (rating identity) + title/author
+ * so browse cards can match when search returns a different provider id.
+ */
+export async function getUserRatedIdentities(
+  userId: string
+): Promise<import("@/lib/user-rated-identity").UserRatedIdentity[]> {
   noStore();
 
   if (!userId.trim() || !isSupabaseConfigured()) {
@@ -617,7 +630,9 @@ export async function getUserRatedSlugs(userId: string): Promise<string[]> {
       .select(
         `
         books (
-          slug
+          slug,
+          title,
+          author
         )
       `
       )
@@ -627,16 +642,29 @@ export async function getUserRatedSlugs(userId: string): Promise<string[]> {
       return [];
     }
 
-    const slugs = new Set<string>();
+    const bySlug = new Map<
+      string,
+      import("@/lib/user-rated-identity").UserRatedIdentity
+    >();
     for (const row of data) {
       const book = Array.isArray(row.books) ? row.books[0] : row.books;
-      const slug =
-        book && typeof (book as { slug?: unknown }).slug === "string"
-          ? ((book as { slug: string }).slug).trim()
+      if (!book || typeof (book as { slug?: unknown }).slug !== "string") {
+        continue;
+      }
+      const slug = ((book as { slug: string }).slug).trim();
+      if (!slug || bySlug.has(slug)) continue;
+      const title =
+        typeof (book as { title?: unknown }).title === "string"
+          ? ((book as { title: string }).title).trim()
           : "";
-      if (slug) slugs.add(slug);
+      if (!title) continue;
+      const author =
+        typeof (book as { author?: unknown }).author === "string"
+          ? ((book as { author: string }).author).trim() || null
+          : null;
+      bySlug.set(slug, { slug, title, author });
     }
-    return Array.from(slugs);
+    return Array.from(bySlug.values());
   } catch {
     return [];
   }

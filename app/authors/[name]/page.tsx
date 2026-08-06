@@ -2,9 +2,10 @@ import { BookCard } from "@/components/browse/BookCard";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { searchBooks } from "@/lib/books";
 import { decodeAuthorName } from "@/lib/book-links";
-import { getUserRatedSlugs } from "@/lib/ratings";
+import { getUserRatedIdentities } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
+import { isBookInscribedByUser } from "@/lib/user-rated-identity";
 import { ArrowLeft, User } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -30,7 +31,7 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
   const authorName = decodeAuthorName(name);
   const { books } = await searchBooks(authorName);
 
-  let ratedSlugSet: Set<string> | null = null;
+  let ratedIdentities: Awaited<ReturnType<typeof getUserRatedIdentities>> = [];
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createClient();
@@ -38,10 +39,10 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        ratedSlugSet = new Set(await getUserRatedSlugs(user.id));
+        ratedIdentities = await getUserRatedIdentities(user.id);
       }
     } catch {
-      ratedSlugSet = null;
+      ratedIdentities = [];
     }
   }
 
@@ -72,7 +73,7 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
               <BookCard
                 key={book.id}
                 book={book}
-                alreadyRated={Boolean(ratedSlugSet?.has(book.id))}
+                alreadyRated={isBookInscribedByUser(book, ratedIdentities)}
               />
             ))}
           </div>
