@@ -185,11 +185,11 @@ export default async function FaqPage() {
 
   return (
     <div className="faq-page">
-      {/* Viewport-locked auditorium background — fixed; does not rescale with content */}
+      {/* Same viewport-locked library scene as the homepage hero */}
       <div className="faq-page-scene" aria-hidden="true">
         <div className="scroll-parallax-layer" data-scroll-parallax="">
           <Image
-            src="/images/lorepath-faq-auditorium-amphitheater.png"
+            src="/images/lorepath-library-hero.png"
             alt=""
             fill
             priority
@@ -197,19 +197,13 @@ export default async function FaqPage() {
             className="faq-page-scene-image"
           />
         </div>
-
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,_rgba(8,16,12,0.55)_0%,_rgba(8,16,12,0.22)_38%,_transparent_68%)]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#07120c]/40 via-transparent to-[#050a08]/72" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_70%,_rgba(166,124,45,0.12)_0%,_transparent_45%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_88%_35%,_rgba(61,107,79,0.14)_0%,_transparent_42%)]" />
-
-        <div className="absolute left-[12%] top-[22%] h-40 w-40 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.22)_0%,_transparent_70%)] blur-2xl" />
-        <div className="absolute right-[14%] top-[30%] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(240,215,138,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.8s]" />
-
-        <CornerFlourish className="absolute left-2 top-2 h-12 w-12 text-gold-500/55 sm:left-4 sm:top-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute right-2 top-2 h-12 w-12 rotate-90 text-gold-500/55 sm:right-4 sm:top-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute bottom-2 left-2 h-12 w-12 -rotate-90 text-gold-500/55 sm:bottom-4 sm:left-4 sm:h-20 sm:w-20" />
-        <CornerFlourish className="absolute bottom-2 right-2 h-12 w-12 rotate-180 text-gold-500/55 sm:bottom-4 sm:right-4 sm:h-20 sm:w-20" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,_rgba(7,14,10,0.1)_0%,_rgba(7,14,10,0.5)_55%,_rgba(4,8,6,0.9)_100%)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#070e0a]/65 via-transparent to-[#070e0a]/92" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#070e0a]/40 via-transparent to-[#070e0a]/40" />
+        {/* Candlelight pools — matches homepage */}
+        <div className="absolute bottom-[8%] left-[12%] h-56 w-56 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(212,170,60,0.22)_0%,_transparent_70%)] blur-2xl" />
+        <div className="absolute bottom-[12%] right-[14%] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(184,148,31,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.9s]" />
+        <div className="absolute left-1/2 top-[32%] h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(212,184,74,0.12)_0%,_transparent_68%)] blur-2xl" />
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-7 sm:px-6 sm:py-14">
@@ -231,6 +225,24 @@ export default async function FaqPage() {
           <CornerFlourish className="pointer-events-none absolute bottom-1 right-1 z-20 h-12 w-12 rotate-180 text-[#a67c2d]/70 sm:bottom-2 sm:right-2 sm:h-16 sm:w-16" />
 
           <div className="book-detail-tome-content relative z-[2] space-y-5 p-4 sm:space-y-6 sm:p-8">
+            <SectionCard
+              icon={Stars}
+              eyebrow="A note from the Archives"
+              title="Content ratings, not star ratings"
+            >
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                LorePath does not use traditional star ratings. There are no
+                five-star crowns for whether a book is &ldquo;good&rdquo; or
+                &ldquo;bad.&rdquo;
+              </p>
+              <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
+                Instead, readers mark the content itself — spice, pacing, horror,
+                and more — so you can sense a book&apos;s tone before you begin.
+                Think of each mark as a lantern on the path: it lights what waits
+                ahead, not whether the journey deserves applause.
+              </p>
+            </SectionCard>
+
             <SectionCard
               icon={ScrollText}
               eyebrow="Chapter 1 of 8 · The Path Begins"

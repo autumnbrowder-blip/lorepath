@@ -388,7 +388,7 @@
     isolation: isolate;
     min-height: calc(100svh - 4.5rem);
     min-height: calc(100dvh - 4.5rem);
-    background-color: #07120c;
+    background-color: #070e0a;
     overflow-x: clip;
     width: 100%;
     max-width: 100%;
@@ -401,7 +401,7 @@
     filter: none !important;
   }
 
-  /* Fixed full-viewport auditorium — size locked to viewport, not page content */
+  /* Fixed full-viewport library — matches homepage home-hero-scene treatment */
   .faq-page-scene {
     pointer-events: none;
     position: fixed;
@@ -415,13 +415,14 @@
     min-height: 100dvh;
     overflow: hidden;
     transform: none;
-    background-color: #07120c;
+    transition: none;
+    background-color: #070e0a;
   }
 
   .faq-page-scene-image,
   .faq-page-scene img {
     object-fit: cover;
-    object-position: center 40%;
+    object-position: center center;
     width: 100%;
     height: 100%;
     transition: none;
