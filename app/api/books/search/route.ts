@@ -2,6 +2,7 @@ import { sessionUserIsAdmin } from "@/lib/admin";
 import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
+import { getBearerToken } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 /** Always hit providers at request time (token + live search). */
@@ -29,7 +30,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await searchBooks(query, page, { mode });
+    const result = await searchBooks(query, page, {
+      mode,
+      accessToken: getBearerToken(request),
+    });
     const isAdmin = await sessionUserIsAdmin();
 
     // Public clients get books + paging only. Source breakdown is admin-only.

@@ -18,6 +18,17 @@ export type UserRatedIdentity = {
   author: string | null;
 };
 
+/** Normalize route/search ids so ol-%2F… and ol-/… compare equal. */
+export function normalizeExternalBookId(id: string): string {
+  const trimmed = id.trim();
+  if (!trimmed) return "";
+  try {
+    return decodeURIComponent(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
 /** True when this browse/search card is the same work the user already rated. */
 export function isBookInscribedByUser(
   book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">,
@@ -25,8 +36,11 @@ export function isBookInscribedByUser(
 ): boolean {
   if (!rated.length) return false;
 
-  const bookId = book.id.trim();
-  if (bookId && rated.some((row) => row.slug === bookId)) {
+  const bookId = normalizeExternalBookId(book.id);
+  if (
+    bookId &&
+    rated.some((row) => normalizeExternalBookId(row.slug) === bookId)
+  ) {
     return true;
   }
 
@@ -71,8 +85,12 @@ export function alignBooksToRatedSlugs<T extends BookSummary>(
   if (!rated.length || books.length === 0) return [...books];
 
   return books.map((book) => {
-    if (rated.some((row) => row.slug === book.id)) {
-      return book;
+    const bookId = normalizeExternalBookId(book.id);
+    const exact = rated.find(
+      (row) => normalizeExternalBookId(row.slug) === bookId
+    );
+    if (exact) {
+      return exact.slug !== book.id ? { ...book, id: exact.slug } : book;
     }
     const match = rated.find((row) => isBookInscribedByUser(book, [row]));
     if (!match) return book;
@@ -90,9 +108,23 @@ export function inscribedCardIdsForBooks(
   for (const book of books) {
     if (!isBookInscribedByUser(book, rated)) continue;
     const match = rated.find(
-      (row) => row.slug === book.id || isBookInscribedByUser(book, [row])
+      (row) =>
+        normalizeExternalBookId(row.slug) ===
+          normalizeExternalBookId(book.id) ||
+        isBookInscribedByUser(book, [row])
     );
     ids.add(match?.slug ?? book.id);
   }
   return Array.from(ids);
+}
+
+/** Slug set for O(1) exact hasUserRating checks after alignment. */
+export function ratedSlugSet(
+  rated: readonly UserRatedIdentity[]
+): Set<string> {
+  return new Set(
+    rated
+      .map((row) => normalizeExternalBookId(row.slug))
+      .filter(Boolean)
+  );
 }

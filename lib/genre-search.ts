@@ -5,6 +5,11 @@ import type { BookSummary } from "@/types/book";
 export type BookSearchMode = "text" | "genre";
 
 export type SearchBooksOptions = {
+  /**
+   * Browser access token when cookie auth is missing (Netlify / SSR gaps).
+   * Lets search attach the caller's rated slugs for Inscribed badges.
+   */
+  accessToken?: string | null;
   mode?: BookSearchMode;
 };
 

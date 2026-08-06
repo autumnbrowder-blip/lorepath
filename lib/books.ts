@@ -112,9 +112,13 @@ function readSettledGoogle(
   };
 }
 
-async function resolveSearchUserId(): Promise<string | null> {
+async function resolveSearchUserId(
+  accessToken?: string | null
+): Promise<string | null> {
   try {
-    const auth = await createAuthenticatedClient();
+    const auth = await createAuthenticatedClient({
+      accessToken: accessToken ?? null,
+    });
     if ("error" in auth) return null;
     return auth.user.id;
   } catch {
@@ -143,7 +147,7 @@ export async function searchBooks(
     ? { mode: "genre" }
     : undefined;
 
-  const userIdPromise = resolveSearchUserId();
+  const userIdPromise = resolveSearchUserId(options?.accessToken);
 
   const [
     googleSettled,
