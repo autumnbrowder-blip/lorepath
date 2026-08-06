@@ -18,6 +18,12 @@ type BookCardProps = {
 };
 
 /**
+ * TEMPORARY verification switch: renders Inscribed on every card so we can
+ * confirm this is the component production serves. Remove after checking.
+ */
+const FORCE_INSCRIBED_BADGE = true;
+
+/**
  * Browse / search result card.
  * When hasUserRating is true, renders full-width Inscribed above Open the Tome.
  */
@@ -37,6 +43,8 @@ export function BookCard({
 
   const { displayYear, firstPublishYear, latestEditionYear } =
     resolvePublicationYears(book);
+
+  const showInscribed = FORCE_INSCRIBED_BADGE || hasUserRating;
 
   return (
     <article className="tome-card group">
@@ -96,7 +104,7 @@ export function BookCard({
 
         {/* Action stack: Inscribed (rated only) + Open the Tome */}
         <div className="mt-auto flex flex-col gap-1.5">
-          {hasUserRating ? (
+          {showInscribed ? (
             <div
               className="tome-card-inscribed inline-flex w-full min-h-[2.5rem] items-center justify-center gap-1.5 rounded-sm border border-gold-500/80 bg-gradient-to-b from-[#2a5a44] via-[#1a4030] to-[#0f241c] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,230,150,0.2),0_0_14px_rgba(166,124,45,0.22)]"
               role="status"
