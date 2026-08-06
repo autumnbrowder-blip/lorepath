@@ -231,14 +231,16 @@ export default async function FaqPage() {
               title="Content ratings, not star ratings"
             >
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                LorePath does not deal in star ratings. There is no crown for
-                whether a book was &ldquo;good&rdquo; or &ldquo;bad.&rdquo;
+                LorePath does not use the traditional star rating system as
+                others do. There are no five-star crowns for whether a book is
+                &ldquo;good&rdquo; or &ldquo;bad.&rdquo;
               </p>
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
-                Here, readers mark what the story holds — spice, pacing, horror,
-                and more — so you can sense the road before you set out. Each
-                mark is only a lantern on the path: it shows what waits ahead,
-                not whether the journey deserves applause.
+                Instead, readers mark the content itself — spice, pacing, horror,
+                and more — so you can sense a book&apos;s tone before you begin.
+                Think of each mark as a lantern on a dark winding path: it lights
+                what lies in wait without ruining the plot, not whether the
+                journey deserves high praise or tomato-hurling.
               </p>
             </SectionCard>
 
