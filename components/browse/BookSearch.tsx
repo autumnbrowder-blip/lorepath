@@ -11,13 +11,20 @@ import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   alignBooksToRatedSlugs,
-  isBookInscribedByUser,
-  normalizeExternalBookId,
+  createRatedBookLookup,
+  ratedBookKey,
   type UserRatedIdentity,
 } from "@/lib/user-rated-identity";
 import type { BookSummary } from "@/types/book";
 import { AlertCircle, Loader2, Search } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 
 type SearchPagePayload = {
@@ -27,6 +34,14 @@ type SearchPagePayload = {
   /** Card ids on this page that match the user's rated works. */
   userRatedSlugs?: string[];
 };
+
+/** Where the rated set came from — surfaced in the temporary debug log. */
+type RatedSource =
+  | "ssr"
+  | "browser-query"
+  | "api"
+  | "session-storage"
+  | "none";
 
 const CLIENT_SEARCH_CACHE_TTL_MS = 90_000;
 const JUST_RATED_STORAGE_KEY = "lorepath-just-rated-slugs";
@@ -122,23 +137,32 @@ export function BookSearch({
   const [ratedLoadAttempted, setRatedLoadAttempted] = useState(
     initialRatedIdentities.length > 0
   );
+  const [ratedSource, setRatedSource] = useState<RatedSource>(
+    initialRatedIdentities.length > 0 ? "ssr" : "none"
+  );
 
   const effectivelyLoggedIn = isLoggedIn || clientLoggedIn;
 
+  /**
+   * One lookup for every Inscribed decision. Rated identities carry the saved
+   * `books.slug`; server-matched card ids are slug-only entries.
+   */
+  const ratedLookup = useMemo(
+    () =>
+      createRatedBookLookup([
+        ...ratedIdentities,
+        ...inscribedCardIds
+          .filter(
+            (id) => id && !ratedIdentities.some((row) => row.slug === id)
+          )
+          .map((id) => ({ slug: id, title: "", author: null })),
+      ]),
+    [ratedIdentities, inscribedCardIds]
+  );
+
   function hasUserRating(book: BookSummary): boolean {
     if (!effectivelyLoggedIn) return false;
-    const id = normalizeExternalBookId(book.id);
-    if (inscribedCardIds.some((x) => normalizeExternalBookId(x) === id)) {
-      return true;
-    }
-    if (
-      ratedIdentities.some(
-        (row) => normalizeExternalBookId(row.slug) === id
-      )
-    ) {
-      return true;
-    }
-    return isBookInscribedByUser(book, ratedIdentities);
+    return ratedLookup.has(book);
   }
 
   function mergeInscribedCardIds(extra: string[] | undefined) {
@@ -193,6 +217,7 @@ export function BookSearch({
         .eq("rated_by", user.id);
 
       let next: UserRatedIdentity[] = [];
+      let source: RatedSource = "none";
 
       if (!ratingError && ratingRows && ratingRows.length > 0) {
         const bookIds = Array.from(
@@ -227,6 +252,7 @@ export function BookSearch({
                   : null,
             });
           }
+          if (next.length > 0) source = "browser-query";
         }
       }
 
@@ -251,12 +277,14 @@ export function BookSearch({
           };
           if (Array.isArray(data.identities) && data.identities.length > 0) {
             next = data.identities;
+            source = "api";
           } else if (Array.isArray(data.slugs) && data.slugs.length > 0) {
             next = data.slugs.map((slug) => ({
               slug,
-              title: slug,
+              title: "",
               author: null,
             }));
+            source = "api";
           }
         }
       }
@@ -264,15 +292,19 @@ export function BookSearch({
       // 3) Same-tab ratings just submitted.
       for (const slug of readJustRatedSlugs()) {
         if (!next.some((row) => row.slug === slug)) {
-          next.push({ slug, title: slug, author: null });
+          next.push({ slug, title: "", author: null });
+          if (source === "none") source = "session-storage";
         }
       }
 
       if (next.length > 0) {
         setRatedIdentities(next);
+        setRatedSource(source);
         setInscribedCardIds((ids) =>
           Array.from(new Set([...ids, ...next.map((row) => row.slug)]))
         );
+      } else {
+        setRatedSource("none");
       }
     } catch {
       // Keep SSR / last-known identities.
@@ -379,23 +411,18 @@ export function BookSearch({
     if (!allowLog) return;
 
     ratedDebugLoggedRef.current = true;
-    const ratedKeys = new Set(
-      ratedIdentities.map((row) => normalizeExternalBookId(row.slug))
-    );
-    const sample = books.slice(0, 5).map((book) => {
-      const id = normalizeExternalBookId(book.id);
-      const flagged = hasUserRating(book);
-      return {
-        cardId: book.id,
-        slug: book.id,
-        hasUserRating: flagged,
-        keyInRatedSet: ratedKeys.has(id) || isBookInscribedByUser(book, ratedIdentities),
-      };
-    });
+    const sample = books.slice(0, 5).map((book) => ({
+      cardKey: book.id,
+      cardWorkKey: ratedBookKey(book),
+      hasUserRating: hasUserRating(book),
+      matchedRatedKey: ratedLookup.keyFor(book),
+    }));
     console.info("[InscribedDebug] first cards", {
       effectivelyLoggedIn,
-      ratedSetSize: ratedIdentities.length,
-      ratedSlugsSample: ratedIdentities.slice(0, 8).map((r) => r.slug),
+      ratedSource,
+      ratedSetSize: ratedLookup.size,
+      ratedKeys: Array.from(ratedLookup.slugs).slice(0, 8),
+      ratedWorkKeys: Array.from(ratedLookup.workKeys).slice(0, 8),
       cards: sample,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot debug when books+ratings ready

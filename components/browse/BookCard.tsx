@@ -18,12 +18,6 @@ type BookCardProps = {
 };
 
 /**
- * TEMPORARY verification switch: renders Inscribed on every card so we can
- * confirm this is the component production serves. Remove after checking.
- */
-const FORCE_INSCRIBED_BADGE = true;
-
-/**
  * Browse / search result card.
  * When hasUserRating is true, renders full-width Inscribed above Open the Tome.
  */
@@ -44,7 +38,7 @@ export function BookCard({
   const { displayYear, firstPublishYear, latestEditionYear } =
     resolvePublicationYears(book);
 
-  const showInscribed = FORCE_INSCRIBED_BADGE || hasUserRating;
+  const showInscribed = hasUserRating;
 
   return (
     <article className="tome-card group">

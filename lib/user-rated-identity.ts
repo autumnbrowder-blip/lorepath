@@ -34,44 +34,7 @@ export function isBookInscribedByUser(
   book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">,
   rated: readonly UserRatedIdentity[]
 ): boolean {
-  if (!rated.length) return false;
-
-  const bookId = normalizeExternalBookId(book.id);
-  if (
-    bookId &&
-    rated.some((row) => normalizeExternalBookId(row.slug) === bookId)
-  ) {
-    return true;
-  }
-
-  const bookKey = getBookDedupeKey(book);
-  const bookTitle = getBookTitleDedupeKey(book);
-  const bookAuthor = getBookAuthorDedupeKey(book);
-
-  for (const row of rated) {
-    const ratedAsBook: Pick<BookSummary, "id" | "title" | "authors" | "isbn"> = {
-      id: row.slug,
-      title: row.title,
-      authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
-      isbn: null,
-    };
-
-    if (getBookDedupeKey(ratedAsBook) === bookKey) {
-      return true;
-    }
-
-    // Soft author match: same title + compatible author tokens
-    // (e.g. "buehlman" vs "buehlman c") when exact keys differ.
-    if (
-      getBookTitleDedupeKey(ratedAsBook) === bookTitle &&
-      bookTitle &&
-      authorKeysCompatible(getBookAuthorDedupeKey(ratedAsBook), bookAuthor)
-    ) {
-      return true;
-    }
-  }
-
-  return false;
+  return createRatedBookLookup(rated).has(book);
 }
 
 /**
@@ -84,17 +47,11 @@ export function alignBooksToRatedSlugs<T extends BookSummary>(
 ): T[] {
   if (!rated.length || books.length === 0) return [...books];
 
+  const lookup = createRatedBookLookup(rated);
   return books.map((book) => {
-    const bookId = normalizeExternalBookId(book.id);
-    const exact = rated.find(
-      (row) => normalizeExternalBookId(row.slug) === bookId
-    );
-    if (exact) {
-      return exact.slug !== book.id ? { ...book, id: exact.slug } : book;
-    }
-    const match = rated.find((row) => isBookInscribedByUser(book, [row]));
-    if (!match) return book;
-    return { ...book, id: match.slug };
+    const slug = lookup.keyFor(book);
+    if (!slug || slug === book.id) return book;
+    return { ...book, id: slug };
   });
 }
 
@@ -104,16 +61,11 @@ export function inscribedCardIdsForBooks(
   rated: readonly UserRatedIdentity[]
 ): string[] {
   if (!rated.length || books.length === 0) return [];
+  const lookup = createRatedBookLookup(rated);
   const ids = new Set<string>();
   for (const book of books) {
-    if (!isBookInscribedByUser(book, rated)) continue;
-    const match = rated.find(
-      (row) =>
-        normalizeExternalBookId(row.slug) ===
-          normalizeExternalBookId(book.id) ||
-        isBookInscribedByUser(book, [row])
-    );
-    ids.add(match?.slug ?? book.id);
+    const slug = lookup.keyFor(book);
+    if (slug) ids.add(slug);
   }
   return Array.from(ids);
 }
@@ -127,4 +79,94 @@ export function ratedSlugSet(
       .map((row) => normalizeExternalBookId(row.slug))
       .filter(Boolean)
   );
+}
+
+/**
+ * The single key Inscribed is keyed on: the rated work.
+ * Written as `books.slug` (the `/books/[id]` route id) when a rating is saved,
+ * and reduced to a provider-independent `title::author` work key so a card that
+ * arrives with another provider's id resolves to the same rated work.
+ */
+export function ratedBookKey(
+  book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">
+): string {
+  return getBookDedupeKey(book);
+}
+
+export type RatedBookLookup = {
+  /** Number of rated works in the set. */
+  size: number;
+  /** Rated `books.slug` values (normalized) — the exact-key fast path. */
+  slugs: ReadonlySet<string>;
+  /** Provider-independent work keys for the same rated works. */
+  workKeys: ReadonlySet<string>;
+  /** The rated slug this card resolves to, or null when unrated. */
+  keyFor(
+    book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">
+  ): string | null;
+  /** True when the logged-in reader already rated this work. */
+  has(book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">): boolean;
+};
+
+/** Build one lookup used for every hasUserRating decision. */
+export function createRatedBookLookup(
+  rated: readonly UserRatedIdentity[]
+): RatedBookLookup {
+  const slugToKey = new Map<string, string>();
+  const workKeyToSlug = new Map<string, string>();
+
+  for (const row of rated) {
+    const slug = row.slug?.trim();
+    if (!slug) continue;
+    slugToKey.set(normalizeExternalBookId(slug), slug);
+    if (row.title?.trim()) {
+      workKeyToSlug.set(
+        ratedBookKey({
+          id: slug,
+          title: row.title,
+          authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
+          isbn: null,
+        }),
+        slug
+      );
+    }
+  }
+
+  function keyFor(
+    book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">
+  ): string | null {
+    if (rated.length === 0) return null;
+
+    const exact = slugToKey.get(normalizeExternalBookId(book.id));
+    if (exact) return exact;
+
+    const byWork = workKeyToSlug.get(ratedBookKey(book));
+    if (byWork) return byWork;
+
+    // Same title with compatible author tokens ("buehlman" vs "buehlman c").
+    const title = getBookTitleDedupeKey(book);
+    if (!title) return null;
+    const author = getBookAuthorDedupeKey(book);
+    const match = rated.find((row) => {
+      const ratedAsBook = {
+        id: row.slug,
+        title: row.title,
+        authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
+        isbn: null,
+      };
+      return (
+        getBookTitleDedupeKey(ratedAsBook) === title &&
+        authorKeysCompatible(getBookAuthorDedupeKey(ratedAsBook), author)
+      );
+    });
+    return match?.slug ?? null;
+  }
+
+  return {
+    size: slugToKey.size,
+    slugs: new Set(slugToKey.keys()),
+    workKeys: new Set(workKeyToSlug.keys()),
+    keyFor,
+    has: (book) => keyFor(book) !== null,
+  };
 }
