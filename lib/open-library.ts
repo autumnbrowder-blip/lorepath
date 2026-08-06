@@ -175,21 +175,33 @@ export async function searchOpenLibrary(
       params.set("q", query);
     }
 
-    const response = await fetchOpenLibrary(
-      `https://openlibrary.org/search.json?${params.toString()}`,
-      { noStore: true }
-    );
+    const runSearch = async (search: URLSearchParams) => {
+      const response = await fetchOpenLibrary(
+        `https://openlibrary.org/search.json?${search.toString()}`,
+        { noStore: true }
+      );
+      if (!response.ok) return null;
+      const data: OpenLibrarySearchResponse = await response.json();
+      return {
+        books: parseOpenLibrarySearchResponse(data),
+        hasMore: page * pageSize < (data.numFound ?? 0),
+      };
+    };
 
-    if (!response.ok) {
-      return { books: [], hasMore: false };
+    const result = await runSearch(params);
+    if (result && result.books.length > 0) return result;
+
+    // Title-shaped-like-a-name queries ("Fourth Wing", "Project Hail Mary")
+    // find nothing in author mode — retry them as a plain keyword search.
+    if (authorSearch) {
+      const keywordParams = new URLSearchParams(params);
+      keywordParams.delete("author");
+      keywordParams.set("q", query);
+      const keywordResult = await runSearch(keywordParams);
+      if (keywordResult) return keywordResult;
     }
 
-    const data: OpenLibrarySearchResponse = await response.json();
-    const books = parseOpenLibrarySearchResponse(data);
-    const numFound = data.numFound ?? 0;
-    const hasMore = page * pageSize < numFound;
-
-    return { books, hasMore };
+    return result ?? { books: [], hasMore: false };
   } catch {
     return { books: [], hasMore: false };
   }
