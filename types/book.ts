@@ -16,7 +16,13 @@ export type BookSummary = {
   coverUrl: string | null;
   description: string | null;
   genres: string[];
+  /** Latest known edition / publication year. */
   publishedYear: number | null;
+  /**
+   * Earliest known publication year for the work (e.g. Open Library
+   * first_publish_year). When absent, UI falls back to publishedYear.
+   */
+  firstPublishYear?: number | null;
   source: BookSource;
   downloadCount?: number | null;
   /** ISBN-10 or ISBN-13 when known (used for search dedupe). */

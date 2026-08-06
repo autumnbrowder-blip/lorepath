@@ -1,8 +1,11 @@
 import { withFinalizedTags } from "@/lib/book-tags";
 import { mergePreferredBookFields } from "@/lib/book-merge";
 import {
+  authorKeysCompatible,
+  getBookAuthorDedupeKey,
   getBookDedupeKey,
   getBookIsbnKey,
+  getBookTitleDedupeKey,
   isExactTitleMatch,
   isMerchandiseOrCompanion,
   isWeakDescription,
@@ -117,7 +120,11 @@ export type FinalizeSearchOptions = PickPreferredOptions & {
 function dedupeCandidates(
   candidates: BookSummary[],
   options?: PickPreferredOptions
-): { books: BookSummary[]; removedByIsbn: number; removedByTitleAuthor: number } {
+): {
+  books: BookSummary[];
+  removedByIsbn: number;
+  removedByTitleAuthor: number;
+} {
   // Pass 1: ISBN matches always collapse
   const byIsbn = new Map<string, BookSummary>();
   const withoutIsbn: BookSummary[] = [];
@@ -141,7 +148,7 @@ function dedupeCandidates(
   const afterIsbn = byIsbn.size + withoutIsbn.length;
   const removedByIsbn = candidates.length - afterIsbn;
 
-  // Pass 2: normalized title + author (distinct ISBNs of the same work collapse)
+  // Pass 2: normalized title + primary author (exact key)
   const byTitleAuthor = new Map<string, BookSummary>();
 
   for (const book of [...Array.from(byIsbn.values()), ...withoutIsbn]) {
@@ -156,10 +163,44 @@ function dedupeCandidates(
     byTitleAuthor.set(key, mergePreferredFields(preferred, other));
   }
 
-  const removedByTitleAuthor = afterIsbn - byTitleAuthor.size;
+  // Pass 3: soft work-level merge — same title + compatible author keys
+  // ("buehlman" ↔ "buehlman c") or unknown-author into a sole titled author.
+  const workMerged: BookSummary[] = [];
+  for (const book of Array.from(byTitleAuthor.values())) {
+    const titleKey = getBookTitleDedupeKey(book);
+    const authorKey = getBookAuthorDedupeKey(book);
+    let mergedIntoExisting = false;
+
+    for (let i = 0; i < workMerged.length; i++) {
+      const existing = workMerged[i]!;
+      if (getBookTitleDedupeKey(existing) !== titleKey) continue;
+
+      const existingAuthor = getBookAuthorDedupeKey(existing);
+      const authorsCompatible =
+        (authorKey &&
+          existingAuthor &&
+          authorKeysCompatible(authorKey, existingAuthor)) ||
+        (authorKey && !existingAuthor) ||
+        (!authorKey && existingAuthor);
+
+      if (!authorsCompatible) continue;
+
+      const preferred = pickPreferredDuplicate(existing, book, options);
+      const other = preferred === existing ? book : existing;
+      workMerged[i] = mergePreferredFields(preferred, other);
+      mergedIntoExisting = true;
+      break;
+    }
+
+    if (!mergedIntoExisting) {
+      workMerged.push(book);
+    }
+  }
+
+  const removedByTitleAuthor = afterIsbn - workMerged.length;
 
   return {
-    books: Array.from(byTitleAuthor.values()),
+    books: workMerged,
     removedByIsbn,
     removedByTitleAuthor,
   };

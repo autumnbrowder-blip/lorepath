@@ -1,7 +1,7 @@
 import { AuthorLinks } from "@/components/books/AuthorLinks";
 import { BookCover } from "@/components/books/BookCover";
 import { GenreTag } from "@/components/theme/GenreTag";
-import { truncateText } from "@/lib/book-utils";
+import { resolvePublicationYears, truncateText } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 import Link from "next/link";
 
@@ -20,6 +20,9 @@ export function BookCard({ book, searchQuery }: BookCardProps) {
   const bookHref = searchQuery?.trim()
     ? `/books/${encodedId}?q=${encodeURIComponent(searchQuery.trim())}`
     : `/books/${encodedId}`;
+
+  const { displayYear, firstPublishYear, latestEditionYear } =
+    resolvePublicationYears(book);
 
   return (
     <article className="tome-card group">
@@ -47,11 +50,19 @@ export function BookCard({ book, searchQuery }: BookCardProps) {
           />
         </p>
 
-        {book.publishedYear && (
-          <p className="mb-2 font-storybook text-[11px] font-semibold tracking-[0.12em] nav-dragon-gold">
-            {book.publishedYear}
-          </p>
-        )}
+        {displayYear ? (
+          <div className="mb-2 space-y-0.5">
+            <p className="font-storybook text-[11px] font-semibold tracking-[0.12em] nav-dragon-gold">
+              {displayYear}
+            </p>
+            {firstPublishYear && latestEditionYear ? (
+              <p className="font-heading text-[10px] leading-snug text-[#f0e4c7]/70">
+                First published {firstPublishYear} · Latest edition{" "}
+                {latestEditionYear}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {description && (
           <p className="mb-3 line-clamp-3 font-heading text-[13px] font-medium leading-relaxed text-[#f0e4c7]/90">

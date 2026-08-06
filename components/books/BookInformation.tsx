@@ -4,6 +4,7 @@ import { BookMetadataItem } from "@/components/books/BookMetadataItem";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { GenreTag } from "@/components/theme/GenreTag";
 import { getIsbnUrl } from "@/lib/book-links";
+import { resolvePublicationYears } from "@/lib/book-utils";
 import type { BookDetail } from "@/types/book";
 import {
   BookMarked,
@@ -30,11 +31,21 @@ export function BookInformation({
   matchScore,
   ratingForm,
 }: BookInformationProps) {
+  const { displayYear, firstPublishYear, latestEditionYear } =
+    resolvePublicationYears(book);
+
+  const publishedValue =
+    firstPublishYear && latestEditionYear
+      ? `First published ${firstPublishYear} · Latest edition ${latestEditionYear}`
+      : displayYear
+        ? String(displayYear)
+        : null;
+
   const metadataItems = [
-    book.publishedYear && {
+    publishedValue && {
       icon: CalendarDays,
       label: "Published",
-      value: String(book.publishedYear),
+      value: publishedValue,
     },
     book.publisher && {
       icon: Building2,

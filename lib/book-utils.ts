@@ -184,6 +184,47 @@ export function pickPublishedYear(
   return best;
 }
 
+/**
+ * Prefer the earliest known publication year (original / first publish).
+ * Missing years never override a real year.
+ */
+export function pickEarliestYear(
+  ...years: Array<number | null | undefined>
+): number | null {
+  let best: number | null = null;
+  for (const year of years) {
+    const normalized = normalizePublishedYear(year);
+    if (normalized == null) continue;
+    if (best == null || normalized < best) best = normalized;
+  }
+  return best;
+}
+
+/**
+ * Resolve display years for a work card / detail panel.
+ * Prefers original publication; exposes latest edition when it differs.
+ */
+export function resolvePublicationYears(book: Pick<
+  BookSummary,
+  "publishedYear" | "firstPublishYear"
+>): {
+  displayYear: number | null;
+  firstPublishYear: number | null;
+  latestEditionYear: number | null;
+} {
+  const latest = normalizePublishedYear(book.publishedYear);
+  const first =
+    normalizePublishedYear(book.firstPublishYear) ??
+    latest;
+  const latestEdition =
+    latest != null && first != null && latest > first ? latest : null;
+  return {
+    displayYear: first ?? latest,
+    firstPublishYear: first,
+    latestEditionYear: latestEdition,
+  };
+}
+
 /** Convert ISBN-10 digits to ISBN-13 (978…) when valid. */
 function isbn10ToIsbn13(isbn10: string): string | null {
   if (!/^\d{9}[\dXx]$/.test(isbn10)) return null;
@@ -372,18 +413,31 @@ export function getBookIsbnKey(
 }
 
 /**
- * Author component of the dedupe key. Normalize the first author (and any
- * co-authors) the same way as titles: lowercase, strip punctuation, collapse
- * spaces. Providers order co-authors differently (Google: "Anderson; Herbert",
- * ISBNdb: "Herbert; Anderson"), so the canonical token is the lexicographically
- * smallest normalized last-name+initial — deterministic and order-independent.
+ * Author component of the dedupe key. Prefer the primary (first listed) author
+ * so a stray editor/co-author cannot fork the work identity. Providers that
+ * reverse co-author order still collapse when the shared last+initial matches
+ * via the soft-compatible merge pass in finalize.
  */
 function authorKeyPart(authors: string[]): string {
-  const keys = authors
-    .map((author) => normalizeAuthorKeyForDedupe(author))
-    .filter(Boolean)
-    .sort();
-  return keys[0] ?? "";
+  for (const author of authors) {
+    const key = normalizeAuthorKeyForDedupe(author);
+    if (key) return key;
+  }
+  return "";
+}
+
+/**
+ * True when two author keys refer to the same person at work level.
+ * "buehlman" (last only) matches "buehlman c"; initials must agree when both set.
+ */
+export function authorKeysCompatible(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [aLast, aInit] = a.split(" ");
+  const [bLast, bInit] = b.split(" ");
+  if (!aLast || aLast !== bLast) return false;
+  if (!aInit || !bInit) return true;
+  return aInit === bInit;
 }
 
 /**
@@ -408,6 +462,19 @@ export function getBookDedupeKey(
   book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
 ): string {
   return bookDedupeKey(book);
+}
+
+/** Title-only portion of the work key (for soft author-compatible merges). */
+export function getBookTitleDedupeKey(
+  book: Pick<BookSummary, "title">
+): string {
+  return normalizeTitleForDedupe(book.title);
+}
+
+export function getBookAuthorDedupeKey(
+  book: Pick<BookSummary, "authors">
+): string {
+  return authorKeyPart(book.authors);
 }
 
 /** Richer-metadata sources break exact ties during dedupe. */
@@ -449,11 +516,14 @@ export type PickPreferredOptions = {
 /**
  * Keep the stronger record when duplicates collide. Priority, in order:
  * 1. book that already has ratings in our database
- * 2. has a description
+ * 2. stronger description (real blurb beats stub/empty)
  * 3. has a cover image
- * 4. more recent published year (a known year beats an unknown one)
- * 5. more complete metadata (page count, genres, ISBN, author, source)
+ * 4. more complete metadata (page count, genres, ISBN, author, source)
+ * 5. known publication year (any year beats unknown)
  * Ties fall back to a stable id comparison so results are deterministic.
+ *
+ * Note: newest edition year does NOT win identity — years are merged as
+ * firstPublishYear (min) + publishedYear (max) on the survivor.
  */
 export function pickPreferredDuplicate<T extends BookSummary>(
   a: T,
@@ -467,25 +537,27 @@ export function pickPreferredDuplicate<T extends BookSummary>(
     if (aRated !== bRated) return aRated ? a : b;
   }
 
-  const aDesc = Boolean(a.description?.trim());
-  const bDesc = Boolean(b.description?.trim());
-  if (aDesc !== bDesc) return bDesc ? b : a;
+  const aDescLen = a.description?.trim().length ?? 0;
+  const bDescLen = b.description?.trim().length ?? 0;
+  const aStrongDesc = aDescLen >= 40 && !isWeakDescription(a.description);
+  const bStrongDesc = bDescLen >= 40 && !isWeakDescription(b.description);
+  if (aStrongDesc !== bStrongDesc) return bStrongDesc ? b : a;
+  if ((aDescLen > 0) !== (bDescLen > 0)) return bDescLen > 0 ? b : a;
 
   const aCover = Boolean(a.coverUrl?.trim());
   const bCover = Boolean(b.coverUrl?.trim());
   if (aCover !== bCover) return bCover ? b : a;
 
-  const aYear = normalizePublishedYear(a.publishedYear);
-  const bYear = normalizePublishedYear(b.publishedYear);
-  if (aYear != null && bYear != null && aYear !== bYear) {
-    return bYear > aYear ? b : a;
-  }
-  if (aYear == null && bYear != null) return b;
-  if (bYear == null && aYear != null) return a;
-
   const aScore = metadataCompletenessScore(a);
   const bScore = metadataCompletenessScore(b);
   if (aScore !== bScore) return bScore > aScore ? b : a;
+
+  // Prefer longer description when both are otherwise comparable.
+  if (aDescLen !== bDescLen) return bDescLen > aDescLen ? b : a;
+
+  const aYear = normalizePublishedYear(a.publishedYear);
+  const bYear = normalizePublishedYear(b.publishedYear);
+  if ((aYear == null) !== (bYear == null)) return aYear != null ? a : b;
 
   return a.id.localeCompare(b.id) <= 0 ? a : b;
 }

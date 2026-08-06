@@ -1,5 +1,9 @@
 import { finalizeBookTags } from "@/lib/book-tags";
-import { getBookDedupeKey, pickPublishedYear } from "@/lib/book-utils";
+import {
+  getBookDedupeKey,
+  pickEarliestYear,
+  pickPublishedYear,
+} from "@/lib/book-utils";
 import type { BookSource, BookSummary } from "@/types/book";
 
 const SOURCE_PRIORITY: Record<BookSource, number> = {
@@ -59,8 +63,18 @@ export function mergePreferredBookFields(
     b.coverUrl?.trim() ||
     null;
 
-  // Newest known year across editions (missing years never win).
+  // Newest known edition year across editions (missing years never win).
   const publishedYear = pickPublishedYear(
+    identity.publishedYear,
+    a.publishedYear,
+    b.publishedYear
+  );
+
+  // Earliest known year — prefer explicit firstPublishYear, else any year.
+  const firstPublishYear = pickEarliestYear(
+    identity.firstPublishYear,
+    a.firstPublishYear,
+    b.firstPublishYear,
     identity.publishedYear,
     a.publishedYear,
     b.publishedYear
@@ -83,6 +97,7 @@ export function mergePreferredBookFields(
     coverUrl,
     description,
     publishedYear,
+    firstPublishYear,
     pageCount,
     genres: finalizeBookTags({
       genreEvidence,

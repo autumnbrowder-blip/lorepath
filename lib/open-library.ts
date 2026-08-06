@@ -136,6 +136,8 @@ export function parseOpenLibrarySearchResponse(
         description: parseOpenLibraryDescription(undefined, doc.first_sentence),
         genres: [],
         publishedYear: parsePublishedYear(doc.first_publish_year),
+        // OL search exposes first_publish_year — treat as original work year.
+        firstPublishYear: parsePublishedYear(doc.first_publish_year),
         source: "openlibrary",
         isbn:
           doc.isbn?.find((value) => value.replace(/\D/g, "").length >= 10) ??
@@ -239,6 +241,7 @@ export async function getOpenLibraryBookById(
     coverUrl: openLibraryCoverUrl(data.covers?.[0]),
     genres: [],
     publishedYear: parsePublishedYear(data.first_publish_date),
+    firstPublishYear: parsePublishedYear(data.first_publish_date),
     source: "openlibrary",
     publisher: null,
     pageCount: null,
