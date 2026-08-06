@@ -1358,6 +1358,10 @@
     @apply px-3 py-2;
   }
 
+  .rating-form-status > div {
+    max-height: 100%;
+  }
+
   .rating-form-panel .rating-slider {
     @apply shrink-0;
   }
