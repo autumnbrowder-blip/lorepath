@@ -2,9 +2,13 @@ import {
   cleanAuthors,
   cleanDescription,
   cleanTitle,
+  isWeakDescription,
   parsePublishedYear,
+  pickEarliestYear,
   pickPublishedYear,
 } from "@/lib/book-utils";
+import { getGoogleBookByIsbn } from "@/lib/google-books";
+import { findKnownWorkEditions } from "@/lib/known-editions";
 import { fetchOpenLibrary } from "@/lib/open-library";
 import type { BookDetail } from "@/types/book";
 
@@ -56,6 +60,21 @@ export function isSparseBookDetail(book: BookDetail): boolean {
   );
 }
 
+function preferDescription(
+  base: string | null | undefined,
+  supplement: string | null | undefined
+): string | null {
+  const a = base?.trim() ?? "";
+  const b = supplement?.trim() ?? "";
+  if (!a) return b || null;
+  if (!b) return a;
+  const aWeak = isWeakDescription(a);
+  const bWeak = isWeakDescription(b);
+  if (aWeak && !bWeak) return b;
+  if (!aWeak && bWeak) return a;
+  return b.length > a.length ? b : a;
+}
+
 export function mergeBookDetails(
   base: BookDetail,
   supplement: Partial<BookDetail>
@@ -67,10 +86,22 @@ export function mergeBookDetails(
       base.authors[0] !== "Unknown author"
         ? base.authors
         : supplement.authors ?? base.authors,
-    description: base.description ?? supplement.description ?? null,
-    genres: base.genres,
-    coverUrl: base.coverUrl ?? supplement.coverUrl ?? null,
-    publishedYear: pickPublishedYear(base.publishedYear, supplement.publishedYear),
+    description: preferDescription(base.description, supplement.description),
+    genres:
+      base.genres.length > 0
+        ? base.genres
+        : supplement.genres ?? base.genres,
+    coverUrl: base.coverUrl?.trim() || supplement.coverUrl?.trim() || null,
+    publishedYear: pickPublishedYear(
+      base.publishedYear,
+      supplement.publishedYear
+    ),
+    firstPublishYear: pickEarliestYear(
+      base.firstPublishYear,
+      supplement.firstPublishYear,
+      base.publishedYear,
+      supplement.publishedYear
+    ),
     publisher: base.publisher ?? supplement.publisher ?? null,
     pageCount: base.pageCount ?? supplement.pageCount ?? null,
     language: base.language ?? supplement.language ?? null,
@@ -146,6 +177,7 @@ export async function fetchOpenLibraryByTitleAuthor(
   if (!doc) return null;
 
   const isbn = doc.isbn?.find((value) => value.length >= 10) ?? null;
+  const firstYear = parsePublishedYear(doc.first_publish_year);
 
   return {
     title: cleanTitle(doc.title),
@@ -155,7 +187,8 @@ export async function fetchOpenLibraryByTitleAuthor(
       : null,
     genres: [],
     publisher: doc.publisher?.[0] ?? null,
-    publishedYear: parsePublishedYear(doc.first_publish_year),
+    publishedYear: firstYear,
+    firstPublishYear: firstYear,
     pageCount: doc.number_of_pages_median ?? null,
     language: doc.language?.[0]?.replace(/^\/languages\//, "") ?? null,
     isbn,
@@ -163,42 +196,156 @@ export async function fetchOpenLibraryByTitleAuthor(
   };
 }
 
+/**
+ * Scan work editions and prefer the newest publish_date (plus any publisher/ISBN).
+ */
 export async function fetchOpenLibraryEditionForWork(
   workId: string
 ): Promise<Partial<BookDetail> | null> {
   const response = await fetchOpenLibrary(
-    `https://openlibrary.org/works/${workId}/editions.json?limit=5`,
+    `https://openlibrary.org/works/${workId}/editions.json?limit=40`,
     { revalidate: 3600 }
   );
 
   if (!response.ok) return null;
 
   const data: { entries?: OpenLibraryEdition[] } = await response.json();
-  const edition = data.entries?.find(
-    (entry) => entry.publishers?.[0] || entry.isbn_13?.[0] || entry.isbn_10?.[0]
-  );
+  const entries = data.entries ?? [];
+  if (entries.length === 0) return null;
 
-  if (!edition) return null;
+  let best: OpenLibraryEdition | null = null;
+  let bestYear: number | null = null;
 
-  const isbn = edition.isbn_13?.[0] ?? edition.isbn_10?.[0] ?? null;
+  for (const entry of entries) {
+    const year = parsePublishedYear(entry.publish_date);
+    const hasMeta =
+      Boolean(entry.publishers?.[0]) ||
+      Boolean(entry.isbn_13?.[0] || entry.isbn_10?.[0]) ||
+      Boolean(entry.covers?.[0]);
+    if (!hasMeta && year == null) continue;
+    if (
+      best == null ||
+      (year != null && (bestYear == null || year > bestYear))
+    ) {
+      best = entry;
+      bestYear = year;
+    }
+  }
+
+  if (!best) return null;
+
+  const isbn = best.isbn_13?.[0] ?? best.isbn_10?.[0] ?? null;
 
   return {
-    publisher: edition.publishers?.[0] ?? null,
-    publishedYear: parsePublishedYear(edition.publish_date),
-    pageCount: edition.number_of_pages ?? null,
-    language: edition.languages?.[0]?.key?.replace(/^\/languages\//, "") ?? null,
+    publisher: best.publishers?.[0] ?? null,
+    publishedYear: parsePublishedYear(best.publish_date),
+    pageCount: best.number_of_pages ?? null,
+    language: best.languages?.[0]?.key?.replace(/^\/languages\//, "") ?? null,
     isbn,
-    coverUrl: coverFromId(edition.covers?.[0]),
+    coverUrl: coverFromId(best.covers?.[0]),
   };
 }
 
-export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
-  if (!isSparseBookDetail(book)) return book;
+async function softGoogleIsbn(isbn: string): Promise<Partial<BookDetail> | null> {
+  try {
+    const detail = await getGoogleBookByIsbn(isbn);
+    if (!detail) return null;
+    return {
+      title: detail.title,
+      authors: detail.authors,
+      description: detail.description,
+      coverUrl: detail.coverUrl,
+      publishedYear: detail.publishedYear,
+      publisher: detail.publisher,
+      pageCount: detail.pageCount,
+      language: detail.language,
+      isbn: detail.isbn ?? isbn,
+      genres: detail.genres,
+    };
+  } catch {
+    return null;
+  }
+}
 
+/**
+ * For known works (e.g. Between Two Fires), pull newer edition years/covers
+ * from catalog ISBNs while keeping the same work id and original year.
+ *
+ * Catalog years are always applied so First published + Latest edition still
+ * render when Google/OL ISBN lookups are rate-limited or incomplete.
+ */
+export async function enrichKnownEditionMetadata(
+  book: BookDetail
+): Promise<BookDetail> {
+  const known = findKnownWorkEditions(book.title, book.authors);
+  if (!known) return book;
+
+  let enriched: BookDetail = {
+    ...book,
+    firstPublishYear: pickEarliestYear(
+      book.firstPublishYear,
+      known.firstPublishYear,
+      book.publishedYear
+    ),
+    publishedYear: pickPublishedYear(
+      book.publishedYear,
+      known.latestEditionYear
+    ),
+  };
+
+  const lookups = await Promise.all(
+    known.isbns.map(async (isbn) => {
+      const fromGoogle = await softGoogleIsbn(isbn);
+      if (fromGoogle) return fromGoogle;
+      return fetchOpenLibraryByIsbn(isbn);
+    })
+  );
+
+  for (const hit of lookups) {
+    if (!hit) continue;
+    enriched = mergeBookDetails(enriched, hit);
+    // Prefer richer reprint covers when the work cover is missing/empty.
+    if (!enriched.coverUrl?.trim() && hit.coverUrl?.trim()) {
+      enriched = { ...enriched, coverUrl: hit.coverUrl.trim() };
+    } else if (
+      hit.coverUrl?.trim() &&
+      hit.publishedYear != null &&
+      (enriched.publishedYear == null ||
+        hit.publishedYear >= enriched.publishedYear)
+    ) {
+      // Newer edition cover often matches the currently popular reprint.
+      enriched = { ...enriched, coverUrl: hit.coverUrl.trim() };
+    }
+  }
+
+  // Re-assert catalog years after max/min merges from live rows.
+  enriched = {
+    ...enriched,
+    firstPublishYear: pickEarliestYear(
+      enriched.firstPublishYear,
+      known.firstPublishYear
+    ),
+    publishedYear: pickPublishedYear(
+      enriched.publishedYear,
+      known.latestEditionYear
+    ),
+    id: book.id,
+  };
+
+  return enriched;
+}
+
+export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
   let enriched = { ...book };
 
-  if (book.isbn) {
-    const byIsbn = await fetchOpenLibraryByIsbn(book.isbn);
+  // Known-edition year/cover pass runs even when the record looks "complete",
+  // so reprints can surface a newer latest-edition year on detail pages.
+  enriched = await enrichKnownEditionMetadata(enriched);
+
+  if (!isSparseBookDetail(enriched)) return enriched;
+
+  if (enriched.isbn) {
+    const byIsbn = await fetchOpenLibraryByIsbn(enriched.isbn);
     if (byIsbn) enriched = mergeBookDetails(enriched, byIsbn);
   }
 
@@ -216,10 +363,13 @@ export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
     if (byTitleAuthor) enriched = mergeBookDetails(enriched, byTitleAuthor);
   }
 
-  if (book.isbn && isSparseBookDetail(enriched)) {
-    const byIsbn = await fetchOpenLibraryByIsbn(book.isbn);
+  if (enriched.isbn && isSparseBookDetail(enriched)) {
+    const byIsbn = await fetchOpenLibraryByIsbn(enriched.isbn);
     if (byIsbn) enriched = mergeBookDetails(enriched, byIsbn);
   }
 
-  return enriched;
+  // Re-assert known original year after other merges.
+  enriched = await enrichKnownEditionMetadata(enriched);
+
+  return { ...enriched, id: book.id };
 }

@@ -420,10 +420,17 @@ export const getBookById = cache(async function getBookById(
   book = fillMissingCoverUrl(book);
 
   // Soft enrichment — never block the page on secondary APIs.
-  // Cached complete books skip network enrichment entirely.
+  // Cached complete books still get known-edition year enrichment so reprints
+  // can show First published + Latest edition without a schema migration.
   try {
     if (!fromCache || needsIsbndbEnrichment(book)) {
       book = await enrichBookDetail(book);
+      book = fillMissingCoverUrl(book);
+    } else {
+      const { enrichKnownEditionMetadata } = await import(
+        "@/lib/book-enrichment"
+      );
+      book = await enrichKnownEditionMetadata(book);
       book = fillMissingCoverUrl(book);
     }
   } catch (error) {

@@ -34,19 +34,26 @@ export function BookInformation({
   const { displayYear, firstPublishYear, latestEditionYear } =
     resolvePublicationYears(book);
 
-  const publishedValue =
-    firstPublishYear && latestEditionYear
-      ? `First published ${firstPublishYear} · Latest edition ${latestEditionYear}`
-      : displayYear
-        ? String(displayYear)
-        : null;
-
   const metadataItems = [
-    publishedValue && {
-      icon: CalendarDays,
-      label: "Published",
-      value: publishedValue,
-    },
+    firstPublishYear && latestEditionYear
+      ? {
+          icon: CalendarDays,
+          label: "First published",
+          value: String(firstPublishYear),
+        }
+      : displayYear
+        ? {
+            icon: CalendarDays,
+            label: "Published",
+            value: String(displayYear),
+          }
+        : null,
+    firstPublishYear &&
+      latestEditionYear && {
+        icon: CalendarDays,
+        label: "Latest edition",
+        value: String(latestEditionYear),
+      },
     book.publisher && {
       icon: Building2,
       label: "Publisher",
