@@ -14,13 +14,17 @@ type BookCardProps = {
    * Logged-in reader has already inscribed marks on this work.
    * Never set for logged-out users.
    */
-  alreadyRated?: boolean;
+  hasUserRating?: boolean;
 };
 
+/**
+ * Browse / search result card.
+ * When hasUserRating is true, renders full-width Inscribed above Open the Tome.
+ */
 export function BookCard({
   book,
   searchQuery,
-  alreadyRated = false,
+  hasUserRating = false,
 }: BookCardProps) {
   const description = book.description
     ? truncateText(book.description, 120)
@@ -90,11 +94,13 @@ export function BookCard({
           </div>
         )}
 
+        {/* Action stack: Inscribed (rated only) + Open the Tome */}
         <div className="mt-auto flex flex-col gap-1.5">
-          {alreadyRated ? (
+          {hasUserRating ? (
             <div
-              className="tome-card-inscribed inline-flex w-full items-center justify-center gap-1.5 rounded-sm border border-gold-500/75 bg-gradient-to-b from-[#214a38] via-[#163529] to-[#0f241c] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,230,150,0.16),0_0_12px_rgba(166,124,45,0.18)]"
+              className="tome-card-inscribed inline-flex w-full min-h-[2.5rem] items-center justify-center gap-1.5 rounded-sm border border-gold-500/80 bg-gradient-to-b from-[#2a5a44] via-[#1a4030] to-[#0f241c] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,230,150,0.2),0_0_14px_rgba(166,124,45,0.22)]"
               role="status"
+              data-testid="tome-inscribed"
               aria-label="Inscribed — you have rated this tome"
             >
               <Feather
@@ -102,7 +108,7 @@ export function BookCard({
                 aria-hidden="true"
                 strokeWidth={2.25}
               />
-              <span className="font-storybook text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2c06a] sm:text-[11px]">
+              <span className="font-storybook text-[11px] font-bold uppercase tracking-[0.16em] text-[#e2c06a]">
                 Inscribed
               </span>
             </div>
@@ -111,6 +117,7 @@ export function BookCard({
           <Link
             href={bookHref}
             className="btn-secondary w-full px-3 py-2 text-[10px]"
+            data-testid="open-the-tome"
           >
             Open the Tome
           </Link>

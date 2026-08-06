@@ -627,18 +627,30 @@ export async function getUserRatedIdentities(
 
     const { data, error } = await supabase
       .from("ratings")
-      .select(
-        `
-        books (
-          slug,
-          title,
-          author
-        )
-      `
-      )
+      .select("book_id")
       .eq("rated_by", userId);
 
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
+      return [];
+    }
+
+    const bookIds = Array.from(
+      new Set(
+        data
+          .map((row) =>
+            typeof row.book_id === "string" ? row.book_id : null
+          )
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    if (bookIds.length === 0) return [];
+
+    const { data: bookRows, error: bookError } = await supabase
+      .from("books")
+      .select("id, slug, title, author")
+      .in("id", bookIds);
+
+    if (bookError || !bookRows) {
       return [];
     }
 
@@ -646,21 +658,15 @@ export async function getUserRatedIdentities(
       string,
       import("@/lib/user-rated-identity").UserRatedIdentity
     >();
-    for (const row of data) {
-      const book = Array.isArray(row.books) ? row.books[0] : row.books;
-      if (!book || typeof (book as { slug?: unknown }).slug !== "string") {
-        continue;
-      }
-      const slug = ((book as { slug: string }).slug).trim();
-      if (!slug || bySlug.has(slug)) continue;
+    for (const book of bookRows) {
+      const slug =
+        typeof book.slug === "string" ? book.slug.trim() : "";
       const title =
-        typeof (book as { title?: unknown }).title === "string"
-          ? ((book as { title: string }).title).trim()
-          : "";
-      if (!title) continue;
+        typeof book.title === "string" ? book.title.trim() : "";
+      if (!slug || !title || bySlug.has(slug)) continue;
       const author =
-        typeof (book as { author?: unknown }).author === "string"
-          ? ((book as { author: string }).author).trim() || null
+        typeof book.author === "string"
+          ? book.author.trim() || null
           : null;
       bySlug.set(slug, { slug, title, author });
     }

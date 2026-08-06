@@ -7,7 +7,10 @@ import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { queryHint, track } from "@/lib/analytics";
 import { rankSearchResults } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
+import { createClient } from "@/lib/supabase";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
+  alignBooksToRatedSlugs,
   isBookInscribedByUser,
   type UserRatedIdentity,
 } from "@/lib/user-rated-identity";
@@ -25,6 +28,7 @@ type SearchPagePayload = {
 };
 
 const CLIENT_SEARCH_CACHE_TTL_MS = 90_000;
+const JUST_RATED_STORAGE_KEY = "lorepath-just-rated-slugs";
 const clientSearchCache = new Map<
   string,
   { expires: number; data: SearchPagePayload }
@@ -52,6 +56,19 @@ function mergeSearchResults(
   return query.trim() ? rankSearchResults(merged, query) : merged;
 }
 
+function readJustRatedSlugs(): string[] {
+  try {
+    const raw = sessionStorage.getItem(JUST_RATED_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 type BookSearchProps = {
   initialQuery?: string;
   /** "genre" = subject/topic search from a tag click. */
@@ -59,7 +76,7 @@ type BookSearchProps = {
   /** Prefetched NYT lists — display-only; does not affect search. */
   bestsellers?: BookSummary[];
   bestsellersError?: string | null;
-  /** Hide signup nudge when the reader already has an account. */
+  /** SSR hint — may be false even when the browser session is logged in. */
   isLoggedIn?: boolean;
   /**
    * Works the logged-in user has already rated (slug + title/author).
@@ -87,6 +104,8 @@ export function BookSearch({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  /** Client auth — Navbar uses the browser session; SSR isLoggedIn can miss it. */
+  const [clientLoggedIn, setClientLoggedIn] = useState(isLoggedIn);
   const [ratedIdentities, setRatedIdentities] = useState<UserRatedIdentity[]>(
     initialRatedIdentities
   );
@@ -98,14 +117,17 @@ export function BookSearch({
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
   const searchRequestIdRef = useRef(0);
 
-  function bookIsInscribed(book: BookSummary): boolean {
-    if (!isLoggedIn) return false;
+  const effectivelyLoggedIn = isLoggedIn || clientLoggedIn;
+
+  function hasUserRating(book: BookSummary): boolean {
+    if (!effectivelyLoggedIn) return false;
     if (inscribedCardIds.includes(book.id)) return true;
+    if (ratedIdentities.some((row) => row.slug === book.id)) return true;
     return isBookInscribedByUser(book, ratedIdentities);
   }
 
   function mergeInscribedCardIds(extra: string[] | undefined) {
-    if (!isLoggedIn || !extra?.length) return;
+    if (!effectivelyLoggedIn || !extra?.length) return;
     setInscribedCardIds((current) => {
       const next = new Set(current);
       let changed = false;
@@ -118,38 +140,101 @@ export function BookSearch({
     });
   }
 
+  function applyRatedAlignment(list: BookSummary[]): BookSummary[] {
+    if (!effectivelyLoggedIn || ratedIdentities.length === 0) return list;
+    return alignBooksToRatedSlugs(list, ratedIdentities);
+  }
+
   const refreshRatedIdentities = useCallback(async () => {
-    if (!isLoggedIn) {
+    if (!effectivelyLoggedIn) {
       setRatedIdentities([]);
       setInscribedCardIds([]);
       return;
     }
     try {
+      const headers: Record<string, string> = {};
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = createClient();
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            headers.Authorization = `Bearer ${session.access_token}`;
+          }
+        } catch {
+          // Cookie session may still work on the API route.
+        }
+      }
+
       const response = await fetch("/api/me/rated-slugs", {
         credentials: "same-origin",
         cache: "no-store",
+        headers,
       });
       if (!response.ok) return;
       const data = (await response.json()) as {
         identities?: UserRatedIdentity[];
         slugs?: string[];
       };
-      if (Array.isArray(data.identities)) {
-        setRatedIdentities(data.identities);
-      } else if (Array.isArray(data.slugs)) {
-        // Backward-compatible: slug-only payload.
-        setRatedIdentities(
-          data.slugs.map((slug) => ({ slug, title: slug, author: null }))
+
+      let next: UserRatedIdentity[] = [];
+      if (Array.isArray(data.identities) && data.identities.length > 0) {
+        next = data.identities;
+      } else if (Array.isArray(data.slugs) && data.slugs.length > 0) {
+        next = data.slugs.map((slug) => ({
+          slug,
+          title: slug,
+          author: null,
+        }));
+      }
+
+      // Merge freshly rated slugs from this tab (set on rating submit).
+      for (const slug of readJustRatedSlugs()) {
+        if (!next.some((row) => row.slug === slug)) {
+          next.push({ slug, title: slug, author: null });
+        }
+      }
+
+      // Never wipe a non-empty list with an empty refresh (transient API miss).
+      if (next.length > 0) {
+        setRatedIdentities(next);
+        setInscribedCardIds((ids) =>
+          Array.from(new Set([...ids, ...next.map((row) => row.slug)]))
         );
       }
     } catch {
       // Keep SSR / last-known identities.
     }
-  }, [isLoggedIn]);
+  }, [effectivelyLoggedIn]);
 
-  // Refresh after rating a book and returning to browse (bfcache / focus).
+  // Detect browser session independently of SSR isLoggedIn.
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isSupabaseConfigured()) return;
+
+    let cancelled = false;
+    const supabase = createClient();
+
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (cancelled) return;
+      setClientLoggedIn(Boolean(user));
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setClientLoggedIn(Boolean(session?.user));
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Refresh rated identities whenever we know the reader is signed in.
+  useEffect(() => {
+    if (!effectivelyLoggedIn) return;
     void refreshRatedIdentities();
 
     function onVisible() {
@@ -167,12 +252,29 @@ export function BookSearch({
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [isLoggedIn, refreshRatedIdentities]);
+  }, [effectivelyLoggedIn, refreshRatedIdentities]);
 
   // Keep in sync if the server re-renders with a newer identity list.
   useEffect(() => {
-    setRatedIdentities(initialRatedIdentities);
+    if (initialRatedIdentities.length > 0) {
+      setRatedIdentities(initialRatedIdentities);
+    }
   }, [initialRatedIdentities]);
+
+  // Re-align visible cards when identities arrive/update.
+  useEffect(() => {
+    if (!effectivelyLoggedIn || ratedIdentities.length === 0) return;
+    setBooks((current) => {
+      const next = alignBooksToRatedSlugs(current, ratedIdentities);
+      const changed = next.some((book, index) => book.id !== current[index]?.id);
+      return changed ? next : current;
+    });
+    setInscribedCardIds((ids) =>
+      Array.from(
+        new Set([...ids, ...ratedIdentities.map((row) => row.slug)])
+      )
+    );
+  }, [ratedIdentities, effectivelyLoggedIn]);
 
   async function fetchSearchPage(
     searchQuery: string,
@@ -252,7 +354,7 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      const results = data.books ?? [];
+      const results = applyRatedAlignment(data.books ?? []);
       setBooks(results);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
@@ -299,7 +401,7 @@ export function BookSearch({
       );
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = data.books ?? [];
+      const incoming = applyRatedAlignment(data.books ?? []);
 
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
       setPage(data.page ?? nextPage);
@@ -428,7 +530,7 @@ export function BookSearch({
             </div>
           </form>
 
-          {!isLoggedIn ? (
+          {!effectivelyLoggedIn ? (
             <SignupPrompt
               variant="inline"
               redirectTo="/browse"
@@ -442,7 +544,9 @@ export function BookSearch({
             <BestsellersSection
               books={bestsellers}
               error={bestsellersError}
-              isBookInscribed={isLoggedIn ? bookIsInscribed : undefined}
+              isBookInscribed={
+                effectivelyLoggedIn ? hasUserRating : undefined
+              }
             />
           )}
 
@@ -501,7 +605,7 @@ export function BookSearch({
                     key={book.id}
                     book={book}
                     searchQuery={query}
-                    alreadyRated={bookIsInscribed(book)}
+                    hasUserRating={hasUserRating(book)}
                   />
                 ))}
               </div>

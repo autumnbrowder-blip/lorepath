@@ -60,13 +60,39 @@ export function isBookInscribedByUser(
   return false;
 }
 
+/**
+ * Align search/browse card ids to the user's rated `books.slug` when the card
+ * is the same work. After this, hasUserRating can use exact id === slug.
+ */
+export function alignBooksToRatedSlugs<T extends BookSummary>(
+  books: readonly T[],
+  rated: readonly UserRatedIdentity[]
+): T[] {
+  if (!rated.length || books.length === 0) return [...books];
+
+  return books.map((book) => {
+    if (rated.some((row) => row.slug === book.id)) {
+      return book;
+    }
+    const match = rated.find((row) => isBookInscribedByUser(book, [row]));
+    if (!match) return book;
+    return { ...book, id: match.slug };
+  });
+}
+
 /** Card ids from a result page that should show the Inscribed badge. */
 export function inscribedCardIdsForBooks(
   books: readonly Pick<BookSummary, "id" | "title" | "authors" | "isbn">[],
   rated: readonly UserRatedIdentity[]
 ): string[] {
   if (!rated.length || books.length === 0) return [];
-  return books
-    .filter((book) => isBookInscribedByUser(book, rated))
-    .map((book) => book.id);
+  const ids = new Set<string>();
+  for (const book of books) {
+    if (!isBookInscribedByUser(book, rated)) continue;
+    const match = rated.find(
+      (row) => row.slug === book.id || isBookInscribedByUser(book, [row])
+    );
+    ids.add(match?.slug ?? book.id);
+  }
+  return Array.from(ids);
 }

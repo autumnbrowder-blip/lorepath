@@ -73,7 +73,7 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
               <BookCard
                 key={book.id}
                 book={book}
-                alreadyRated={isBookInscribedByUser(book, ratedIdentities)}
+                hasUserRating={isBookInscribedByUser(book, ratedIdentities)}
               />
             ))}
           </div>

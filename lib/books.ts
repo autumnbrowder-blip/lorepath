@@ -333,18 +333,22 @@ export async function searchBooks(
       : {}),
   };
 
-  // User-only rated identities → card ids on this page that should show Inscribed.
+  // User-only rated identities → rewrite card ids to rated slugs, then list them.
   // Match by books.slug OR work-level title+author so OL/Google/NYT edition ids align.
   let userRatedSlugs: string[] = [];
   try {
     const userId = await userIdPromise;
     if (userId) {
       const { getUserRatedIdentities } = await import("@/lib/ratings");
-      const { inscribedCardIdsForBooks } = await import(
-        "@/lib/user-rated-identity"
-      );
+      const {
+        alignBooksToRatedSlugs,
+        inscribedCardIdsForBooks,
+      } = await import("@/lib/user-rated-identity");
       const identities = await getUserRatedIdentities(userId);
-      userRatedSlugs = inscribedCardIdsForBooks(books, identities);
+      if (identities.length > 0) {
+        books = alignBooksToRatedSlugs(books, identities);
+        userRatedSlugs = inscribedCardIdsForBooks(books, identities);
+      }
     }
   } catch (error) {
     console.error("[searchBooks] user rated-identity lookup failed:", error);

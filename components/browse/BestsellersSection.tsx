@@ -53,7 +53,7 @@ export function BestsellersSection({
             <BookCard
               key={book.id}
               book={book}
-              alreadyRated={Boolean(isBookInscribed?.(book))}
+              hasUserRating={Boolean(isBookInscribed?.(book))}
             />
           ))}
         </div>

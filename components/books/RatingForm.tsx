@@ -250,6 +250,22 @@ export function RatingForm({
         applyCommunityRatings(data.communityRatings);
       }
 
+      // Let browse cards show Inscribed immediately after return (same tab).
+      try {
+        const prev = sessionStorage.getItem("lorepath-just-rated-slugs");
+        const list = prev ? (JSON.parse(prev) as unknown) : [];
+        const slugs = Array.isArray(list)
+          ? list.filter((value): value is string => typeof value === "string")
+          : [];
+        if (!slugs.includes(bookId)) slugs.push(bookId);
+        sessionStorage.setItem(
+          "lorepath-just-rated-slugs",
+          JSON.stringify(slugs)
+        );
+      } catch {
+        // sessionStorage may be unavailable.
+      }
+
       // POST already returned confirmed user + community marks — skip a
       // redundant GET. Refresh RSC islands (match score / rated lists).
       setSuccess(true);
