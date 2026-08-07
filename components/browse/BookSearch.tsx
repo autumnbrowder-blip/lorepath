@@ -67,6 +67,9 @@ function mergeSearchResults(
   // load-more cannot swap a rated/DB slug for a different provider edition.
   const merged = finalizeSearchBooks([...existing, ...incoming], {
     ratedIds: new Set(existing.map((book) => book.id)),
+    // Keep exact-title matches that are already on screen from disappearing
+    // when a later page brings in records with richer metadata.
+    query: query.trim() || undefined,
     debug: false,
   });
   return query.trim() ? rankSearchResults(merged, query) : merged;
