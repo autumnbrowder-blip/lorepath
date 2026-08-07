@@ -67,6 +67,8 @@ export type BookSearchResult = {
    * Empty / omitted when logged out. Used for Inscribed badges on browse cards.
    */
   userRatedSlugs?: string[];
+  /** Card id → source that supplied its description during enrichment. */
+  descriptionSources?: Record<string, string>;
   /** Temporary: Google failure details (message/status) when the provider errors. */
   googleError?: GoogleBooksSearchDebug | null;
   /** Temporary: Google item count before local quality filtering. */

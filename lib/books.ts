@@ -273,11 +273,14 @@ export async function searchBooks(
     ...ratedBooks,
   ];
 
+  // First pass merges and dedupes but keeps everything: a book must not be
+  // dropped for a missing description before enrichment has had a chance.
   let books = finalizeSearchBooks(rawCombined, {
     ratedIds: new Set(ratedSlugs),
     protectedBooks: ratedBooks,
     debug: SEARCH_DEBUG,
     query: genreMode ? undefined : searchQuery,
+    deferQualityFilter: true,
   });
 
   // Known-title / exact-phrase fallback when the flood missed an exact title
@@ -294,6 +297,7 @@ export async function searchBooks(
           protectedBooks: ratedBooks,
           debug: SEARCH_DEBUG,
           query: searchQuery,
+          deferQualityFilter: true,
         });
         if (SEARCH_DEBUG) {
           console.info("[searchBooks] title fallback merged", {
@@ -310,6 +314,61 @@ export async function searchBooks(
 
   // Relevance ranking for text search (genre mode keeps year-forward order
   // from finalize, then preferMatchingGenreTags).
+  if (!genreMode) {
+    books = rankSearchResults(books, searchQuery);
+  }
+
+  // Thin flood (provider outage or a title the free sources barely index) —
+  // spend a metered ISBNdb query rather than return an empty shelf.
+  if (!genreMode && pageNumber === 1) {
+    try {
+      const { fetchBackupSearchResults } = await import(
+        "@/lib/search-enrichment"
+      );
+      const backup = await fetchBackupSearchResults(searchQuery, books);
+      if (backup.length > 0) {
+        books = rankSearchResults(
+          finalizeSearchBooks([...books, ...backup], {
+            ratedIds: new Set(ratedSlugs),
+            protectedBooks: ratedBooks,
+            debug: SEARCH_DEBUG,
+            query: searchQuery,
+            deferQualityFilter: true,
+          }),
+          searchQuery
+        );
+      }
+    } catch (error) {
+      console.error("[searchBooks] backup provider search failed:", error);
+    }
+  }
+
+  // Fill missing synopses from the other sources (OL work, Google, ISBNdb,
+  // Hardcover) while the ranking still holds every candidate.
+  const descriptionSources: Record<string, string> = {};
+  try {
+    const { enrichSearchDescriptions } = await import(
+      "@/lib/search-enrichment"
+    );
+    const enriched = await enrichSearchDescriptions(books, {
+      debug: SEARCH_DEBUG,
+    });
+    books = enriched.books;
+    enriched.filled.forEach((source, id) => {
+      descriptionSources[id] = source;
+    });
+  } catch (error) {
+    console.error("[searchBooks] description enrichment failed:", error);
+  }
+
+  // Now that every candidate has had its chance, apply the quality filter.
+  books = finalizeSearchBooks(books, {
+    ratedIds: new Set(ratedSlugs),
+    protectedBooks: ratedBooks,
+    debug: SEARCH_DEBUG,
+    query: genreMode ? undefined : searchQuery,
+  });
+
   if (!genreMode) {
     books = rankSearchResults(books, searchQuery);
   }
@@ -377,6 +436,7 @@ export async function searchBooks(
       gutendexResult.hasMore ||
       bigBookResult.hasMore,
     userRatedSlugs,
+    descriptionSources,
     // Temporary debug fields — remove once Google search stability is confirmed.
     googleError: googleResult.error,
     googleRawCount: googleResult.rawCount,

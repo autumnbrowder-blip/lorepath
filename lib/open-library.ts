@@ -175,17 +175,50 @@ export async function searchOpenLibrary(
       params.set("q", query);
     }
 
+    /**
+     * Open Library is the backbone of browse: a single slow response used to
+     * empty the whole result set, so transient failures get one longer retry.
+     * A successful empty response is a real answer and is not retried.
+     */
     const runSearch = async (search: URLSearchParams) => {
-      const response = await fetchOpenLibrary(
-        `https://openlibrary.org/search.json?${search.toString()}`,
-        { noStore: true }
-      );
-      if (!response.ok) return null;
-      const data: OpenLibrarySearchResponse = await response.json();
-      return {
-        books: parseOpenLibrarySearchResponse(data),
-        hasMore: page * pageSize < (data.numFound ?? 0),
-      };
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await fetchOpenLibrary(
+            `https://openlibrary.org/search.json?${search.toString()}`,
+            {
+              noStore: true,
+              timeoutMs: attempt === 1 ? 3000 : 6000,
+            }
+          );
+
+          if (response.ok) {
+            const data: OpenLibrarySearchResponse = await response.json();
+            return {
+              books: parseOpenLibrarySearchResponse(data),
+              hasMore: page * pageSize < (data.numFound ?? 0),
+            };
+          }
+
+          console.error("[open-library] search failed:", {
+            query,
+            status: response.status,
+            attempt,
+          });
+          // Only 429/5xx are worth another try.
+          if (response.status !== 429 && response.status < 500) return null;
+        } catch (error) {
+          console.error("[open-library] search error:", {
+            query,
+            attempt,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      return null;
     };
 
     const result = await runSearch(params);
@@ -276,6 +309,46 @@ export async function getOpenLibraryBookById(
     language: null,
     isbn: null,
   };
+}
+
+/**
+ * Description + cover straight off the work record, with no author lookups.
+ * Search docs omit descriptions the work has, so this is the cheapest way to
+ * give a search result a real synopsis. Soft-fails to null.
+ */
+export async function getOpenLibraryWorkBlurb(
+  id: string,
+  options?: { timeoutMs?: number }
+): Promise<{
+  description: string | null;
+  coverUrl: string | null;
+  publishedYear: number | null;
+} | null> {
+  const workId = id.startsWith(OPEN_LIBRARY_ID_PREFIX)
+    ? id.slice(OPEN_LIBRARY_ID_PREFIX.length)
+    : id;
+  if (!/^OL\d+W$/i.test(workId)) return null;
+
+  try {
+    const response = await fetchOpenLibrary(
+      `https://openlibrary.org/works/${workId}.json`,
+      { revalidate: 3600, timeoutMs: options?.timeoutMs ?? 2500 }
+    );
+    if (!response.ok) return null;
+
+    const data: OpenLibraryWork = await response.json();
+    return {
+      description: parseOpenLibraryDescription(data.description),
+      coverUrl: openLibraryCoverUrl(data.covers?.[0]),
+      publishedYear: parsePublishedYear(data.first_publish_date),
+    };
+  } catch (error) {
+    console.error("[open-library] work blurb failed:", {
+      id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /**

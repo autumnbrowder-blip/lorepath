@@ -8,21 +8,24 @@ import {
   getBookTitleDedupeKey,
   isExactTitleMatch,
   isMerchandiseOrCompanion,
+  isPlaceholderDescription,
   isWeakDescription,
   pickPreferredDuplicate,
+  PLACEHOLDER_DESCRIPTION,
   sortByPublishedYearDesc,
   type PickPreferredOptions,
 } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 
-const MISSING_DESCRIPTION_FALLBACK = "No description available.";
+const MISSING_DESCRIPTION_FALLBACK = PLACEHOLDER_DESCRIPTION;
 
 function hasDescription(book: BookSummary): boolean {
   return Boolean(book.description?.trim()) && !isWeakDescription(book.description);
 }
 
+/** Any real text — the "No description available." stub does not count. */
 function hasAnyDescription(book: BookSummary): boolean {
-  return Boolean(book.description?.trim());
+  return !isPlaceholderDescription(book.description);
 }
 
 function hasCover(book: BookSummary): boolean {
@@ -115,6 +118,11 @@ export type FinalizeSearchOptions = PickPreferredOptions & {
    * quality filtering (thin/missing description must not hide them).
    */
   query?: string;
+  /**
+   * Dedupe and merge only, skipping the description/cover quality filter.
+   * Used for the first pass so enrichment can run before anything is dropped.
+   */
+  deferQualityFilter?: boolean;
 };
 
 function dedupeCandidates(
@@ -318,7 +326,15 @@ export function finalizeSearchBooks(
   } = dedupeCandidates(candidates, pickOptions);
 
   const merged = deduped.map((book) => withFinalizedTags(book));
-  const qualitySelected = selectQualityBooks(merged, query);
+  let qualitySelected = options?.deferQualityFilter
+    ? merged
+    : selectQualityBooks(merged, query);
+
+  // A search that found real records must never come back empty; enrichment
+  // may still be pending for these, so keep them with a stub description.
+  if (qualitySelected.length === 0 && merged.length > 0) {
+    qualitySelected = merged.map(withDescriptionFallback);
+  }
 
   const { books: withProtected, forcedCount } = forceProtectedBooks(
     qualitySelected,

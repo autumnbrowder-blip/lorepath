@@ -48,10 +48,41 @@ export function stripHtml(html: string): string {
     .trim();
 }
 
+/** Stub shown only when a book survives with no synopsis from any source. */
+export const PLACEHOLDER_DESCRIPTION = "No description available.";
+
+const PLACEHOLDER_DESCRIPTION_PATTERN =
+  /^(n\/?a|none|null|undefined|unknown|tbd|-+|\.+|no\s+(description|synopsis|summary|blurb)(\s+(is\s+)?(available|provided|found))?|(description|synopsis|summary)\s+(is\s+)?(not\s+available|unavailable|coming\s+soon|to\s+follow))\.?$/i;
+
+/**
+ * Provider filler that means "we have nothing" — never store or display it as
+ * a real synopsis, and never let it block enrichment from another source.
+ */
+export function isPlaceholderDescription(
+  description?: string | null
+): boolean {
+  const text = description?.trim() ?? "";
+  if (!text) return true;
+  return PLACEHOLDER_DESCRIPTION_PATTERN.test(text);
+}
+
 export function cleanDescription(description?: string | null): string | null {
   if (!description) return null;
   const cleaned = stripHtml(description);
-  return cleaned || null;
+  if (!cleaned) return null;
+  // Drop provider placeholders at the parse boundary so downstream code can
+  // treat "has a description" as "has real text".
+  return isPlaceholderDescription(cleaned) ? null : cleaned;
+}
+
+/** True when this record carries a synopsis worth showing on a card. */
+export function hasRealDescription(
+  book: Pick<BookSummary, "description">
+): boolean {
+  return (
+    !isPlaceholderDescription(book.description) &&
+    !isWeakDescription(book.description)
+  );
 }
 
 export function cleanTitle(title?: string | null): string {
@@ -128,7 +159,7 @@ export function isMerchandiseOrCompanion(book: BookSummary): boolean {
 export function isWeakDescription(description?: string | null): boolean {
   const text = description?.trim() ?? "";
   if (!text) return true;
-  if (/^no description available\.?$/i.test(text)) return true;
+  if (isPlaceholderDescription(text)) return true;
   if (text.length < 40) return true;
   // Gutendex-style subject strings: "Fiction, Science fiction, Adventure, ..."
   if (text.split(",").length >= 4 && text.length < 140 && !/[.!?].{20}/.test(text)) {

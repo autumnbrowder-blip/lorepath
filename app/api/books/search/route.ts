@@ -35,6 +35,9 @@ export async function GET(request: Request) {
       accessToken: getBearerToken(request),
     });
     const isAdmin = await sessionUserIsAdmin();
+    // `?debugSources=1` explains where each description came from — counts
+    // only, no credentials, so it is safe for diagnosing empty result reports.
+    const wantsSourceDebug = searchParams.get("debugSources") === "1";
 
     // Public clients get books + paging only. Source breakdown is admin-only.
     const payload = isAdmin
@@ -44,6 +47,12 @@ export async function GET(request: Request) {
           page: result.page,
           hasMore: result.hasMore,
           userRatedSlugs: result.userRatedSlugs ?? [],
+          ...(wantsSourceDebug
+            ? {
+                sourceCounts: result.sourceCounts,
+                descriptionSources: result.descriptionSources ?? {},
+              }
+            : {}),
         };
 
     return NextResponse.json(payload, {
