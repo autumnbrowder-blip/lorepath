@@ -2,6 +2,8 @@ import {
   cleanAuthors,
   cleanDescription,
   cleanTitle,
+  getBookTitleDedupeKey,
+  isMerchandiseOrCompanion,
   isWeakDescription,
   parsePublishedYear,
   pickEarliestYear,
@@ -45,6 +47,7 @@ type OpenLibrarySearchDoc = {
 };
 
 type OpenLibraryEdition = {
+  title?: string;
   publishers?: string[];
   isbn_13?: string[];
   isbn_10?: string[];
@@ -273,6 +276,125 @@ export async function fetchOpenLibraryEditionForWork(
     isbn,
     coverUrl: coverFromId(best.covers?.[0]),
   };
+}
+
+/**
+ * Best cover for an Open Library work.
+ *
+ * A work's `covers[0]` is frozen at whatever was uploaded first, which for
+ * recent titles is often the publisher's pre-release "cover to be revealed"
+ * card. Later editions carry the finished artwork, so prefer the newest
+ * English edition that has one.
+ */
+export type OpenLibraryWorkEditionSummary = {
+  /** Newest same-title English edition cover, when one exists. */
+  coverUrl: string | null;
+  coverYear: number | null;
+  /** Oldest / newest edition years across the whole work. */
+  earliestYear: number | null;
+  latestYear: number | null;
+};
+
+export async function fetchOpenLibraryWorkEditions(
+  workId: string,
+  options?: { minYear?: number | null; title?: string }
+): Promise<OpenLibraryWorkEditionSummary | null> {
+  const id = workId.replace(/^ol-/i, "").trim();
+  if (!/^OL\d+W$/i.test(id)) return null;
+
+  try {
+    // The editions payload is large; give it a real budget and one retry.
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= 2 && !response?.ok; attempt++) {
+      response = await fetchOpenLibrary(
+        `https://openlibrary.org/works/${id}/editions.json?limit=50`,
+        { revalidate: 86400, timeoutMs: attempt === 1 ? 5000 : 8000 }
+      );
+    }
+    if (!response?.ok) return null;
+
+    const data: { entries?: OpenLibraryEdition[] } = await response.json();
+    const entries = data.entries ?? [];
+    const workTitleKey = options?.title
+      ? getBookTitleDedupeKey({ title: options.title })
+      : null;
+
+    let bestCover: number | null = null;
+    let bestYear: number | null = null;
+    let earliestYear: number | null = null;
+    let latestYear: number | null = null;
+
+    for (const entry of entries) {
+      // Year range spans every edition, including translations — the oldest
+      // printing is the best available proxy for first publication.
+      const entryYear = parsePublishedYear(entry.publish_date);
+      if (entryYear != null) {
+        if (earliestYear == null || entryYear < earliestYear) {
+          earliestYear = entryYear;
+        }
+        if (latestYear == null || entryYear > latestYear) {
+          latestYear = entryYear;
+        }
+      }
+
+      const coverId = entry.covers?.find((value) => value > 0);
+      if (!coverId) continue;
+
+      const editionTitle = entry.title?.trim() ?? "";
+
+      // Only same-title English editions qualify. Translations and omnibus
+      // volumes are tagged loosely on Open Library, and their art would be
+      // worse than the work cover we already have.
+      const taggedEnglish = (entry.languages ?? []).some((language) =>
+        /\/languages\/eng$/i.test(language.key)
+      );
+      if (!taggedEnglish) continue;
+
+      if (
+        workTitleKey == null ||
+        editionTitle === "" ||
+        getBookTitleDedupeKey({ title: editionTitle }) !== workTitleKey
+      ) {
+        continue;
+      }
+
+      if (
+        isMerchandiseOrCompanion({
+          title: editionTitle,
+        } as Parameters<typeof isMerchandiseOrCompanion>[0])
+      ) {
+        continue;
+      }
+
+      if (
+        bestCover == null ||
+        (entryYear != null && (bestYear == null || entryYear > bestYear))
+      ) {
+        bestCover = coverId;
+        bestYear = entryYear;
+      }
+    }
+
+    // Never trade current artwork for an older edition's.
+    const minYear = options?.minYear ?? null;
+    const coverTooOld =
+      minYear != null && bestYear != null && bestYear < minYear;
+    const coverUrl =
+      bestCover != null && !coverTooOld ? coverFromId(bestCover) : null;
+
+    return {
+      coverUrl,
+      coverYear: coverUrl ? bestYear : null,
+      earliestYear,
+      latestYear,
+    };
+  } catch (error) {
+    console.error("[open-library] work editions lookup failed:", {
+      workId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 async function softGoogleIsbn(isbn: string): Promise<Partial<BookDetail> | null> {

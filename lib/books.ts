@@ -631,6 +631,57 @@ export const loadBookDetail = cache(async function loadBookDetail(
     );
   }
 
+  // Open Library work records are frozen at first upload: the cover is often
+  // the publisher's "cover to be revealed" card, and the year can come from
+  // whichever edition happened to be scanned. One pass over the editions list
+  // fixes both.
+  if (isOpenLibraryId(bookId)) {
+    const beforeEditions = book;
+    book = await softStep(
+      {
+        provider: "openlibrary-editions",
+        id: bookId,
+        timeoutMs: 10_000,
+        onFailure,
+      },
+      beforeEditions,
+      async () => {
+        const { fetchOpenLibraryWorkEditions } = await import(
+          "@/lib/book-enrichment"
+        );
+        const editions = await fetchOpenLibraryWorkEditions(bookId, {
+          title: beforeEditions.title,
+        });
+        if (!editions) return beforeEditions;
+
+        const next = { ...beforeEditions };
+        if (editions.coverUrl) {
+          next.coverUrl = editions.coverUrl;
+        }
+        // An earlier printing means the work is older than the scanned edition.
+        if (
+          editions.earliestYear != null &&
+          editions.earliestYear >= 1400 &&
+          (next.firstPublishYear == null ||
+            editions.earliestYear < next.firstPublishYear)
+        ) {
+          next.firstPublishYear = editions.earliestYear;
+        }
+        if (
+          editions.latestYear != null &&
+          next.firstPublishYear != null &&
+          editions.latestYear > next.firstPublishYear
+        ) {
+          next.latestEditionYear = Math.max(
+            editions.latestYear,
+            next.latestEditionYear ?? 0
+          );
+        }
+        return next;
+      }
+    );
+  }
+
   // Final sync catalog year pass after ISBNdb so older ISBN years cannot wipe
   // First published / Latest edition on popular reprints.
   const beforeYears = book;
