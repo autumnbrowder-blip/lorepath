@@ -51,6 +51,8 @@ export async function GET(request: Request) {
             ? {
                 sourceCounts: result.sourceCounts,
                 descriptionSources: result.descriptionSources ?? {},
+                // Status only — provider error bodies can name the project.
+                googleStatus: result.googleError?.status ?? null,
               }
             : {}),
         };
