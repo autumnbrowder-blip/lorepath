@@ -1,3 +1,4 @@
+import { OnboardingGuideCard } from "@/components/onboarding/OnboardingGuideCard";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { PreferencesForm } from "@/components/preferences/PreferencesForm";
 import { AvatarCrest } from "@/components/profile/AvatarCrest";
@@ -136,6 +137,14 @@ export default async function PreferencesPage() {
               Beta, preferences and Match Score are free for every account.
             </p>
           </div>
+
+          <OnboardingGuideCard
+            userId={user.id}
+            hasPreferences={preferences !== null}
+            ratingCount={ratedBooks.length}
+            variant="short"
+            className="mt-4 text-left sm:mt-5"
+          />
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
             <Link

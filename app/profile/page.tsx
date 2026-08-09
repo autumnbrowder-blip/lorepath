@@ -1,4 +1,5 @@
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { OnboardingGuideCard } from "@/components/onboarding/OnboardingGuideCard";
 import { AvatarCrest } from "@/components/profile/AvatarCrest";
 import { AvatarPicker } from "@/components/profile/AvatarPicker";
 import { DisplayNameForm } from "@/components/profile/DisplayNameForm";
@@ -9,6 +10,8 @@ import {
   getAvatarOption,
   resolveAvatarKey,
 } from "@/lib/avatars";
+import { getUserPreferences } from "@/lib/preferences";
+import { getUserRatedBooks } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -88,6 +91,12 @@ export default async function ProfilePage() {
   }
 
   const email = user.email ?? "—";
+  const [preferences, ratedBooks] = await Promise.all([
+    getUserPreferences(user.id),
+    getUserRatedBooks(user.id),
+  ]);
+  const hasPreferences = preferences !== null;
+  const ratingCount = ratedBooks.length;
 
   return (
     <FantasyPageShell>
@@ -103,6 +112,14 @@ export default async function ProfilePage() {
             A quiet corner of the archives for your account.
           </p>
         </header>
+
+        <OnboardingGuideCard
+          userId={user.id}
+          hasPreferences={hasPreferences}
+          ratingCount={ratingCount}
+          variant="full"
+          className="mb-6 sm:mb-8"
+        />
 
         <div className="preference-codex-box relative !px-4 !py-6 sm:!px-8 sm:!py-8">
           <CodexBoxOrnament />
