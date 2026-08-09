@@ -82,6 +82,15 @@ export function BookCard({
           </div>
         ) : null}
 
+        {book.editionLabel === "original" ||
+        book.editionLabel === "english" ? (
+          <p className="mb-2 font-storybook text-[10px] font-semibold uppercase tracking-[0.14em] text-gold-400/90">
+            {book.editionLabel === "english"
+              ? "English edition"
+              : "Original"}
+          </p>
+        ) : null}
+
         {description && (
           <p className="mb-3 line-clamp-3 font-heading text-[13px] font-medium leading-relaxed text-[#f0e4c7]/90">
             {description}

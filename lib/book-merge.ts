@@ -124,6 +124,9 @@ export function mergePreferredBookFields(
     isbn: identity.isbn ?? a.isbn ?? b.isbn ?? null,
     downloadCount:
       identity.downloadCount ?? a.downloadCount ?? b.downloadCount ?? null,
+    language: identity.language ?? a.language ?? b.language ?? null,
+    editionLabel:
+      identity.editionLabel ?? a.editionLabel ?? b.editionLabel ?? null,
   };
 }
 

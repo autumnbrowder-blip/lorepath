@@ -168,6 +168,7 @@ export function parseGoogleBooksResponse(
       source: "google" as const,
       isbn: getIsbn(item.volumeInfo.industryIdentifiers),
       pageCount: item.volumeInfo.pageCount ?? null,
+      language: item.volumeInfo.language?.trim() || null,
     }))
     .filter((book) => !isLowQualityBook(book));
 }
@@ -209,7 +210,11 @@ export type GoogleBooksPageResult = {
 async function fetchGoogleSearch(
   query: string,
   page = 1,
-  options?: SearchBooksOptions & { pageSize?: number }
+  options?: SearchBooksOptions & {
+    pageSize?: number;
+    /** Google Books langRestrict (e.g. `en`). */
+    langRestrict?: string;
+  }
 ): Promise<{
   books: BookSummary[];
   totalItems: number;
@@ -236,6 +241,9 @@ async function fetchGoogleSearch(
     printType: "books",
     orderBy: genreMode ? "newest" : "relevance",
   });
+  if (options?.langRestrict?.trim()) {
+    params.set("langRestrict", options.langRestrict.trim());
+  }
 
   const url = buildGoogleBooksUrl("volumes", params);
   // Short Data Cache window — avoids burning daily quota on identical searches
@@ -272,7 +280,7 @@ async function fetchGoogleSearch(
 export async function searchGoogleBooks(
   query: string,
   page = 1,
-  options?: SearchBooksOptions
+  options?: SearchBooksOptions & { langRestrict?: string; pageSize?: number }
 ): Promise<GoogleBooksPageResult> {
   if (!getGoogleBooksApiKey()) {
     // Anonymous Books API quota is effectively 0 from many hosts; a key is required.

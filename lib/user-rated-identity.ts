@@ -1,8 +1,8 @@
 import {
   authorKeysCompatible,
   getBookAuthorDedupeKey,
-  getBookDedupeKey,
   getBookTitleDedupeKey,
+  getBookWorkDedupeKey,
 } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 
@@ -39,7 +39,11 @@ export function isBookInscribedByUser(
 
 /**
  * Align search/browse card ids to the user's rated `books.slug` when the card
- * is the same work. After this, hasUserRating can use exact id === slug.
+ * id already matches that slug (normalization only).
+ *
+ * Do NOT rewrite via title+author work keys: original-language and English
+ * editions of the same work must keep distinct Open the Tome ids.
+ * Inscribed badges still use work-level matching in `createRatedBookLookup`.
  */
 export function alignBooksToRatedSlugs<T extends BookSummary>(
   books: readonly T[],
@@ -47,9 +51,21 @@ export function alignBooksToRatedSlugs<T extends BookSummary>(
 ): T[] {
   if (!rated.length || books.length === 0) return [...books];
 
-  const lookup = createRatedBookLookup(rated);
+  const slugSet = new Set(
+    rated
+      .map((row) => normalizeExternalBookId(row.slug))
+      .filter(Boolean)
+  );
+  const slugByNormalized = new Map(
+    rated
+      .filter((row) => row.slug?.trim())
+      .map((row) => [normalizeExternalBookId(row.slug), row.slug] as const)
+  );
+
   return books.map((book) => {
-    const slug = lookup.keyFor(book);
+    const normalized = normalizeExternalBookId(book.id);
+    if (!slugSet.has(normalized)) return book;
+    const slug = slugByNormalized.get(normalized);
     if (!slug || slug === book.id) return book;
     return { ...book, id: slug };
   });
@@ -90,7 +106,8 @@ export function ratedSlugSet(
 export function ratedBookKey(
   book: Pick<BookSummary, "id" | "title" | "authors" | "isbn">
 ): string {
-  return getBookDedupeKey(book);
+  // Work-level (no language) so Original + English cards share Inscribed state.
+  return getBookWorkDedupeKey(book);
 }
 
 export type RatedBookLookup = {

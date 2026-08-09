@@ -9,6 +9,9 @@ export type BookSource =
 /** Label for a whole search response (may be multi-source). */
 export type BookSearchSource = BookSource | "multi";
 
+/** Edition relationship label for translated works on browse cards. */
+export type BookEditionLabel = "original" | "english";
+
 export type BookSummary = {
   id: string;
   title: string;
@@ -35,6 +38,16 @@ export type BookSummary = {
   isbn?: string | null;
   /** Page count when known. */
   pageCount?: number | null;
+  /**
+   * BCP-47 / ISO-ish language code when known (e.g. `en`, `eng`, `ja`, `fr`).
+   * Used to keep original-language and English editions as separate cards.
+   */
+  language?: string | null;
+  /**
+   * When a work has both an original-language and English edition in results,
+   * cards are labeled so English-only readers can pick the right tome.
+   */
+  editionLabel?: BookEditionLabel | null;
 };
 
 export type BookDetail = BookSummary & {

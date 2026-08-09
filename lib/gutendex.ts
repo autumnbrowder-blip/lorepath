@@ -122,6 +122,7 @@ function toGutendexSummary(book: GutendexBook): BookSummary | null {
     publishedYear: parseGutendexPublishedYear(book),
     source: "gutendex",
     downloadCount: book.download_count ?? null,
+    language: book.languages?.[0] ?? null,
   };
 }
 

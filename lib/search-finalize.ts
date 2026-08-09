@@ -1,5 +1,6 @@
 import { withFinalizedTags } from "@/lib/book-tags";
 import { mergePreferredBookFields } from "@/lib/book-merge";
+import { shouldKeepAsSeparateLanguageEditions } from "@/lib/book-language";
 import {
   authorKeysCompatible,
   getBookAuthorDedupeKey,
@@ -156,7 +157,7 @@ function dedupeCandidates(
   const afterIsbn = byIsbn.size + withoutIsbn.length;
   const removedByIsbn = candidates.length - afterIsbn;
 
-  // Pass 2: normalized title + primary author (exact key)
+  // Pass 2: normalized title + primary author + language bucket
   const byTitleAuthor = new Map<string, BookSummary>();
 
   for (const book of [...Array.from(byIsbn.values()), ...withoutIsbn]) {
@@ -173,6 +174,7 @@ function dedupeCandidates(
 
   // Pass 3: soft work-level merge — same title + compatible author keys
   // ("buehlman" ↔ "buehlman c") or unknown-author into a sole titled author.
+  // Never merge English with a non-English original edition.
   const workMerged: BookSummary[] = [];
   for (const book of Array.from(byTitleAuthor.values())) {
     const titleKey = getBookTitleDedupeKey(book);
@@ -182,6 +184,7 @@ function dedupeCandidates(
     for (let i = 0; i < workMerged.length; i++) {
       const existing = workMerged[i]!;
       if (getBookTitleDedupeKey(existing) !== titleKey) continue;
+      if (shouldKeepAsSeparateLanguageEditions(existing, book)) continue;
 
       const existingAuthor = getBookAuthorDedupeKey(existing);
       const authorsCompatible =

@@ -48,9 +48,15 @@ import {
   softStep,
   summarizeFailures,
   withProviderRetry,
+  withTimeout,
   type ProviderFailure,
 } from "@/lib/provider-resilience";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
+import {
+  getCachedSearchPage,
+  searchCacheKey,
+  setCachedSearchPage,
+} from "@/lib/search-cache";
 import { createAuthenticatedClient } from "@/lib/supabase/server";
 import { rankSearchResults } from "@/lib/book-utils";
 import type {
@@ -71,6 +77,8 @@ const EMPTY_GOOGLE_PAGE: GoogleBooksPageResult = {
   error: null,
 };
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
+/** Hard outer cap so one slow provider cannot stall the whole flood. */
+const PROVIDER_SEARCH_TIMEOUT_MS = 3000;
 
 /** Providers queried on every browse search (ISBNdb is enrichment-only). */
 const SEARCH_SOURCES: BookSource[] = [
@@ -154,7 +162,43 @@ export async function searchBooks(
     ? { mode: "genre" }
     : undefined;
 
+  const cacheKey = searchCacheKey({
+    query: searchQuery,
+    page: pageNumber,
+    mode: genreMode ? "genre" : "text",
+  });
+  const cachedPage = getCachedSearchPage(cacheKey);
+
   const userIdPromise = resolveSearchUserId(options?.accessToken);
+
+  // Fast path: reuse a recent page, then re-apply Inscribed for this user.
+  if (cachedPage) {
+    let books = cachedPage.books;
+    let userRatedSlugs: string[] = [];
+    try {
+      const userId = await userIdPromise;
+      if (userId) {
+        const { getUserRatedIdentities } = await import("@/lib/ratings");
+        const {
+          alignBooksToRatedSlugs,
+          inscribedCardIdsForBooks,
+        } = await import("@/lib/user-rated-identity");
+        const identities = await getUserRatedIdentities(userId);
+        if (identities.length > 0) {
+          books = alignBooksToRatedSlugs(books, identities);
+          userRatedSlugs = inscribedCardIdsForBooks(books, identities);
+        }
+      }
+    } catch (error) {
+      console.error("[searchBooks] cached rated-identity lookup failed:", error);
+    }
+
+    return {
+      ...cachedPage,
+      books,
+      userRatedSlugs,
+    };
+  }
 
   const [
     googleSettled,
@@ -162,14 +206,30 @@ export async function searchBooks(
     gutendexSettled,
     bigBookSettled,
   ] = await Promise.allSettled([
-    searchGoogleBooks(searchQuery, pageNumber, searchOptions),
-    searchOpenLibrary(searchQuery, pageNumber, searchOptions),
+    withTimeout(
+      searchGoogleBooks(searchQuery, pageNumber, searchOptions),
+      PROVIDER_SEARCH_TIMEOUT_MS,
+      "google search"
+    ).catch(() => EMPTY_GOOGLE_PAGE),
+    withTimeout(
+      searchOpenLibrary(searchQuery, pageNumber, searchOptions),
+      PROVIDER_SEARCH_TIMEOUT_MS,
+      "openlibrary search"
+    ).catch(() => EMPTY_PAGE),
     // Gutenberg keyword search adds noise for modern titles; keep for genre
     // discovery and page-1 text (ranked down), skip on later pages.
     genreMode || pageNumber === 1
-      ? searchGutendex(searchQuery, pageNumber, searchOptions)
+      ? withTimeout(
+          searchGutendex(searchQuery, pageNumber, searchOptions),
+          PROVIDER_SEARCH_TIMEOUT_MS,
+          "gutendex search"
+        ).catch(() => EMPTY_PAGE)
       : Promise.resolve(EMPTY_PAGE),
-    searchBigBook(searchQuery, pageNumber, searchOptions),
+    withTimeout(
+      searchBigBook(searchQuery, pageNumber, searchOptions),
+      PROVIDER_SEARCH_TIMEOUT_MS,
+      "bigbook search"
+    ).catch(() => EMPTY_PAGE),
   ]);
 
   if (SEARCH_DEBUG && bigBookSettled.status === "rejected") {
@@ -343,22 +403,73 @@ export async function searchBooks(
     }
   }
 
-  // Fill missing synopses from the other sources (OL work, Google, ISBNdb,
-  // Hardcover) while the ranking still holds every candidate.
+  // Fill missing synopses and attach English editions in parallel so one stage
+  // cannot serialize the other. Both have hard budgets; primary flood wins.
   const descriptionSources: Record<string, string> = {};
-  try {
-    const { enrichSearchDescriptions } = await import(
-      "@/lib/search-enrichment"
-    );
-    const enriched = await enrichSearchDescriptions(books, {
-      debug: SEARCH_DEBUG,
-    });
-    books = enriched.books;
-    enriched.filled.forEach((source, id) => {
+  const preEnrichBooks = books;
+
+  const [enrichSettled, englishSettled] = await Promise.allSettled([
+    (async () => {
+      const { enrichSearchDescriptions } = await import(
+        "@/lib/search-enrichment"
+      );
+      return enrichSearchDescriptions(preEnrichBooks, {
+        debug: SEARCH_DEBUG,
+        budgetMs: 2800,
+        limit: 8,
+      });
+    })(),
+    genreMode
+      ? Promise.resolve(preEnrichBooks)
+      : (async () => {
+          const { attachEnglishEditions } = await import(
+            "@/lib/search-english-editions"
+          );
+          return attachEnglishEditions(preEnrichBooks, {
+            debug: SEARCH_DEBUG,
+            budgetMs: 2800,
+          });
+        })(),
+  ]);
+
+  if (enrichSettled.status === "fulfilled") {
+    books = enrichSettled.value.books;
+    enrichSettled.value.filled.forEach((source, id) => {
       descriptionSources[id] = source;
     });
-  } catch (error) {
-    console.error("[searchBooks] description enrichment failed:", error);
+  } else {
+    console.error(
+      "[searchBooks] description enrichment failed:",
+      enrichSettled.reason
+    );
+  }
+
+  if (!genreMode && englishSettled.status === "fulfilled") {
+    const englishResult = englishSettled.value;
+    const baseIds = new Set(books.map((book) => book.id));
+    const originalLabels = new Set(
+      englishResult
+        .filter((book) => book.editionLabel === "original")
+        .map((book) => book.id)
+    );
+    const englishExtras = englishResult.filter(
+      (book) =>
+        book.editionLabel === "english" &&
+        !baseIds.has(book.id)
+    );
+    books = [
+      ...books.map((book) =>
+        originalLabels.has(book.id)
+          ? { ...book, editionLabel: "original" as const }
+          : book
+      ),
+      ...englishExtras,
+    ];
+  } else if (!genreMode && englishSettled.status === "rejected") {
+    console.error(
+      "[searchBooks] English edition attach failed:",
+      englishSettled.reason
+    );
   }
 
   // Now that every candidate has had its chance, apply the quality filter.
@@ -368,6 +479,18 @@ export async function searchBooks(
     debug: SEARCH_DEBUG,
     query: genreMode ? undefined : searchQuery,
   });
+
+  // Re-apply Original / English edition labels after merges.
+  if (!genreMode) {
+    try {
+      const { labelOriginalAndEnglishEditions } = await import(
+        "@/lib/search-english-editions"
+      );
+      books = labelOriginalAndEnglishEditions(books);
+    } catch {
+      // Labels are cosmetic — never fail the search.
+    }
+  }
 
   if (!genreMode) {
     books = rankSearchResults(books, searchQuery);
@@ -403,6 +526,25 @@ export async function searchBooks(
       : {}),
   };
 
+  const hasMore =
+    googleResult.hasMore ||
+    openLibraryResult.hasMore ||
+    gutendexResult.hasMore ||
+    bigBookResult.hasMore;
+
+  // Cache the anonymous page (before Inscribed) for ~45s.
+  setCachedSearchPage(cacheKey, {
+    books,
+    sources: SEARCH_SOURCES,
+    sourceCounts,
+    source: "multi",
+    page: pageNumber,
+    hasMore,
+    descriptionSources,
+    googleError: googleResult.error,
+    googleRawCount: googleResult.rawCount,
+  });
+
   // User-only rated identities → rewrite card ids to rated slugs, then list them.
   // Match by books.slug OR work-level title+author so OL/Google/NYT edition ids align.
   let userRatedSlugs: string[] = [];
@@ -430,11 +572,7 @@ export async function searchBooks(
     sourceCounts,
     source: "multi",
     page: pageNumber,
-    hasMore:
-      googleResult.hasMore ||
-      openLibraryResult.hasMore ||
-      gutendexResult.hasMore ||
-      bigBookResult.hasMore,
+    hasMore,
     userRatedSlugs,
     descriptionSources,
     // Temporary debug fields — remove once Google search stability is confirmed.

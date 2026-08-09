@@ -1,3 +1,4 @@
+import { getLanguageEditionBucket } from "@/lib/book-language";
 import { cleanRawSubjects, normalizeBookTags } from "@/lib/book-tags";
 import type { BookSource, BookSummary } from "@/types/book";
 
@@ -481,8 +482,24 @@ export function authorKeysCompatible(a: string, b: string): boolean {
  * Unknown-author fallback: two same-title records without an author could be
  * different works, so we only collapse them when a stronger signal (shared
  * ISBN, or literally the same record id) says they are the same edition.
+ *
+ * Language bucket is appended so English and original-language editions of the
+ * same work stay as separate cards (ISBN still collapses identical editions).
  */
 function bookDedupeKey(
+  book: Pick<BookSummary, "title" | "authors" | "isbn" | "id" | "language">
+): string {
+  const title = normalizeTitleForDedupe(book.title);
+  const author = authorKeyPart(book.authors);
+  const lang = getLanguageEditionBucket(book);
+  if (author) return `${title}::${author}::${lang}`;
+
+  const isbn = getBookIsbnKey(book);
+  return `${title}::unknown:${isbn ?? book.id}::${lang}`;
+}
+
+/** Work-level key without language — used to pair original + English editions. */
+export function getBookWorkDedupeKey(
   book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
 ): string {
   const title = normalizeTitleForDedupe(book.title);
@@ -494,7 +511,7 @@ function bookDedupeKey(
 }
 
 export function getBookDedupeKey(
-  book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
+  book: Pick<BookSummary, "title" | "authors" | "isbn" | "id" | "language">
 ): string {
   return bookDedupeKey(book);
 }

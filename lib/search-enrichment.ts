@@ -38,8 +38,8 @@ type Supplement = {
 };
 
 /** Cards to repair per search — enough to fill a page without a request storm. */
-const DEFAULT_ENRICH_LIMIT = 12;
-const DEFAULT_BUDGET_MS = 5000;
+const DEFAULT_ENRICH_LIMIT = 8;
+const DEFAULT_BUDGET_MS = 2800;
 const CONCURRENCY = 4;
 /** ISBNdb is a small daily plan; only spend a few calls per search. */
 const ISBNDB_CALL_BUDGET = 4;
@@ -219,7 +219,7 @@ export async function fetchBackupSearchResults(
   try {
     const page = await withTimeout(
       searchIsbndb(trimmed, 1),
-      4000,
+      3000,
       "isbndb search backfill"
     );
     return page.books;

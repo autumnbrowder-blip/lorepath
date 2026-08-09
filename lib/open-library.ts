@@ -23,6 +23,7 @@ type OpenLibrarySearchDoc = {
   subject?: string[];
   first_sentence?: string[];
   isbn?: string[];
+  language?: string[];
 };
 
 type OpenLibrarySearchResponse = {
@@ -145,6 +146,7 @@ export function parseOpenLibrarySearchResponse(
         isbn:
           doc.isbn?.find((value) => value.replace(/\D/g, "").length >= 10) ??
           null,
+        language: doc.language?.[0]?.replace(/^\/languages\//, "") ?? null,
       };
     })
     .filter((book): book is BookSummary => book !== null)
@@ -164,7 +166,7 @@ export async function searchOpenLibrary(
       limit: String(pageSize),
       page: String(Math.max(1, page)),
       fields:
-        "key,title,author_name,cover_i,first_publish_year,subject,first_sentence,isbn",
+        "key,title,author_name,cover_i,first_publish_year,subject,first_sentence,isbn,language",
     });
 
     if (genreMode) {
@@ -187,7 +189,7 @@ export async function searchOpenLibrary(
             `https://openlibrary.org/search.json?${search.toString()}`,
             {
               noStore: true,
-              timeoutMs: attempt === 1 ? 3000 : 6000,
+              timeoutMs: 3000,
             }
           );
 
@@ -366,7 +368,7 @@ export async function getOpenLibraryBookByIsbn(
       q: `isbn:${digits}`,
       limit: "5",
       fields:
-        "key,title,author_name,cover_i,first_publish_year,subject,first_sentence,isbn",
+        "key,title,author_name,cover_i,first_publish_year,subject,first_sentence,isbn,language",
     });
 
     const response = await fetchOpenLibrary(

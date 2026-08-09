@@ -226,6 +226,7 @@ function toBookSummary(detail: BookDetail): BookSummary {
     source: detail.source,
     isbn: detail.isbn,
     pageCount: detail.pageCount,
+    language: detail.language,
   };
 }
 
