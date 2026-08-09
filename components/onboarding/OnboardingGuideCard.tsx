@@ -27,23 +27,12 @@ function GuideActions({
   state: OnboardingGuideState;
   variant: OnboardingGuideVariant;
 }) {
-  const browse = (
-    <Link
-      href="/browse"
-      className="btn-primary w-full justify-center px-5 py-3 text-[11px] tracking-[0.14em] sm:w-auto"
-    >
-      <Feather className="h-3.5 w-3.5" aria-hidden="true" />
-      Browse Tomes
-    </Link>
-  );
+  // Preferences: helper text only (save already routes the reader onward).
+  if (variant === "short") return null;
+  // Celebration: dismiss control only — no CTAs.
+  if (state === "celebration") return null;
 
   if (state === "begin-path") {
-    // On Preferences the reader is already setting the Codex — skip that CTA.
-    if (variant === "short") {
-      return (
-        <div className="mt-4 flex flex-wrap gap-3">{browse}</div>
-      );
-    }
     return (
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Link
@@ -62,7 +51,17 @@ function GuideActions({
     );
   }
 
-  return <div className="mt-4 flex flex-wrap gap-3 sm:mt-5">{browse}</div>;
+  return (
+    <div className="mt-4 flex flex-wrap gap-3 sm:mt-5">
+      <Link
+        href="/browse"
+        className="btn-primary w-full justify-center px-5 py-3 text-[11px] tracking-[0.14em] sm:w-auto"
+      >
+        <Feather className="h-3.5 w-3.5" aria-hidden="true" />
+        Browse Tomes
+      </Link>
+    </div>
+  );
 }
 
 export function OnboardingGuideCard({

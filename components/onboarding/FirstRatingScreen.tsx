@@ -244,12 +244,6 @@ export function FirstRatingScreen({
                 <Feather className="h-4 w-4" aria-hidden="true" />
                 Rate one more
               </button>
-              <Link
-                href="/browse"
-                className="btn-primary w-full justify-center px-6 py-3.5 text-sm tracking-[0.14em] sm:w-auto sm:min-w-[12rem]"
-              >
-                See Match Scores on Browse
-              </Link>
             </div>
           </div>
 
