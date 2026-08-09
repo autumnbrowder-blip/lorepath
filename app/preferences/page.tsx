@@ -51,7 +51,9 @@ export default async function PreferencesPage() {
   const preferences = prefsLoad.preferences;
   const loadError = "error" in prefsLoad ? prefsLoad.error : null;
   const ratedBooks = await getUserRatedBooks(user.id);
-  const afterSaveHref = "/browse";
+  const afterSaveHref =
+    ratedBooks.length >= 1 ? "/browse" : "/onboarding/first-rating";
+
   return (
     <div className="preferences-page">
       {/* Viewport-locked parchment scene — does not rescale when sliders/notes expand */}
