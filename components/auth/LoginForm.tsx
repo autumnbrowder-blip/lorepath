@@ -2,7 +2,6 @@
 
 import { ContactArchivesNote } from "@/components/ContactArchivesNote";
 import { track } from "@/lib/analytics";
-import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -73,6 +72,18 @@ function authErrorMessage(authError: string | null): string | null {
   }
 }
 
+async function readErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error === "string" && body.error.trim()) {
+      return body.error.trim();
+    }
+  } catch {
+    // fall through
+  }
+  return `Sign in failed (${res.status}).`;
+}
+
 type LoginFormProps = {
   /** Server-computed flag; falls back to client env check when omitted. */
   configured?: boolean;
@@ -101,7 +112,6 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
     const fromCallback = authErrorMessage(authError);
 
     if (authError === "supabase_not_configured" && configured) {
-      // Stale query param from an earlier misconfigured session — clear it.
       const params = new URLSearchParams(searchParams.toString());
       params.delete("error");
       const qs = params.toString();
@@ -133,42 +143,39 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
     setLoading(true);
 
     try {
-      const supabase = createClient();
-      const { data, error: signInError } =
-        await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
 
-      if (signInError) {
-        // Surface the real Supabase Auth error (invalid credentials, email not
-        // confirmed, rate limit, etc.) — never a generic "failed" stand-in.
-        setError(signInError.message);
-        return;
-      }
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
 
-      if (!data.session) {
-        setError(
-          "Signed in but no session was returned. Check email confirmation, then try again."
-        );
+      if (!res.ok) {
+        setError(await readErrorMessage(res));
         return;
       }
 
       setSuccessMessage("Signed in. Opening the archives…");
-      // Hard navigation so the next request carries fresh auth cookies.
       const destination =
         redirectTo.startsWith("/") && !redirectTo.startsWith("//")
           ? redirectTo
           : "/";
       window.location.assign(destination);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed.");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("Sign in timed out. Please try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Sign in failed.");
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleGoogleLogin() {
+  function handleGoogleLogin() {
     setError(null);
     setSuccessMessage(null);
 
@@ -178,33 +185,8 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
     }
 
     setGoogleLoading(true);
-
-    try {
-      const supabase = createClient();
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (oauthError) {
-        setError(oauthError.message);
-        return;
-      }
-
-      if (data?.url) {
-        window.location.assign(data.url);
-        return;
-      }
-
-      setError("Google sign-in did not start. Try again.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign in failed.");
-    } finally {
-      // If we navigated away this is a no-op; if not, stop the spinner.
-      setGoogleLoading(false);
-    }
+    // Full navigation — server sets PKCE cookies then redirects to Google.
+    window.location.assign("/api/auth/google");
   }
 
   return (

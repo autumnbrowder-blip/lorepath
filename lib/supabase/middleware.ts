@@ -31,9 +31,11 @@ function redirectPreservingCookies(
 }
 
 export async function updateSession(request: NextRequest) {
-  // Never run session refresh logic on the OAuth/email callback — that route
-  // owns cookie writes for the new session.
-  if (request.nextUrl.pathname.startsWith("/auth/callback")) {
+  // Never run session refresh on auth routes that set cookies themselves.
+  if (
+    request.nextUrl.pathname.startsWith("/auth/callback") ||
+    request.nextUrl.pathname.startsWith("/api/auth/")
+  ) {
     return NextResponse.next({ request });
   }
 
