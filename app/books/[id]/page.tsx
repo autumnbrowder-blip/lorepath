@@ -7,7 +7,7 @@ import { RatingForm } from "@/components/books/RatingForm";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { loadBookDetail } from "@/lib/books";
-import { summarizeFailures } from "@/lib/provider-resilience";
+import { summarizeFailures, withTimeout } from "@/lib/provider-resilience";
 import { getCommunityRatings, getUserRatingForBook } from "@/lib/ratings";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -207,14 +207,23 @@ export default async function BookDetailPage({
   }
 
   const [ratingsResult, viewer] = await Promise.all([
-    getCommunityRatings(id).catch((error) => {
-      console.error("[books/[id]] community ratings failed:", {
-        id,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return { averages: null, count: 0 };
-    }),
-    loadViewerState(id),
+    withTimeout(getCommunityRatings(id), 1500, "page-community-ratings")
+      .catch((error) => {
+        console.error("[books/[id]] community ratings failed:", {
+          id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return { averages: null, count: 0 };
+      }),
+    withTimeout(loadViewerState(id), 2000, "page-viewer-state").catch(
+      (error) => {
+        console.error("[books/[id]] viewer state timed out:", {
+          id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return ANONYMOUS_VIEWER;
+      }
+    ),
   ]);
 
   const communityRatings = ratingsResult;
