@@ -6,6 +6,7 @@ import {
 } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { getSupabaseEnv } from "@/lib/supabase/config";
+import { SUPABASE_TIMEOUT_MS, timedFetch } from "@/lib/supabase/fetch";
 
 /**
  * Preserve Authorization / apikey headers. Spreading a Headers instance into a
@@ -26,11 +27,15 @@ export function noStoreFetch(
     });
   }
 
-  return fetch(input, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  return timedFetch(
+    input,
+    {
+      ...init,
+      headers,
+      cache: "no-store",
+    },
+    SUPABASE_TIMEOUT_MS
+  );
 }
 
 /**
@@ -67,11 +72,15 @@ function createUserJwtFetch(accessToken: string, anonKey: string) {
       });
     }
 
-    return fetch(input, {
-      ...init,
-      headers,
-      cache: "no-store",
-    });
+    return timedFetch(
+      input,
+      {
+        ...init,
+        headers,
+        cache: "no-store",
+      },
+      SUPABASE_TIMEOUT_MS
+    );
   };
 }
 
