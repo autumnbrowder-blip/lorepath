@@ -1,7 +1,6 @@
 "use client";
 
 import { ContactArchivesNote } from "@/components/ContactArchivesNote";
-import { getAuthCallbackUrl } from "@/lib/auth-url";
 import { track } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -62,6 +61,18 @@ const parchmentButtonStyle: CSSProperties = {
     "0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,248,230,0.5), inset 0 -2px 4px rgba(90,60,20,0.18)",
 };
 
+function authErrorMessage(authError: string | null): string | null {
+  switch (authError) {
+    case "auth":
+    case "auth_callback_failed":
+      return "Sign-in could not be completed. Please try again. If you used Google, allow pop-ups and confirm lorepath.net is listed in Supabase Redirect URLs.";
+    case "supabase_not_configured":
+      return missingConfigMessage;
+    default:
+      return null;
+  }
+}
+
 type LoginFormProps = {
   /** Server-computed flag; falls back to client env check when omitted. */
   configured?: boolean;
@@ -70,7 +81,7 @@ type LoginFormProps = {
 export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/profile";
+  const redirectTo = searchParams.get("redirect") ?? "/";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -87,20 +98,19 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   useEffect(() => {
     const authError = searchParams.get("error");
     const message = searchParams.get("message");
-    if (authError === "auth_callback_failed") {
-      setError(
-        "That confirmation link could not finish signing you in. Make sure LorePath is running at http://localhost:3000, then request a new confirmation email or try signing in."
-      );
-    } else if (authError === "supabase_not_configured") {
-      // Stale query param from an earlier misconfigured session — ignore when env is valid.
-      if (!configured) {
-        setError(missingConfigMessage);
-      } else {
-        const params = new URLSearchParams(searchParams.toString());
-        params.delete("error");
-        const qs = params.toString();
-        router.replace(qs ? `/login?${qs}` : "/login");
-      }
+    const fromCallback = authErrorMessage(authError);
+
+    if (authError === "supabase_not_configured" && configured) {
+      // Stale query param from an earlier misconfigured session — clear it.
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("error");
+      const qs = params.toString();
+      router.replace(qs ? `/login?${qs}` : "/login");
+      return;
+    }
+
+    if (fromCallback) {
+      setError(fromCallback);
     } else if (message === "password_updated") {
       setSuccessMessage(
         "Your password has been updated. Sign in with your new credentials."
@@ -113,6 +123,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
 
     if (!configured) {
       setError(missingConfigMessage);
@@ -123,27 +134,43 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
 
     try {
       const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
       if (signInError) {
+        // Surface the real Supabase Auth error (invalid credentials, email not
+        // confirmed, rate limit, etc.) — never a generic "failed" stand-in.
         setError(signInError.message);
-        setLoading(false);
         return;
       }
 
-      router.push(redirectTo);
-      router.refresh();
+      if (!data.session) {
+        setError(
+          "Signed in but no session was returned. Check email confirmation, then try again."
+        );
+        return;
+      }
+
+      setSuccessMessage("Signed in. Opening the archives…");
+      // Hard navigation so the next request carries fresh auth cookies.
+      const destination =
+        redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+          ? redirectTo
+          : "/";
+      window.location.assign(destination);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed.");
+    } finally {
       setLoading(false);
     }
   }
 
   async function handleGoogleLogin() {
     setError(null);
+    setSuccessMessage(null);
 
     if (!configured) {
       setError(missingConfigMessage);
@@ -154,19 +181,28 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
 
     try {
       const supabase = createClient();
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: getAuthCallbackUrl(redirectTo),
+          redirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
       if (oauthError) {
         setError(oauthError.message);
-        setGoogleLoading(false);
+        return;
       }
+
+      if (data?.url) {
+        window.location.assign(data.url);
+        return;
+      }
+
+      setError("Google sign-in did not start. Try again.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google sign in failed.");
+    } finally {
+      // If we navigated away this is a no-op; if not, stop the spinner.
       setGoogleLoading(false);
     }
   }
@@ -198,13 +234,13 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       )}
       {error && <div className="alert-error mb-4">{error}</div>}
 
-        <button
-          type="button"
-          onClick={handleGoogleLogin}
-          disabled={!configured || googleLoading || loading}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-[4px] px-5 py-2.5 text-sm font-normal tracking-[0.06em] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-          style={parchmentButtonStyle}
-        >
+      <button
+        type="button"
+        onClick={handleGoogleLogin}
+        disabled={!configured || googleLoading || loading}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-[4px] px-5 py-2.5 text-sm font-normal tracking-[0.06em] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+        style={parchmentButtonStyle}
+      >
         {googleLoading ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
@@ -295,7 +331,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       >
         Don&apos;t have an account?{" "}
         <Link
-          href={`/register${redirectTo !== "/profile" ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`}
+          href={`/register${redirectTo !== "/" ? `?redirect=${encodeURIComponent(redirectTo)}` : ""}`}
           className="font-semibold text-[#0f2a22] underline underline-offset-4 decoration-[#a67c2d]/70 hover:decoration-[#a67c2d]"
           style={{ fontFamily: bodyFont }}
         >

@@ -11,13 +11,32 @@ const protectedRoutes: string[] = [
 ];
 // Public auth screens. Do not include /reset-password — recovery links
 // establish a session and the user must stay on that page to set a password.
+// Do not include /auth/callback — that route sets the session cookies.
 const authRoutes = ["/login", "/register", "/forgot-password"];
 
 const protectedRouteMessages: Record<string, string> = {
   "/preferences": "preferences",
 };
 
+/** Copy refreshed auth cookies onto a redirect so middleware never drops the session. */
+function redirectPreservingCookies(
+  url: URL,
+  supabaseResponse: NextResponse
+): NextResponse {
+  const redirectResponse = NextResponse.redirect(url);
+  supabaseResponse.cookies.getAll().forEach((cookie) => {
+    redirectResponse.cookies.set(cookie.name, cookie.value);
+  });
+  return redirectResponse;
+}
+
 export async function updateSession(request: NextRequest) {
+  // Never run session refresh logic on the OAuth/email callback — that route
+  // owns cookie writes for the new session.
+  if (request.nextUrl.pathname.startsWith("/auth/callback")) {
+    return NextResponse.next({ request });
+  }
+
   if (!isSupabaseConfigured()) {
     return NextResponse.next({ request });
   }
@@ -34,7 +53,7 @@ export async function updateSession(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
+      setAll(cookiesToSet: { name: string; value: string; options?: object }[]) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value)
         );
@@ -48,6 +67,8 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
+  // getUser() refreshes the session when needed. Always return supabaseResponse
+  // (or a redirect that copies its cookies) so refreshed tokens are not dropped.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -72,12 +93,23 @@ export async function updateSession(request: NextRequest) {
     if (message) {
       url.searchParams.set("message", message);
     }
-    return NextResponse.redirect(url);
+    return redirectPreservingCookies(url, supabaseResponse);
   }
 
   if (user && isAuthRoute) {
-    const redirectTo = request.nextUrl.searchParams.get("redirect") ?? "/profile";
-    return NextResponse.redirect(new URL(redirectTo, request.url));
+    // Prefer an explicit redirect param; otherwise send them home — do not
+    // bounce through a protected route that could race before cookies settle.
+    const redirectParam = request.nextUrl.searchParams.get("redirect");
+    const destination =
+      redirectParam &&
+      redirectParam.startsWith("/") &&
+      !redirectParam.startsWith("//")
+        ? redirectParam
+        : "/";
+    return redirectPreservingCookies(
+      new URL(destination, request.url),
+      supabaseResponse
+    );
   }
 
   return supabaseResponse;
