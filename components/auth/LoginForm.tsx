@@ -4,7 +4,12 @@ import { ContactArchivesNote } from "@/components/ContactArchivesNote";
 import { getAuthCallbackUrl } from "@/lib/auth-url";
 import { track } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
+import {
+  AUTH_UNAVAILABLE_MESSAGE,
+  checkAuthReachable,
+  isAuthServiceUnavailable,
+} from "@/lib/supabase/fetch";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -129,7 +134,13 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       });
 
       if (signInError) {
-        setError(signInError.message);
+        // A transport failure is not a credential problem — say so, otherwise
+        // people retype a correct password assuming they got it wrong.
+        setError(
+          isAuthServiceUnavailable(signInError)
+            ? AUTH_UNAVAILABLE_MESSAGE
+            : signInError.message
+        );
         setLoading(false);
         return;
       }
@@ -137,7 +148,13 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       router.push(redirectTo);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed.");
+      setError(
+        isAuthServiceUnavailable(err)
+          ? AUTH_UNAVAILABLE_MESSAGE
+          : err instanceof Error
+            ? err.message
+            : "Sign in failed."
+      );
       setLoading(false);
     }
   }
@@ -153,6 +170,16 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
     setGoogleLoading(true);
 
     try {
+      // OAuth redirects the browser away immediately, so confirm auth is
+      // actually answering first. Otherwise an outage sends the visitor to a
+      // blank page that never loads, with no way back to an explanation.
+      const env = getSupabaseEnv();
+      if (env && !(await checkAuthReachable(env.url, env.anonKey))) {
+        setError(AUTH_UNAVAILABLE_MESSAGE);
+        setGoogleLoading(false);
+        return;
+      }
+
       const supabase = createClient();
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -162,11 +189,21 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
       });
 
       if (oauthError) {
-        setError(oauthError.message);
+        setError(
+          isAuthServiceUnavailable(oauthError)
+            ? AUTH_UNAVAILABLE_MESSAGE
+            : oauthError.message
+        );
         setGoogleLoading(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign in failed.");
+      setError(
+        isAuthServiceUnavailable(err)
+          ? AUTH_UNAVAILABLE_MESSAGE
+          : err instanceof Error
+            ? err.message
+            : "Google sign in failed."
+      );
       setGoogleLoading(false);
     }
   }

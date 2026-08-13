@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 import { getSupabaseEnv } from "@/lib/supabase/config";
+import { SUPABASE_CLIENT_TIMEOUT_MS, timedFetch } from "@/lib/supabase/fetch";
 
 export function createClient() {
   const env = getSupabaseEnv();
@@ -9,5 +10,13 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(env.url, env.anonKey);
+  return createBrowserClient(env.url, env.anonKey, {
+    global: {
+      // Without a bound here, an unresponsive Supabase leaves sign-in spinning
+      // forever: the request never settles, so the form's error handling never
+      // runs and the visitor gets no feedback at all.
+      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+        timedFetch(input, { ...init }, SUPABASE_CLIENT_TIMEOUT_MS),
+    },
+  });
 }

@@ -5,6 +5,10 @@ import { getAuthCallbackUrl } from "@/lib/auth-url";
 import { track } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import {
+  AUTH_UNAVAILABLE_MESSAGE,
+  isAuthServiceUnavailable,
+} from "@/lib/supabase/fetch";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -92,7 +96,11 @@ export function RegisterForm() {
       });
 
       if (signUpError) {
-        setError(signUpError.message);
+        setError(
+          isAuthServiceUnavailable(signUpError)
+            ? AUTH_UNAVAILABLE_MESSAGE
+            : signUpError.message
+        );
         setLoading(false);
         return;
       }
@@ -119,7 +127,13 @@ export function RegisterForm() {
       router.push(redirectTo);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed.");
+      setError(
+        isAuthServiceUnavailable(err)
+          ? AUTH_UNAVAILABLE_MESSAGE
+          : err instanceof Error
+            ? err.message
+            : "Registration failed."
+      );
       setLoading(false);
     }
   }
