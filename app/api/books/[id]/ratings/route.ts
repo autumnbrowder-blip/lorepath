@@ -8,8 +8,13 @@ import {
   createAuthenticatedClient,
   getBearerToken,
 } from "@/lib/supabase/server";
+import { withTimeout } from "@/lib/provider-resilience";
 import type { ContentRating } from "@/types";
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 10;
 
 const RATING_KEYS: (keyof ContentRating)[] = [
   "sexual_content",
@@ -34,27 +39,52 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: bookExternalId } = await params;
-  const communityRatings = await getCommunityRatings(bookExternalId);
 
-  let userRating: ContentRating | null = null;
-  if (isSupabaseConfigured()) {
-    const session = await createAuthenticatedClient({
-      accessToken: getBearerToken(request),
-    });
-    if (!("error" in session)) {
-      userRating = await getUserRatingForBook(
-        bookExternalId,
-        session.user.id
-      );
+  try {
+    const communityRatings = await withTimeout(
+      getCommunityRatings(bookExternalId),
+      2500,
+      "ratings-get-community"
+    );
+
+    let userRating: ContentRating | null = null;
+    if (isSupabaseConfigured()) {
+      try {
+        const session = await withTimeout(
+          createAuthenticatedClient({
+            accessToken: getBearerToken(request),
+          }),
+          2000,
+          "ratings-get-auth"
+        );
+        if (!("error" in session)) {
+          userRating = await withTimeout(
+            getUserRatingForBook(bookExternalId, session.user.id),
+            2000,
+            "ratings-get-user"
+          );
+        }
+      } catch {
+        // Anonymous community payload is enough — never hang the GET.
+      }
     }
+
+    return NextResponse.json(
+      { ...communityRatings, userRating },
+      {
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
+  } catch (error) {
+    console.error("[api/books/ratings GET] failed:", error);
+    return NextResponse.json(
+      { averages: null, count: 0, userRating: null },
+      {
+        status: 200,
+        headers: { "Cache-Control": "no-store" },
+      }
+    );
   }
-
-  return NextResponse.json(
-    { ...communityRatings, userRating },
-    {
-      headers: { "Cache-Control": "no-store" },
-    }
-  );
 }
 
 export async function POST(

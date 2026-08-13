@@ -87,7 +87,7 @@ const SEARCH_OVERALL_BUDGET_MS = 7000;
 /** Skip slow enrichment/english attach when less than this remains. */
 const SEARCH_ENRICH_MIN_REMAINING_MS = 1200;
 /** Detail-page enrichment total budget after core book is resolved. */
-const DETAIL_ENRICH_BUDGET_MS = 3000;
+const DETAIL_ENRICH_BUDGET_MS = 1500;
 
 /** Providers queried on every browse search. */
 const SEARCH_SOURCES: BookSource[] = SEARCH_FLOOD_SOURCES;
@@ -718,7 +718,7 @@ export const loadBookDetail = cache(async function loadBookDetail(
 
   // 1) Prefer previously resolved books in Supabase — survives provider outages.
   const cached = await softStep(
-    { provider: "book-cache", id: bookId, timeoutMs: 4000, onFailure },
+    { provider: "book-cache", id: bookId, timeoutMs: 1500, onFailure },
     null as BookDetail | null,
     () => getCachedBookBySlug(bookId)
   );
@@ -753,8 +753,8 @@ export const loadBookDetail = cache(async function loadBookDetail(
   // Sync cover fill (provider → OL ISBN → OL OLID) before slower enrichment.
   book = fillMissingCoverUrl(book);
 
-  // 3) Enrichment — every step optional, isolated, and time-boxed under a
-  // hard DETAIL_ENRICH_BUDGET_MS so a slow secondary API cannot take down the page.
+  // 3) Enrichment — skip network enrichment when cache already has a usable
+  // core record. Under Netlify budgets, OL editions / ISBNdb must not block SSR.
   const enrichDeadline = createDeadline(DETAIL_ENRICH_BUDGET_MS);
   const core = book;
 
@@ -764,7 +764,7 @@ export const loadBookDetail = cache(async function loadBookDetail(
     run: () => Promise<BookDetail>
   ): Promise<void> {
     if (!book || enrichDeadline.expired()) return;
-    const timeoutMs = enrichDeadline.cap(desiredMs, 150);
+    const timeoutMs = enrichDeadline.cap(desiredMs, 100);
     if (timeoutMs <= 0) return;
     const before = book;
     book = await softStep(
@@ -774,68 +774,30 @@ export const loadBookDetail = cache(async function loadBookDetail(
     );
   }
 
-  if (!fromCache || needsIsbndbEnrichment(core)) {
-    await enrichIfBudget("enrichment", 2000, () => enrichBookDetail(core));
-  } else {
-    await enrichIfBudget("known-edition-enrichment", 800, async () => {
-      const { enrichKnownEditionMetadata } = await import(
-        "@/lib/book-enrichment"
-      );
-      return enrichKnownEditionMetadata(core);
-    });
-  }
-
-  if (book && needsIsbndbEnrichment(book) && !enrichDeadline.expired()) {
-    const beforeIsbndb = book;
-    await enrichIfBudget("isbndb-enrichment", 2000, () =>
-      enrichBookDetailWithIsbndb(beforeIsbndb)
-    );
-  }
-
-  // Open Library editions pass — capped tightly (was 10s and caused timeouts).
-  if (isOpenLibraryId(bookId) && book && !enrichDeadline.expired()) {
-    const beforeEditions = book;
-    await enrichIfBudget("openlibrary-editions", 2000, async () => {
-      const { fetchOpenLibraryWorkEditions } = await import(
-        "@/lib/book-enrichment"
-      );
-      const editions = await fetchOpenLibraryWorkEditions(bookId, {
-        title: beforeEditions.title,
-      });
-      if (!editions) return beforeEditions;
-
-      const next = { ...beforeEditions };
-      if (editions.coverUrl) {
-        next.coverUrl = editions.coverUrl;
-      }
-      if (
-        editions.earliestYear != null &&
-        editions.earliestYear >= 1400 &&
-        (next.firstPublishYear == null ||
-          editions.earliestYear < next.firstPublishYear)
-      ) {
-        next.firstPublishYear = editions.earliestYear;
-      }
-      if (
-        editions.latestYear != null &&
-        next.firstPublishYear != null &&
-        editions.latestYear > next.firstPublishYear
-      ) {
-        next.latestEditionYear = Math.max(
-          editions.latestYear,
-          next.latestEditionYear ?? 0
-        );
-      }
-      return next;
-    });
-  }
-
-  if (book && !enrichDeadline.expired()) {
-    const beforeYears = book;
-    await enrichIfBudget("known-edition-years", 500, async () => {
+  if (fromCache) {
+    // Local/catalog year fill only — no external APIs on the hot path.
+    await enrichIfBudget("known-edition-years", 400, async () => {
       const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
-      return applyKnownEditionYears(beforeYears);
+      return applyKnownEditionYears(core);
     });
+  } else {
+    await enrichIfBudget("enrichment", 1200, () => enrichBookDetail(core));
+
+    if (book && needsIsbndbEnrichment(book) && !enrichDeadline.expired()) {
+      const beforeIsbndb = book;
+      await enrichIfBudget("isbndb-enrichment", 1000, () =>
+        enrichBookDetailWithIsbndb(beforeIsbndb)
+      );
+    }
+
+    // Skip openlibrary-editions on SSR — it was a frequent Netlify timeout source.
+    if (book && !enrichDeadline.expired()) {
+      const beforeYears = book;
+      await enrichIfBudget("known-edition-years", 400, async () => {
+        const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
+        return applyKnownEditionYears(beforeYears);
+      });
+    }
   }
 
   if (!book) {

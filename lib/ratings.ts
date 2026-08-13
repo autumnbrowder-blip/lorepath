@@ -356,27 +356,34 @@ export async function getCommunityRatings(
   }
 
   try {
-    const supabase = resolveRatingsReadClient();
-    if (!supabase) {
-      return { averages: null, count: 0 };
-    }
+    const { withTimeout } = await import("@/lib/provider-resilience");
+    return await withTimeout(
+      (async () => {
+        const supabase = resolveRatingsReadClient();
+        if (!supabase) {
+          return { averages: null, count: 0 };
+        }
 
-    const { data: book, error: bookError } = await supabase
-      .from("books")
-      .select("id")
-      .eq("slug", bookExternalId)
-      .maybeSingle();
+        const { data: book, error: bookError } = await supabase
+          .from("books")
+          .select("id")
+          .eq("slug", bookExternalId)
+          .maybeSingle();
 
-    if (bookError || !book?.id) {
-      return { averages: null, count: 0 };
-    }
+        if (bookError || !book?.id) {
+          return { averages: null, count: 0 };
+        }
 
-    const result = await fetchAllRatingsForBook(supabase, book.id);
-    if (result.error) {
-      return { averages: null, count: 0 };
-    }
+        const result = await fetchAllRatingsForBook(supabase, book.id);
+        if (result.error) {
+          return { averages: null, count: 0 };
+        }
 
-    return summarizeCommunityRatings(result.data);
+        return summarizeCommunityRatings(result.data);
+      })(),
+      2000,
+      `community-ratings:${bookExternalId}`
+    );
   } catch {
     return { averages: null, count: 0 };
   }
