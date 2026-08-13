@@ -1,5 +1,4 @@
 import { createServerClient } from "@supabase/ssr";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/config";
 
@@ -32,12 +31,64 @@ async function withDeadline<T>(
   }
 }
 
+async function passwordGrant(
+  env: { url: string; anonKey: string },
+  email: string,
+  password: string
+): Promise<
+  | { session: { access_token: string; refresh_token: string }; error?: undefined }
+  | { session?: undefined; error: string; status: number }
+> {
+  const res = await fetch(`${env.url}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      apikey: env.anonKey,
+      Authorization: `Bearer ${env.anonKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+    cache: "no-store",
+  });
+
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    return {
+      error: text.slice(0, 200) || `Auth error (${res.status})`,
+      status: res.status || 500,
+    };
+  }
+
+  if (!res.ok) {
+    const message =
+      (typeof json.error_description === "string" && json.error_description) ||
+      (typeof json.msg === "string" && json.msg) ||
+      (typeof json.message === "string" && json.message) ||
+      (typeof json.error === "string" && json.error) ||
+      `Invalid login credentials (${res.status})`;
+    return { error: message, status: res.status };
+  }
+
+  const access =
+    typeof json.access_token === "string" ? json.access_token : null;
+  const refresh =
+    typeof json.refresh_token === "string" ? json.refresh_token : null;
+  if (!access || !refresh) {
+    return {
+      error:
+        "Signed in but no session was returned. Confirm your email, then try again.",
+      status: 401,
+    };
+  }
+
+  return { session: { access_token: access, refresh_token: refresh } };
+}
+
 /**
- * Email/password sign-in that sets session cookies on the HTTP response.
- *
- * Uses a cookie-less supabase-js client for the password grant so a stale /
- * corrupt browser session cannot deadlock GoTrue initialize/refresh. Cookies
- * are written only onto the JSON response after a successful grant.
+ * Email/password sign-in via direct Auth HTTP grant (bypasses supabase-js
+ * client hangs on Netlify), then writes SSR session cookies onto the response.
  */
 export async function POST(request: Request) {
   const env = getSupabaseEnv();
@@ -72,35 +123,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Stateless client — no cookies, no refresh of whatever the browser sent.
-    const authClient = createSupabaseClient(env.url, env.anonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
-
-    const { data, error } = await withDeadline(
-      authClient.auth.signInWithPassword({ email, password }),
+    const grant = await withDeadline(
+      passwordGrant(env, email, password),
       LOGIN_TIMEOUT_MS,
-      "signInWithPassword"
+      "passwordGrant"
     );
 
-    if (error) {
+    if (grant.error || !grant.session) {
       return NextResponse.json(
-        { error: error.message || "Invalid login credentials" },
-        { status: 401 }
-      );
-    }
-
-    if (!data.session?.access_token || !data.session.refresh_token) {
-      return NextResponse.json(
-        {
-          error:
-            "Signed in but no session was returned. Confirm your email, then try again.",
-        },
-        { status: 401 }
+        { error: grant.error || "Invalid login credentials" },
+        { status: grant.status || 401 }
       );
     }
 
@@ -123,8 +155,8 @@ export async function POST(request: Request) {
 
     const { error: sessionError } = await withDeadline(
       cookieClient.auth.setSession({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
+        access_token: grant.session.access_token,
+        refresh_token: grant.session.refresh_token,
       }),
       LOGIN_TIMEOUT_MS,
       "setSession"
