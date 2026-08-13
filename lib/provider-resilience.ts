@@ -51,12 +51,60 @@ export function classifyProviderError(error: unknown): {
   return { status, message: message || "Unknown provider error", transient };
 }
 
+/** Wall-clock budget so one request cannot exceed Netlify / serverless limits. */
+export type Deadline = {
+  startedAt: number;
+  budgetMs: number;
+  remaining: () => number;
+  expired: () => boolean;
+  /**
+   * Cap a step timeout to remaining budget, keeping `reserveMs` for response
+   * assembly. Returns 0 when the deadline is already exhausted.
+   */
+  cap: (desiredMs: number, reserveMs?: number) => number;
+};
+
+export function createDeadline(budgetMs: number): Deadline {
+  const startedAt = Date.now();
+  return {
+    startedAt,
+    budgetMs,
+    remaining: () => Math.max(0, budgetMs - (Date.now() - startedAt)),
+    expired: () => Date.now() - startedAt >= budgetMs,
+    cap(desiredMs: number, reserveMs = 250) {
+      const left = Math.max(0, budgetMs - (Date.now() - startedAt) - reserveMs);
+      if (left <= 0) return 0;
+      return Math.min(desiredMs, left);
+    },
+  };
+}
+
+/** Structured timeout log — used to diagnose which provider burned the budget. */
+export function logProviderTimeout(
+  provider: string,
+  timeoutMs: number,
+  extra?: Record<string, unknown>
+) {
+  console.warn("[provider-timeout]", {
+    provider,
+    timeoutMs,
+    ...extra,
+  });
+}
+
 /** Reject a slow step so one hanging API cannot stall a whole page render. */
 export async function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
   label: string
 ): Promise<T> {
+  if (ms <= 0) {
+    const error = new Error(`${label} timed out after 0ms (deadline exhausted)`);
+    error.name = "TimeoutError";
+    logProviderTimeout(label, 0);
+    throw error;
+  }
+
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -65,6 +113,7 @@ export async function withTimeout<T>(
         timer = setTimeout(() => {
           const error = new Error(`${label} timed out after ${ms}ms`);
           error.name = "TimeoutError";
+          logProviderTimeout(label, ms);
           reject(error);
         }, ms);
       }),
@@ -107,8 +156,15 @@ export async function withProviderRetry<T>(
     try {
       const call = run(attempt);
       // Later attempts get a longer budget — most failures here are slow APIs.
-      return timeoutMs
-        ? await withTimeout(call, timeoutMs * attempt, `${provider} lookup`)
+      // Cap retries: first attempt only when under tight Netlify budgets.
+      const attemptTimeout =
+        timeoutMs == null
+          ? undefined
+          : attempt === 1
+            ? timeoutMs
+            : Math.min(timeoutMs * attempt, timeoutMs + 1500);
+      return attemptTimeout
+        ? await withTimeout(call, attemptTimeout, `${provider} lookup`)
         : await call;
     } catch (error) {
       const { status, message, transient } = classifyProviderError(error);
@@ -137,11 +193,16 @@ export async function withProviderRetry<T>(
  * Failures and timeouts keep the current value instead of failing the page.
  */
 export async function softStep<T>(
-  context: { provider: string; id: string; timeoutMs?: number; onFailure?: (failure: ProviderFailure) => void },
+  context: {
+    provider: string;
+    id: string;
+    timeoutMs?: number;
+    onFailure?: (failure: ProviderFailure) => void;
+  },
   fallback: T,
   run: () => Promise<T>
 ): Promise<T> {
-  const { provider, id, timeoutMs = 6000, onFailure } = context;
+  const { provider, id, timeoutMs = 2500, onFailure } = context;
   try {
     return await withTimeout(run(), timeoutMs, `${provider} step`);
   } catch (error) {

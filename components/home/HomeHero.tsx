@@ -72,8 +72,8 @@ export function HomeHero() {
               Preview spice, pacing, horror, and more
             </h1>
             <p className="mx-auto mt-2 max-w-lg font-heading text-sm leading-relaxed text-gold-200/85 sm:mt-3 sm:text-base md:text-lg">
-              Rate books by content, set your preferences, and get a Match Score
-              on every book.
+              Rate books by content, set your preferences, and see Match Scores
+              on books the community has marked.
             </p>
 
             {/* Signup is always the dominant hero action */}

@@ -9,7 +9,7 @@ type SignInPromptProps = {
 
 export function SignInPrompt({
   title = "Sign in to save your preferences",
-  description = "During Beta, preferences and Match Score are free for every account. Sign in to set your comfort levels and see how well each book matches your taste.",
+  description = "During Beta, preferences and Match Score are free for every account. Sign in to set your comfort levels — Match Scores appear once a book has community marks and you’ve set your preferences.",
   compact = false,
 }: SignInPromptProps) {
   return (

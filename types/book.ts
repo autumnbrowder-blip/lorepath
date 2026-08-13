@@ -4,7 +4,8 @@ export type BookSource =
   | "gutendex"
   | "nyt"
   | "isbndb"
-  | "bigbook";
+  | "bigbook"
+  | "hardcover";
 
 /** Label for a whole search response (may be multi-source). */
 export type BookSearchSource = BookSource | "multi";

@@ -125,7 +125,7 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
         {!hasRatings && (
           <div className="mb-2 codex-inset border-dashed px-2.5 py-2">
             <p className="font-heading text-sm leading-snug nav-dragon-gold">
-              No ratings yet — be the first to mark this tome.
+              No community marks yet — be the first to inscribe this tome.
             </p>
           </div>
         )}

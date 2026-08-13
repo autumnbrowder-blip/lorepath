@@ -32,7 +32,7 @@ const betaFeatures = [
   "Rate books and leave clear notes on tone, content, and pacing",
   "View community ratings from other readers",
   "Set preferences in the Preferences Codex as it grows",
-  "Match Score — free for every signed-in account during Beta",
+  "Match Scores on books the community has marked — free during Beta for signed-in readers",
   "Share feedback that helps guide what we build next",
 ];
 
@@ -255,10 +255,10 @@ export default async function FaqPage() {
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 Here you rate books across content themes (pacing, horror, romance,
                 spice, and more), set your preferences in the Preferences Codex, and
-                receive a Match Score that shows how well each tome fits the kind of
-                journey you want. Think of it as an open classroom: the shelves are
-                ready, the candles are lit, and every rating helps fellow wanderers
-                choose their next adventure.
+                see Match Scores on books the community has marked — a compass for
+                how well those tomes fit the kind of journey you want. Think of it
+                as an open classroom: the shelves are ready, the candles are lit,
+                and every rating helps fellow wanderers choose their next adventure.
               </p>
             </SectionCard>
 
@@ -346,9 +346,10 @@ export default async function FaqPage() {
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 Your Match Score is a friendly percentage that shows how well a
                 book fits the preferences you set in the Preferences Codex.
-                Think of it as a compass for each tome: the higher the number,
-                the closer the community&apos;s ratings land to what you enjoy —
-                and what you prefer to leave on the shelf.
+                Match Scores appear once a book has community marks and you’ve
+                set your preferences — think of it as a compass for marked tomes:
+                the higher the number, the closer the community&apos;s ratings
+                land to what you enjoy, and what you prefer to leave on the shelf.
               </p>
               <p className="font-heading text-lg leading-relaxed nav-dragon-gold">
                 We compare the community average for each category to your
@@ -366,14 +367,15 @@ export default async function FaqPage() {
                 book may wander outside your comfort zone. Rough guide: around
                 90%+ is an excellent match, 75%+ is good, 50%+ is moderate, and
                 lower scores mean a weaker fit. During Beta, Match Score is free
-                for every signed-in reader.
+                for every signed-in reader on books the community has marked.
               </p>
 
               <div className="codex-inset px-4 py-3">
                 <p className="font-heading text-base leading-snug nav-dragon-gold">
-                  Tip from the desk: set your preferences first, then open any
-                  book — your Match Score appears at the top of the right-hand
-                  column once community ratings are in place.
+                  Tip from the desk: set your preferences first, then open a tome
+                  with community marks — your Match Score appears at the top of
+                  the right-hand column. If a book has none yet, you&apos;ll see
+                  an invitation to be the first to inscribe it.
                 </p>
               </div>
             </SectionCard>

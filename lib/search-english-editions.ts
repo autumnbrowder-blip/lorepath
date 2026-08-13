@@ -14,6 +14,11 @@ import {
   parsePublishedYear,
 } from "@/lib/book-utils";
 import { searchGoogleBooks } from "@/lib/google-books";
+import {
+  findKnownWorkEditions,
+  knownWorkCatalogSeed,
+  type KnownWorkEditions,
+} from "@/lib/known-editions";
 import { fetchOpenLibrary } from "@/lib/open-library";
 import { withTimeout } from "@/lib/provider-resilience";
 import type { BookSummary } from "@/types/book";
@@ -36,7 +41,38 @@ type OpenLibraryEditionEntry = {
   number_of_pages?: number;
 };
 
+function knownForBook(book: BookSummary): KnownWorkEditions | null {
+  return findKnownWorkEditions(book.title, book.authors, {
+    id: book.id,
+    isbn: book.isbn,
+  });
+}
+
+function isKnownOriginalEdition(
+  book: BookSummary,
+  known: KnownWorkEditions
+): boolean {
+  if (!known.originalLanguage) return false;
+  if (book.editionLabel === "original") return true;
+  return (known.altTitles ?? []).some((alt) =>
+    isExactTitleMatch(alt, book.title)
+  );
+}
+
+function isKnownEnglishEdition(
+  book: BookSummary,
+  known: KnownWorkEditions
+): boolean {
+  if (book.editionLabel === "english") return true;
+  return isExactTitleMatch(known.matchTitle, book.title);
+}
+
 function needsEnglishCompanion(book: BookSummary): boolean {
+  const known = knownForBook(book);
+  if (known?.originalLanguage) {
+    if (isKnownEnglishEdition(book, known)) return false;
+    if (isKnownOriginalEdition(book, known)) return true;
+  }
   return getLanguageEditionBucket(book) === "non-eng";
 }
 
@@ -44,6 +80,14 @@ function hasEnglishSibling(
   book: BookSummary,
   books: BookSummary[]
 ): boolean {
+  const known = knownForBook(book);
+  if (known?.originalLanguage) {
+    return books.some(
+      (candidate) =>
+        candidate.id !== book.id && isKnownEnglishEdition(candidate, known)
+    );
+  }
+
   const workKey = getBookWorkDedupeKey(book);
   const authorKey = getBookAuthorDedupeKey(book);
   const titleKey = normalizeTitleForDedupe(book.title);
@@ -206,11 +250,17 @@ async function findEnglishViaGoogle(
 
 /**
  * Resolve one English companion with a hard per-candidate timeout.
- * Google and thin OL run in parallel; first usable hit wins.
+ * Known translated works use the catalog English title/ISBN (Cadáver → Tender).
+ * Otherwise Google and thin OL run in parallel; first usable hit wins.
  */
 async function resolveEnglishEdition(
   original: BookSummary
 ): Promise<BookSummary | null> {
+  const known = knownForBook(original);
+  if (known?.originalLanguage && isKnownOriginalEdition(original, known)) {
+    return knownWorkCatalogSeed(known, "english");
+  }
+
   const tasks: Promise<BookSummary | null>[] = [
     findEnglishViaGoogle(original).catch(() => null),
   ];

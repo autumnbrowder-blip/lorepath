@@ -29,7 +29,7 @@ const libraryShelves = [
   {
     title: "Traveler’s Compass",
     description:
-      "Match scores light the path — find books that fit like a favorite chair by the hearth.",
+      "Match Scores light the path on books the community has marked — find journeys that fit like a favorite chair by the hearth.",
     icon: Compass,
     href: "/browse",
     cta: "Find your match",

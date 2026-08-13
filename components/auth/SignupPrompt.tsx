@@ -2,7 +2,7 @@ import { Feather, ScrollText } from "lucide-react";
 import Link from "next/link";
 
 export const SIGNUP_PROMPT_COPY =
-  "Create a free account to save your marks across the realm, strengthen community ratings, and unlock Match Scores.";
+  "Create a free account to save your marks across the realm, strengthen community ratings, and see Match Scores on books the community has marked.";
 
 export const SIGNUP_PROMPT_GOODREADS =
   "Import your Goodreads list after signup.";

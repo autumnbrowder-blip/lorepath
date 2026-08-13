@@ -155,7 +155,8 @@ async function loadViewerState(bookExternalId: string): Promise<ViewerState> {
       return ANONYMOUS_VIEWER;
     }
 
-    // During Beta, every signed-in reader gets Match Score + preferences.
+    // During Beta, signed-in readers can use preferences + Match Score
+    // (Match Score still needs community marks on the book).
     const [preferences, rating] = await Promise.allSettled([
       getUserPreferences(user.id),
       getUserRatingForBook(bookExternalId, user.id),

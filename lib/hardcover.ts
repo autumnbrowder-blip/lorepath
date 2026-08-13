@@ -1,15 +1,16 @@
 import { cleanDescription, parsePublishedYear } from "@/lib/book-utils";
+import type { BookSummary } from "@/types/book";
 
 /**
- * Optional Hardcover.app enrichment source (GraphQL, token-gated).
- * Everything here is a no-op unless HARDCOVER_API_TOKEN is set, so the search
- * pipeline can always call it without checking configuration first.
+ * Optional Hardcover.app enrichment + browse search source (GraphQL, token-gated).
+ * Soft-fails when HARDCOVER_API_TOKEN is unset.
  */
 const HARDCOVER_ENDPOINT = "https://api.hardcover.app/v1/graphql";
-const FETCH_TIMEOUT_MS = 3500;
+const FETCH_TIMEOUT_MS = 3000;
+const HARDCOVER_ID_PREFIX = "hardcover-";
 
 const SEARCH_QUERY = `query LorePathSearch($query: String!) {
-  search(query: $query, query_type: "Book", per_page: 5, page: 1) {
+  search(query: $query, query_type: "Book", per_page: 8, page: 1) {
     results
   }
 }`;
@@ -188,4 +189,74 @@ export async function fetchHardcoverBook(
   });
 
   return exact ?? results.find((book) => normalizeForCompare(book.title) === wantedTitle) ?? null;
+}
+
+function slugifyTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function toBookSummary(book: HardcoverBook): BookSummary {
+  const isbn =
+    book.isbns.find((value) => value.replace(/\D/g, "").length >= 10) ?? null;
+  const isbnDigits = isbn?.replace(/\D/g, "") ?? "";
+
+  // Prefer ISBN-backed ids so Open the Tome resolves via existing ISBN paths.
+  const id =
+    isbnDigits.length >= 10
+      ? `isbndb-${isbnDigits}`
+      : `${HARDCOVER_ID_PREFIX}${slugifyTitle(book.title) || "work"}`;
+
+  return {
+    id,
+    title: book.title,
+    authors: book.authors.length > 0 ? book.authors : ["Unknown author"],
+    coverUrl: book.coverUrl,
+    description: book.description,
+    genres: book.genres,
+    publishedYear: book.publishedYear,
+    source: "hardcover",
+    isbn: isbnDigits || isbn,
+    pageCount: book.pageCount,
+    language: "en",
+  };
+}
+
+export type HardcoverPageResult = {
+  books: BookSummary[];
+  hasMore: boolean;
+};
+
+/**
+ * Browse flood search via Hardcover Typesense. Soft-fails when unconfigured.
+ */
+export async function searchHardcover(
+  query: string,
+  _page = 1
+): Promise<HardcoverPageResult> {
+  if (!isHardcoverConfigured() || !query.trim()) {
+    return { books: [], hasMore: false };
+  }
+
+  // Skip Google-structured operators — Hardcover wants natural language.
+  const cleaned = query
+    .replace(/\bintitle:|"|inauthor:/gi, " ")
+    .replace(/\bisbn:\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return { books: [], hasMore: false };
+
+  const hits = await runHardcoverSearch(cleaned);
+  const books = hits
+    .map((hit) => toBookSummary(hit))
+    .filter((book) => Boolean(book.title?.trim()));
+
+  return { books, hasMore: false };
+}
+
+export function isHardcoverId(id: string): boolean {
+  return id.startsWith(HARDCOVER_ID_PREFIX);
 }

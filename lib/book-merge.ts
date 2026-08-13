@@ -1,22 +1,39 @@
 import { finalizeBookTags } from "@/lib/book-tags";
 import {
   getBookDedupeKey,
+  hasRealDescription,
+  isWeakDescription,
   pickEarliestYear,
   pickPublishedYear,
 } from "@/lib/book-utils";
 import type { BookSource, BookSummary } from "@/types/book";
 
+/**
+ * Identity preference for modern commercial catalogs.
+ * Open Library is deliberately below Google / ISBNdb / Hardcover.
+ */
 const SOURCE_PRIORITY: Record<BookSource, number> = {
-  isbndb: 5,
-  google: 4,
+  isbndb: 6,
+  hardcover: 5,
+  google: 5,
   bigbook: 3,
-  openlibrary: 2,
   nyt: 2,
-  gutendex: 1,
+  openlibrary: 1,
+  gutendex: 0,
 };
 
 function sourceRank(source: BookSource): number {
-  return SOURCE_PRIORITY[source];
+  return SOURCE_PRIORITY[source] ?? 0;
+}
+
+function isCommercialSource(source: BookSource): boolean {
+  return (
+    source === "google" ||
+    source === "isbndb" ||
+    source === "hardcover" ||
+    source === "bigbook" ||
+    source === "nyt"
+  );
 }
 
 function isGoodTitle(title: string | null | undefined): boolean {
@@ -29,18 +46,59 @@ function isGoodAuthors(authors: string[] | null | undefined): boolean {
   );
 }
 
+function descriptionScore(value: string | null | undefined): number {
+  const text = value?.trim() ?? "";
+  if (!text || isWeakDescription(text)) return 0;
+  return Math.min(text.length, 4000);
+}
+
+function pickBestDescription(
+  candidates: Array<{ source: BookSource; description: string | null | undefined }>
+): string | null {
+  const ranked = candidates
+    .map((entry) => ({
+      text: entry.description?.trim() ?? "",
+      score:
+        descriptionScore(entry.description) +
+        (isCommercialSource(entry.source) ? 200 : 0),
+    }))
+    .filter((entry) => entry.text.length > 0)
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.text ?? null;
+}
+
+function pickBestCover(
+  candidates: Array<{ source: BookSource; coverUrl: string | null | undefined }>
+): string | null {
+  const ranked = candidates
+    .map((entry) => {
+      const url = entry.coverUrl?.trim() ?? "";
+      if (!url) return null;
+      // Prefer https commercial CDN covers over bare OL placeholders when both exist.
+      let score = isCommercialSource(entry.source) ? 10 : 1;
+      if (/books\.google|googleapis|isbndb|hardcover|cloudfront/i.test(url)) {
+        score += 5;
+      }
+      if (/openlibrary\.org\/b\/id\/-1|cover_unavailable/i.test(url)) {
+        score -= 20;
+      }
+      return { url, score };
+    })
+    .filter((entry): entry is { url: string; score: number } => Boolean(entry))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.url ?? null;
+}
+
 /**
  * When merging provider rows, keep the identity (id/source) of the preferred
- * duplicate and fill each metadata field from whichever record has it:
- * identity first, then the longer/better values from the other rows.
+ * duplicate and fill each metadata field from the strongest record — never keep
+ * a weak OL blurb/cover when Google / ISBNdb / Hardcover supplied better data.
  */
 export function mergePreferredBookFields(
   identity: BookSummary,
   a: BookSummary,
   b: BookSummary
 ): BookSummary {
-  // Prefer a shorter clean title — marketing-bloated ISBNdb strings lose to
-  // the plain edition title when both are otherwise good.
   const titleCandidates = [identity.title, a.title, b.title].filter(isGoodTitle);
   const title =
     titleCandidates.sort((x, y) => x!.length - y!.length)[0] ?? "Untitled";
@@ -50,20 +108,18 @@ export function mergePreferredBookFields(
     (isGoodAuthors(a.authors) ? a.authors : null) ||
     (isGoodAuthors(b.authors) ? b.authors : null) || ["Unknown author"];
 
-  // Prefer the longest description — providers often ship truncated blurbs.
-  const descriptions = [identity.description, a.description, b.description]
-    .map((value) => value?.trim() ?? "")
-    .filter(Boolean);
-  const description =
-    descriptions.sort((x, y) => y.length - x.length)[0] ?? null;
+  const description = pickBestDescription([
+    { source: identity.source, description: identity.description },
+    { source: a.source, description: a.description },
+    { source: b.source, description: b.description },
+  ]);
 
-  const coverUrl =
-    identity.coverUrl?.trim() ||
-    a.coverUrl?.trim() ||
-    b.coverUrl?.trim() ||
-    null;
+  const coverUrl = pickBestCover([
+    { source: identity.source, coverUrl: identity.coverUrl },
+    { source: a.source, coverUrl: a.coverUrl },
+    { source: b.source, coverUrl: b.coverUrl },
+  ]);
 
-  // Newest known edition year across editions (missing years never win).
   const publishedYear = pickPublishedYear(
     identity.publishedYear,
     a.publishedYear,
@@ -73,7 +129,6 @@ export function mergePreferredBookFields(
     b.latestEditionYear
   );
 
-  // Earliest known year — prefer explicit firstPublishYear, else any year.
   const firstPublishYear = pickEarliestYear(
     identity.firstPublishYear,
     a.firstPublishYear,
@@ -103,6 +158,15 @@ export function mergePreferredBookFields(
     { source: b.source, categories: b.genres },
   ];
 
+  // Prefer commercial ISBN when identity lacks one.
+  const isbn =
+    identity.isbn ??
+    (isCommercialSource(a.source) ? a.isbn : null) ??
+    (isCommercialSource(b.source) ? b.isbn : null) ??
+    a.isbn ??
+    b.isbn ??
+    null;
+
   return {
     id: identity.id,
     source: identity.source,
@@ -121,7 +185,7 @@ export function mergePreferredBookFields(
       publishedYear,
       source: identity.source,
     }),
-    isbn: identity.isbn ?? a.isbn ?? b.isbn ?? null,
+    isbn,
     downloadCount:
       identity.downloadCount ?? a.downloadCount ?? b.downloadCount ?? null,
     language: identity.language ?? a.language ?? b.language ?? null,
@@ -135,6 +199,30 @@ export function mergeBookPair(
   a: BookSummary,
   b: BookSummary
 ): BookSummary {
+  // For modern works, never let a thin OL row claim identity over a commercial hit.
+  const aYear = a.publishedYear ?? a.firstPublishYear;
+  const bYear = b.publishedYear ?? b.firstPublishYear;
+  const modern =
+    (aYear != null && aYear >= 1980) ||
+    (bYear != null && bYear >= 1980) ||
+    aYear == null ||
+    bYear == null;
+
+  if (modern) {
+    const aCommercial = isCommercialSource(a.source);
+    const bCommercial = isCommercialSource(b.source);
+    if (aCommercial !== bCommercial) {
+      const commercial = aCommercial ? a : b;
+      const other = aCommercial ? b : a;
+      if (
+        other.source === "openlibrary" &&
+        (hasRealDescription(commercial) || commercial.coverUrl?.trim())
+      ) {
+        return mergePreferredBookFields(commercial, a, b);
+      }
+    }
+  }
+
   const primary =
     sourceRank(a.source) >= sourceRank(b.source) ? a : b;
 

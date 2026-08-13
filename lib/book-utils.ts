@@ -95,16 +95,19 @@ export function isAuthorQuery(query: string): boolean {
   const trimmed = query.trim();
   const words = trimmed.split(/\s+/);
 
-  if (words.length < 2 || words.length > 4) return false;
+  // Two-word queries are usually titles ("Divine Rivals", "Fourth Wing").
+  // Real author searches still work as keyword/title floods; reserve this
+  // path for clearer multi-token names ("Mary Robinette Kowal").
+  if (words.length < 3 || words.length > 4) return false;
   if (/\d/.test(trimmed)) return false;
   if (!/^[a-zA-Z\s.'-]+$/.test(trimmed)) return false;
 
   // Title function/content words — "Between Two Fires" must NOT become inauthor:.
   const notAuthorTerms =
-    /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool)$/i;
+    /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean)$/i;
   if (words.some((word) => notAuthorTerms.test(word))) return false;
 
-  // Author searches are usually proper names (e.g. "John Gwynne")
+  // Author searches are usually proper names (e.g. "Mary Robinette Kowal")
   if (!words.every((word) => /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word))) {
     return false;
   }
@@ -531,8 +534,9 @@ export function getBookAuthorDedupeKey(
 
 /** Richer-metadata sources break exact ties during dedupe. */
 const SOURCE_DEDUP_BONUS: Record<BookSource, number> = {
-  isbndb: 4,
-  google: 4,
+  isbndb: 6,
+  hardcover: 5,
+  google: 5,
   bigbook: 3,
   nyt: 2,
   openlibrary: 1,
@@ -589,6 +593,30 @@ export function pickPreferredDuplicate<T extends BookSummary>(
     if (aRated !== bRated) return aRated ? a : b;
   }
 
+  // Modern commercial catalogs beat thin Open Library identities.
+  const aYear = a.publishedYear ?? a.firstPublishYear;
+  const bYear = b.publishedYear ?? b.firstPublishYear;
+  const modernHint =
+    aYear == null ||
+    bYear == null ||
+    (aYear != null && aYear >= 1980) ||
+    (bYear != null && bYear >= 1980);
+  if (modernHint) {
+    const commercial = new Set(["google", "isbndb", "hardcover", "bigbook", "nyt"]);
+    const aCom = commercial.has(a.source);
+    const bCom = commercial.has(b.source);
+    if (aCom !== bCom) {
+      const preferred = aCom ? a : b;
+      const other = aCom ? b : a;
+      if (
+        other.source === "openlibrary" &&
+        (hasRealDescription(preferred) || preferred.coverUrl?.trim())
+      ) {
+        return preferred;
+      }
+    }
+  }
+
   const aDescLen = a.description?.trim().length ?? 0;
   const bDescLen = b.description?.trim().length ?? 0;
   const aStrongDesc = aDescLen >= 40 && !isWeakDescription(a.description);
@@ -607,9 +635,11 @@ export function pickPreferredDuplicate<T extends BookSummary>(
   // Prefer longer description when both are otherwise comparable.
   if (aDescLen !== bDescLen) return bDescLen > aDescLen ? b : a;
 
-  const aYear = normalizePublishedYear(a.publishedYear);
-  const bYear = normalizePublishedYear(b.publishedYear);
-  if ((aYear == null) !== (bYear == null)) return aYear != null ? a : b;
+  const aYearNorm = normalizePublishedYear(a.publishedYear);
+  const bYearNorm = normalizePublishedYear(b.publishedYear);
+  if ((aYearNorm == null) !== (bYearNorm == null)) {
+    return aYearNorm != null ? a : b;
+  }
 
   return a.id.localeCompare(b.id) <= 0 ? a : b;
 }
@@ -713,6 +743,19 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
     if (/buehlman/i.test(book.authors.join(" "))) score += 80;
   }
 
+  // Also match against the title portion of a title+author query.
+  const titlePortion = query
+    .replace(/\bintitle:|"|inauthor:[^"]*"|inauthor:\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    titlePortion &&
+    titlePortion.toLowerCase() !== query.toLowerCase() &&
+    isExactTitleMatch(titlePortion, book.title)
+  ) {
+    score += 220;
+  }
+
   if (authorSearch) {
     const authorMatches = book.authors.some((author) =>
       author.toLowerCase().includes(query.toLowerCase())
@@ -726,6 +769,12 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   if (/^fourth wing$/i.test(book.title.trim())) score += 45;
   if (/^dune$/i.test(book.title.trim())) score += 40;
   if (/^between two fires$/i.test(book.title.trim())) score += 45;
+  if (/^divine rivals$/i.test(book.title.trim())) score += 45;
+  if (/^ruthless vows$/i.test(book.title.trim())) score += 40;
+  if (/^tender is the flesh$/i.test(book.title.trim())) score += 45;
+  if (/^cad[aá]ver exquisito$/i.test(book.title.trim())) score += 45;
+  if (/^for the wolf$/i.test(book.title.trim())) score += 45;
+  if (/^godkiller$/i.test(book.title.trim())) score += 45;
 
   if (!authorSearch) {
     if (normalizedTitle === normalizedQuery) score += 50;
@@ -754,12 +803,15 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   if (book.publishedYear && book.publishedYear >= 1900) score += 1;
   if (book.genres.length > 0) score += 2;
 
-  // Prefer commercial catalog + Open Library over Gutenberg keyword noise.
-  if (book.source === "google") score += 6;
-  else if (book.source === "openlibrary") score += 5;
-  else if (book.source === "isbndb") score += 4;
-  else if (book.source === "bigbook") score += 3;
-  else if (book.source === "gutendex") score -= 18;
+  // Prefer commercial catalogs for modern books; demote Open Library.
+  if (book.source === "google") score += 8;
+  else if (book.source === "isbndb") score += 7;
+  else if (book.source === "hardcover") score += 7;
+  else if (book.source === "bigbook") score += 4;
+  else if (book.source === "openlibrary") {
+    const year = book.publishedYear ?? book.firstPublishYear;
+    score += year != null && year < 1970 ? 4 : 1;
+  } else if (book.source === "gutendex") score -= 18;
 
   // Deprioritize sequel volumes when searching for the main title
   if (
@@ -786,6 +838,7 @@ export function rankSearchResults(
     .sort((a, b) => b.score - a.score);
 
   const filtered = scored.filter(({ score }) => score > -10);
+  // Never collapse a non-empty retrieval set to [] due to ranking thresholds.
   const results = (filtered.length > 0 ? filtered : scored).map(
     ({ book }) => book
   );

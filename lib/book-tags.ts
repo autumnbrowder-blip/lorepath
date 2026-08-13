@@ -93,8 +93,13 @@ const TAG_SPECIFICITY: Record<CanonicalTag, number> = {
 /** Default cap — enough room for specific genres without flooding the UI. */
 export const DEFAULT_MAX_TAGS = 5;
 
-/** Only Google Books, ISBNdb, and Big Book may contribute genre votes. */
-const TRUSTED_SOURCES = new Set<BookSource>(["google", "isbndb", "bigbook"]);
+/** Only Google Books, ISBNdb, Hardcover, and Big Book may contribute genre votes. */
+const TRUSTED_SOURCES = new Set<BookSource>([
+  "google",
+  "isbndb",
+  "hardcover",
+  "bigbook",
+]);
 
 const STRICT_TAGS = new Set<CanonicalTag>([
   "Young Adult",

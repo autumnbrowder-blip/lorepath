@@ -2,16 +2,21 @@ import { sessionUserIsAdmin } from "@/lib/admin";
 import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
+import { withTimeout } from "@/lib/provider-resilience";
 import { getBearerToken } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 /** Always hit providers at request time (token + live search). */
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+/** Netlify / serverless hard ceiling (seconds). Handler budget is tighter. */
+export const maxDuration = 10;
+
+/** Overall handler budget — must finish before Netlify kills the function. */
+const SEARCH_HANDLER_BUDGET_MS = 8000;
 
 /**
  * Search books via Open Library, Google Books, Gutendex, and Big Book.
- * ISBNdb is not part of the browse flood — reserved for detail enrichment.
  * Provider outages soft-fail inside searchBooks (Promise.allSettled).
  */
 export async function GET(request: Request) {
@@ -30,10 +35,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await searchBooks(query, page, {
-      mode,
-      accessToken: getBearerToken(request),
-    });
+    const result = await withTimeout(
+      searchBooks(query, page, {
+        mode,
+        accessToken: getBearerToken(request),
+      }),
+      SEARCH_HANDLER_BUDGET_MS,
+      "api/books/search"
+    );
     const isAdmin = await sessionUserIsAdmin();
     // `?debugSources=1` explains where each description came from — counts
     // only, no credentials, so it is safe for diagnosing empty result reports.
@@ -65,12 +74,13 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("[api/books/search] unexpected failure:", error);
 
-    // Prefer soft empty results over a hard failure — Open Library / other
-    // providers normally keep searchBooks from throwing.
+    // Prefer soft empty results over a hard failure / Netlify timeout.
     const message =
       error instanceof RateLimitError
         ? "The archives are resting briefly. Try again in a moment."
-        : "Search could not reach every shelf. Try again shortly.";
+        : error instanceof Error && error.name === "TimeoutError"
+          ? "Search took too long across the shelves. Showing what we found — try again shortly."
+          : "Search could not reach every shelf. Try again shortly.";
 
     return NextResponse.json(
       {

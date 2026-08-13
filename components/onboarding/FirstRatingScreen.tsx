@@ -230,7 +230,9 @@ export function FirstRatingScreen({
                 />
               ) : (
                 <p className="font-heading text-[15px] font-medium leading-relaxed text-[#2a1a0c]">
-                  Match Scores grow sharper as more marks are left on each tome.
+                  No community marks yet beyond your own — Match Scores appear
+                  once a book has community marks and you’ve set your
+                  preferences.
                 </p>
               )}
             </div>
@@ -292,7 +294,8 @@ export function FirstRatingScreen({
             aria-hidden="true"
           />
           <p className="mt-4 font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
-            Rate a book you&apos;ve read so Match Scores can begin.
+            Rate a book you&apos;ve read. Match Scores appear once a book has
+            community marks and you&apos;ve set your preferences.
           </p>
         </header>
 

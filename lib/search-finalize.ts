@@ -37,9 +37,15 @@ function hasDescriptionAndCover(book: BookSummary): boolean {
   return hasDescription(book) && hasCover(book);
 }
 
-/** Eligible for merge — need at least one of description or cover. */
+/** Eligible for merge — keep real title hits even when metadata is thin. */
 function hasUsableSearchFields(book: BookSummary): boolean {
-  return hasAnyDescription(book) || hasCover(book);
+  return (
+    hasAnyDescription(book) ||
+    hasCover(book) ||
+    Boolean(book.publishedYear) ||
+    Boolean(book.isbn) ||
+    book.authors.some((author) => author.toLowerCase() !== "unknown author")
+  );
 }
 
 function withDescriptionFallback(book: BookSummary): BookSummary {

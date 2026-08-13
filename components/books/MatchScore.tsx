@@ -47,7 +47,7 @@ export function MatchScore({
         <SignupPrompt
           redirectTo={redirectTo}
           variant="compact"
-          description="Create a free account to unlock Match Scores for this tome."
+          description="Create a free account to see Match Scores on books the community has marked — once you’ve set your preferences."
         />
       </MatchScoreShell>
     );
@@ -60,8 +60,11 @@ export function MatchScore({
     return (
       <MatchScoreShell>
         <p className="font-heading text-xs leading-relaxed nav-dragon-gold">
-          Not enough community ratings yet to calculate a match score for this
-          book. Check back once others have rated it.
+          No community marks yet — be the first to inscribe this tome.
+        </p>
+        <p className="font-heading text-xs leading-relaxed text-[#e2c06a]/85">
+          Match Scores appear once a book has community marks and you’ve set
+          your preferences.
         </p>
       </MatchScoreShell>
     );
@@ -71,7 +74,7 @@ export function MatchScore({
     return (
       <MatchScoreShell>
         <p className="font-heading text-xs leading-relaxed nav-dragon-gold">
-          Set your preferences to unlock Match Score for this book.
+          Set your preferences to reveal the Match Score for this marked tome.
         </p>
       </MatchScoreShell>
     );

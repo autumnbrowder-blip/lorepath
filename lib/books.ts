@@ -2,7 +2,6 @@ import {
   getBigBookBookById,
   isBigBookConfigured,
   isBigBookId,
-  searchBigBook,
 } from "@/lib/big-book";
 import { enrichBookDetail } from "@/lib/book-enrichment";
 import { normalizeBookDetailForDisplay } from "@/lib/book-normalize";
@@ -15,14 +14,18 @@ import {
   preferMatchingGenreTags,
   type SearchBooksOptions,
 } from "@/lib/genre-search";
-import { searchGutendex, getGutendexBookById, isGutendexId } from "@/lib/gutendex";
+import { getGutendexBookById, isGutendexId } from "@/lib/gutendex";
 import {
   getGoogleBookById,
   getGoogleBookByIsbn,
   RateLimitError,
   searchGoogleBooks,
-  type GoogleBooksPageResult,
 } from "@/lib/google-books";
+import {
+  fetchHardcoverBook,
+  isHardcoverConfigured,
+  isHardcoverId,
+} from "@/lib/hardcover";
 import {
   enrichBookDetailWithIsbndb,
   fetchIsbndbByIsbn,
@@ -45,6 +48,7 @@ import {
 } from "@/lib/open-library";
 import { cacheBookDetail, getCachedBookBySlug } from "@/lib/book-cache";
 import {
+  createDeadline,
   softStep,
   summarizeFailures,
   withProviderRetry,
@@ -57,6 +61,10 @@ import {
   searchCacheKey,
   setCachedSearchPage,
 } from "@/lib/search-cache";
+import {
+  fetchSearchProviderFlood,
+  SEARCH_FLOOD_SOURCES,
+} from "@/lib/search-flood";
 import { createAuthenticatedClient } from "@/lib/supabase/server";
 import { rankSearchResults } from "@/lib/book-utils";
 import type {
@@ -69,63 +77,20 @@ import { cache } from "react";
 
 export { finalizeSearchBooks } from "@/lib/search-finalize";
 
-const EMPTY_PAGE = { books: [] as BookSummary[], hasMore: false };
-const EMPTY_GOOGLE_PAGE: GoogleBooksPageResult = {
-  books: [],
-  hasMore: false,
-  rawCount: 0,
-  error: null,
-};
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
-/** Hard outer cap so one slow provider cannot stall the whole flood. */
-const PROVIDER_SEARCH_TIMEOUT_MS = 3000;
 
-/** Providers queried on every browse search (ISBNdb is enrichment-only). */
-const SEARCH_SOURCES: BookSource[] = [
-  "google",
-  "openlibrary",
-  "gutendex",
-  "bigbook",
-];
+/**
+ * Hard wall-clock budget for the entire searchBooks handler.
+ * Must stay under Netlify/serverless function timeouts (~10s).
+ */
+const SEARCH_OVERALL_BUDGET_MS = 7000;
+/** Skip slow enrichment/english attach when less than this remains. */
+const SEARCH_ENRICH_MIN_REMAINING_MS = 1200;
+/** Detail-page enrichment total budget after core book is resolved. */
+const DETAIL_ENRICH_BUDGET_MS = 3000;
 
-function readSettledPage(
-  label: string,
-  result: PromiseSettledResult<{ books: BookSummary[]; hasMore: boolean }>
-): { books: BookSummary[]; hasMore: boolean } {
-  if (result.status === "fulfilled") {
-    return result.value;
-  }
-
-  console.error(`[searchBooks] ${label} rejected:`, result.reason);
-  return EMPTY_PAGE;
-}
-
-function readSettledGoogle(
-  result: PromiseSettledResult<GoogleBooksPageResult>
-): GoogleBooksPageResult {
-  if (result.status === "fulfilled") {
-    return result.value;
-  }
-
-  const reason = result.reason;
-  const message =
-    reason instanceof Error ? reason.message : String(reason ?? "unknown error");
-  const status =
-    reason instanceof Error
-      ? (reason as Error & { status?: number }).status
-      : undefined;
-
-  console.error(`[searchBooks] Google Books rejected:`, {
-    message,
-    status,
-    reason,
-  });
-
-  return {
-    ...EMPTY_GOOGLE_PAGE,
-    error: { message, status },
-  };
-}
+/** Providers queried on every browse search. */
+const SEARCH_SOURCES: BookSource[] = SEARCH_FLOOD_SOURCES;
 
 async function resolveSearchUserId(
   accessToken?: string | null
@@ -142,13 +107,11 @@ async function resolveSearchUserId(
 }
 
 /**
- * Queries Google Books, Open Library, Gutendex, and Big Book in parallel.
- * ISBNdb is NOT queried here — reserved for detail enrichment / fallbacks
- * to stay within the 5k/day · 1 req/s plan.
- * Pass `{ mode: "genre" }` for subject/topic searches from genre tags.
- * Provider failures are isolated via Promise.allSettled.
- * Missing covers are backfilled via Open Library ISBN/OLID URLs (sync, best-effort).
- * Rated books from Supabase that match the query are always included.
+ * Multi-stage browse search:
+ * 1) Query normalization + safe variants (title never lost when author added)
+ * 2) Parallel provider flood (Google, ISBNdb, Hardcover, Open Library, …)
+ * 3–4) Normalize / merge via finalize (language-aware; commercial preferred)
+ * Then enrich + English editions with budgets; cache the anonymous page.
  */
 export async function searchBooks(
   query: string,
@@ -200,100 +163,82 @@ export async function searchBooks(
     };
   }
 
-  const [
-    googleSettled,
-    openLibrarySettled,
-    gutendexSettled,
-    bigBookSettled,
-  ] = await Promise.allSettled([
-    withTimeout(
-      searchGoogleBooks(searchQuery, pageNumber, searchOptions),
-      PROVIDER_SEARCH_TIMEOUT_MS,
-      "google search"
-    ).catch(() => EMPTY_GOOGLE_PAGE),
-    withTimeout(
-      searchOpenLibrary(searchQuery, pageNumber, searchOptions),
-      PROVIDER_SEARCH_TIMEOUT_MS,
-      "openlibrary search"
-    ).catch(() => EMPTY_PAGE),
-    // Gutenberg keyword search adds noise for modern titles; keep for genre
-    // discovery and page-1 text (ranked down), skip on later pages.
-    genreMode || pageNumber === 1
-      ? withTimeout(
-          searchGutendex(searchQuery, pageNumber, searchOptions),
-          PROVIDER_SEARCH_TIMEOUT_MS,
-          "gutendex search"
-        ).catch(() => EMPTY_PAGE)
-      : Promise.resolve(EMPTY_PAGE),
-    withTimeout(
-      searchBigBook(searchQuery, pageNumber, searchOptions),
-      PROVIDER_SEARCH_TIMEOUT_MS,
-      "bigbook search"
-    ).catch(() => EMPTY_PAGE),
-  ]);
+  const bigBookConfigured = isBigBookConfigured();
+  const deadline = createDeadline(SEARCH_OVERALL_BUDGET_MS);
 
-  if (SEARCH_DEBUG && bigBookSettled.status === "rejected") {
-    console.error("[searchBooks] Big Book failed:", {
+  let flood;
+  try {
+    flood = await withTimeout(
+      fetchSearchProviderFlood({
+        query: searchQuery,
+        page: pageNumber,
+        genreMode,
+        searchOptions,
+        includeGutendex: genreMode || pageNumber === 1,
+        includeBigBook: bigBookConfigured,
+        debug: SEARCH_DEBUG,
+        deadline,
+      }),
+      deadline.cap(4500, 500),
+      "search flood"
+    );
+  } catch (error) {
+    console.error("[searchBooks] flood timed out — returning partial/empty:", {
       query: searchQuery,
-      page: pageNumber,
-      mode: options?.mode ?? "text",
-      reason: bigBookSettled.reason,
+      message: error instanceof Error ? error.message : String(error),
+      elapsedMs: Date.now() - deadline.startedAt,
     });
+    flood = {
+      books: [] as BookSummary[],
+      sourceCounts: {} as Partial<Record<BookSource, number>>,
+      hasMore: false,
+      googleError: null,
+      googleRawCount: 0,
+      normalized: {
+        kind: "raw" as const,
+        raw: searchQuery,
+        title: searchQuery,
+        author: null,
+        isbn: null,
+        variants: [searchQuery],
+      },
+      primaryQuery: searchQuery,
+      timedOutProviders: ["search-flood"],
+    };
   }
 
-  const googleResult = readSettledGoogle(googleSettled);
-  const openLibraryResult = readSettledPage(
-    "Open Library",
-    openLibrarySettled
-  );
-  const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
-  const bigBookResult = readSettledPage("Big Book", bigBookSettled);
+  const rankingQuery =
+    flood.normalized.kind === "title_author" && flood.normalized.title
+      ? flood.normalized.title
+      : searchQuery;
 
-  const googleBooks = googleResult.books;
-  const openLibraryBooks = openLibraryResult.books;
-  const gutendexBooks = gutendexResult.books;
-  const bigBookBooks = bigBookResult.books;
-
-  if (googleResult.error) {
+  if (flood.googleError) {
     console.error("[searchBooks] Google Books provider error:", {
       query: searchQuery,
       page: pageNumber,
       mode: options?.mode ?? "text",
-      googleError: googleResult.error,
-      googleRawCount: googleResult.rawCount,
+      googleError: flood.googleError,
+      googleRawCount: flood.googleRawCount,
     });
   }
-
-  const bigBookConfigured = isBigBookConfigured();
-  if (!bigBookConfigured && pageNumber === 1 && SEARCH_DEBUG) {
-    console.warn(
-      "[searchBooks] BIG_BOOK_API_KEY not set — Big Book will contribute 0 results."
-    );
-  }
-
-  const providerRawCount =
-    googleBooks.length +
-    openLibraryBooks.length +
-    gutendexBooks.length +
-    bigBookBooks.length;
 
   if (SEARCH_DEBUG) {
     console.info("[searchBooks] raw provider counts", {
       query: searchQuery,
+      primary: flood.primaryQuery,
+      kind: flood.normalized.kind,
       page: pageNumber,
       mode: genreMode ? "genre" : "text",
-      google: googleBooks.length,
-      googleRawCount: googleResult.rawCount,
-      googleError: googleResult.error,
-      openlibrary: openLibraryBooks.length,
-      gutendex: gutendexBooks.length,
-      bigbook: bigBookBooks.length,
-      totalRaw: providerRawCount,
+      sourceCounts: flood.sourceCounts,
+      totalRaw: flood.books.length,
+      googleRawCount: flood.googleRawCount,
+      googleError: flood.googleError,
       bigBookConfigured,
       googleBooksApiKeyConfigured: Boolean(
         process.env.GOOGLE_BOOKS_API_KEY?.trim()
       ),
-      isbndbInSearchFlood: false,
+      isbndbInSearchFlood: true,
+      hardcoverInSearchFlood: true,
     });
   }
 
@@ -301,14 +246,18 @@ export async function searchBooks(
   // prefer DB identity so ratings stay attached after dedupe.
   let ratedBooks: BookSummary[] = [];
   let ratedSlugs: string[] = [];
-  if (pageNumber === 1) {
+  if (pageNumber === 1 && deadline.remaining() >= 400) {
     try {
       const userId = await userIdPromise;
       const { findRatedBooksMatchingQuery } = await import("@/lib/ratings");
-      const rated = await findRatedBooksMatchingQuery(searchQuery, {
-        mode: genreMode ? "genre" : "text",
-        userId,
-      });
+      const rated = await withTimeout(
+        findRatedBooksMatchingQuery(searchQuery, {
+          mode: genreMode ? "genre" : "text",
+          userId,
+        }),
+        deadline.cap(1200, 300),
+        "rated-books-lookup"
+      );
       ratedBooks = rated.books;
       ratedSlugs = rated.ratedSlugs;
     } catch (error) {
@@ -325,13 +274,7 @@ export async function searchBooks(
     });
   }
 
-  const rawCombined = [
-    ...openLibraryBooks,
-    ...googleBooks,
-    ...gutendexBooks,
-    ...bigBookBooks,
-    ...ratedBooks,
-  ];
+  const rawCombined = [...flood.books, ...ratedBooks];
 
   // First pass merges and dedupes but keeps everything: a book must not be
   // dropped for a missing description before enrichment has had a chance.
@@ -339,29 +282,39 @@ export async function searchBooks(
     ratedIds: new Set(ratedSlugs),
     protectedBooks: ratedBooks,
     debug: SEARCH_DEBUG,
-    query: genreMode ? undefined : searchQuery,
+    query: genreMode ? undefined : rankingQuery,
     deferQualityFilter: true,
   });
 
   // Known-title / exact-phrase fallback when the flood missed an exact title
   // (e.g. provider outage, or a prior author-misclassification miss).
-  if (!genreMode && pageNumber === 1) {
+  if (
+    !genreMode &&
+    pageNumber === 1 &&
+    deadline.remaining() >= 800 &&
+    !deadline.expired()
+  ) {
     try {
       const { fetchTitleSearchFallbacks } = await import(
         "@/lib/search-title-fallback"
       );
-      const fallbackHits = await fetchTitleSearchFallbacks(searchQuery, books);
+      const fallbackQuery = flood.normalized.title ?? searchQuery;
+      const fallbackHits = await withTimeout(
+        fetchTitleSearchFallbacks(fallbackQuery, books),
+        deadline.cap(1500, 400),
+        "title-fallback"
+      );
       if (fallbackHits.length > 0) {
         books = finalizeSearchBooks([...books, ...fallbackHits], {
           ratedIds: new Set(ratedSlugs),
           protectedBooks: ratedBooks,
           debug: SEARCH_DEBUG,
-          query: searchQuery,
+          query: rankingQuery,
           deferQualityFilter: true,
         });
         if (SEARCH_DEBUG) {
           console.info("[searchBooks] title fallback merged", {
-            query: searchQuery,
+            query: fallbackQuery,
             fallbackHits: fallbackHits.length,
             afterMerge: books.length,
           });
@@ -375,27 +328,37 @@ export async function searchBooks(
   // Relevance ranking for text search (genre mode keeps year-forward order
   // from finalize, then preferMatchingGenreTags).
   if (!genreMode) {
-    books = rankSearchResults(books, searchQuery);
+    books = rankSearchResults(books, rankingQuery);
   }
 
-  // Thin flood (provider outage or a title the free sources barely index) —
-  // spend a metered ISBNdb query rather than return an empty shelf.
-  if (!genreMode && pageNumber === 1) {
+  // Thin flood backup — only when commercial providers returned almost nothing
+  // (ISBNdb is already in the primary flood; this is a last resort).
+  if (
+    !genreMode &&
+    pageNumber === 1 &&
+    books.length < 2 &&
+    deadline.remaining() >= 800 &&
+    !deadline.expired()
+  ) {
     try {
       const { fetchBackupSearchResults } = await import(
         "@/lib/search-enrichment"
       );
-      const backup = await fetchBackupSearchResults(searchQuery, books);
+      const backup = await withTimeout(
+        fetchBackupSearchResults(rankingQuery, books),
+        deadline.cap(1500, 400),
+        "backup-search"
+      );
       if (backup.length > 0) {
         books = rankSearchResults(
           finalizeSearchBooks([...books, ...backup], {
             ratedIds: new Set(ratedSlugs),
             protectedBooks: ratedBooks,
             debug: SEARCH_DEBUG,
-            query: searchQuery,
+            query: rankingQuery,
             deferQualityFilter: true,
           }),
-          searchQuery
+          rankingQuery
         );
       }
     } catch (error) {
@@ -403,73 +366,84 @@ export async function searchBooks(
     }
   }
 
-  // Fill missing synopses and attach English editions in parallel so one stage
-  // cannot serialize the other. Both have hard budgets; primary flood wins.
+  // Fill missing synopses and attach English editions in parallel — ONLY when
+  // budget remains. Never block the response on slow enrichment.
   const descriptionSources: Record<string, string> = {};
   const preEnrichBooks = books;
+  const canEnrich =
+    !deadline.expired() &&
+    deadline.remaining() >= SEARCH_ENRICH_MIN_REMAINING_MS;
 
-  const [enrichSettled, englishSettled] = await Promise.allSettled([
-    (async () => {
-      const { enrichSearchDescriptions } = await import(
-        "@/lib/search-enrichment"
-      );
-      return enrichSearchDescriptions(preEnrichBooks, {
-        debug: SEARCH_DEBUG,
-        budgetMs: 2800,
-        limit: 8,
+  if (canEnrich) {
+    const enrichBudget = deadline.cap(1800, 300);
+    const [enrichSettled, englishSettled] = await Promise.allSettled([
+      (async () => {
+        const { enrichSearchDescriptions } = await import(
+          "@/lib/search-enrichment"
+        );
+        return enrichSearchDescriptions(preEnrichBooks, {
+          debug: SEARCH_DEBUG,
+          budgetMs: enrichBudget,
+          limit: 5,
+        });
+      })(),
+      genreMode
+        ? Promise.resolve(preEnrichBooks)
+        : (async () => {
+            const { attachEnglishEditions } = await import(
+              "@/lib/search-english-editions"
+            );
+            return attachEnglishEditions(preEnrichBooks, {
+              debug: SEARCH_DEBUG,
+              budgetMs: enrichBudget,
+            });
+          })(),
+    ]);
+
+    if (enrichSettled.status === "fulfilled") {
+      books = enrichSettled.value.books;
+      enrichSettled.value.filled.forEach((source, id) => {
+        descriptionSources[id] = source;
       });
-    })(),
-    genreMode
-      ? Promise.resolve(preEnrichBooks)
-      : (async () => {
-          const { attachEnglishEditions } = await import(
-            "@/lib/search-english-editions"
-          );
-          return attachEnglishEditions(preEnrichBooks, {
-            debug: SEARCH_DEBUG,
-            budgetMs: 2800,
-          });
-        })(),
-  ]);
+    } else {
+      console.error(
+        "[searchBooks] description enrichment failed:",
+        enrichSettled.reason
+      );
+    }
 
-  if (enrichSettled.status === "fulfilled") {
-    books = enrichSettled.value.books;
-    enrichSettled.value.filled.forEach((source, id) => {
-      descriptionSources[id] = source;
+    if (!genreMode && englishSettled.status === "fulfilled") {
+      const englishResult = englishSettled.value;
+      const baseIds = new Set(books.map((book) => book.id));
+      const originalLabels = new Set(
+        englishResult
+          .filter((book) => book.editionLabel === "original")
+          .map((book) => book.id)
+      );
+      const englishExtras = englishResult.filter(
+        (book) =>
+          book.editionLabel === "english" && !baseIds.has(book.id)
+      );
+      books = [
+        ...books.map((book) =>
+          originalLabels.has(book.id)
+            ? { ...book, editionLabel: "original" as const }
+            : book
+        ),
+        ...englishExtras,
+      ];
+    } else if (!genreMode && englishSettled.status === "rejected") {
+      console.error(
+        "[searchBooks] English edition attach failed:",
+        englishSettled.reason
+      );
+    }
+  } else if (SEARCH_DEBUG || deadline.expired()) {
+    console.warn("[searchBooks] skipped enrichment — budget exhausted", {
+      query: searchQuery,
+      remainingMs: deadline.remaining(),
+      elapsedMs: Date.now() - deadline.startedAt,
     });
-  } else {
-    console.error(
-      "[searchBooks] description enrichment failed:",
-      enrichSettled.reason
-    );
-  }
-
-  if (!genreMode && englishSettled.status === "fulfilled") {
-    const englishResult = englishSettled.value;
-    const baseIds = new Set(books.map((book) => book.id));
-    const originalLabels = new Set(
-      englishResult
-        .filter((book) => book.editionLabel === "original")
-        .map((book) => book.id)
-    );
-    const englishExtras = englishResult.filter(
-      (book) =>
-        book.editionLabel === "english" &&
-        !baseIds.has(book.id)
-    );
-    books = [
-      ...books.map((book) =>
-        originalLabels.has(book.id)
-          ? { ...book, editionLabel: "original" as const }
-          : book
-      ),
-      ...englishExtras,
-    ];
-  } else if (!genreMode && englishSettled.status === "rejected") {
-    console.error(
-      "[searchBooks] English edition attach failed:",
-      englishSettled.reason
-    );
   }
 
   // Now that every candidate has had its chance, apply the quality filter.
@@ -477,7 +451,7 @@ export async function searchBooks(
     ratedIds: new Set(ratedSlugs),
     protectedBooks: ratedBooks,
     debug: SEARCH_DEBUG,
-    query: genreMode ? undefined : searchQuery,
+    query: genreMode ? undefined : rankingQuery,
   });
 
   // Re-apply Original / English edition labels after merges.
@@ -486,14 +460,31 @@ export async function searchBooks(
       const { labelOriginalAndEnglishEditions } = await import(
         "@/lib/search-english-editions"
       );
+      const {
+        applyKnownWorkEditionLabels,
+        ensureKnownTranslatedEditionPair,
+      } = await import("@/lib/known-editions");
       books = labelOriginalAndEnglishEditions(books);
+      books = applyKnownWorkEditionLabels(books, searchQuery);
+      // Inject English translation BEFORE ranking so it can score.
+      books = ensureKnownTranslatedEditionPair(books, searchQuery);
     } catch {
       // Labels are cosmetic — never fail the search.
     }
   }
 
   if (!genreMode) {
-    books = rankSearchResults(books, searchQuery);
+    books = rankSearchResults(books, rankingQuery);
+    // Final pin: ranking must not leave a translated work without its English
+    // edition card (Cadáver exquisito → Tender Is the Flesh).
+    try {
+      const { ensureKnownTranslatedEditionPair } = await import(
+        "@/lib/known-editions"
+      );
+      books = ensureKnownTranslatedEditionPair(books, searchQuery);
+    } catch {
+      // never fail search
+    }
   }
 
   if (SEARCH_DEBUG) {
@@ -516,34 +507,26 @@ export async function searchBooks(
   }
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
-    google: googleBooks.length,
-    openlibrary: openLibraryBooks.length,
-    gutendex: gutendexBooks.length,
-    // Omit Big Book from counts when unconfigured so the UI does not show a
-    // permanent "(0)" as if the provider ran and failed.
-    ...(bigBookConfigured || bigBookBooks.length > 0
-      ? { bigbook: bigBookBooks.length }
-      : {}),
+    ...flood.sourceCounts,
   };
 
-  const hasMore =
-    googleResult.hasMore ||
-    openLibraryResult.hasMore ||
-    gutendexResult.hasMore ||
-    bigBookResult.hasMore;
+  const hasMore = flood.hasMore;
 
   // Cache the anonymous page (before Inscribed) for ~45s.
-  setCachedSearchPage(cacheKey, {
-    books,
-    sources: SEARCH_SOURCES,
-    sourceCounts,
-    source: "multi",
-    page: pageNumber,
-    hasMore,
-    descriptionSources,
-    googleError: googleResult.error,
-    googleRawCount: googleResult.rawCount,
-  });
+  // Never cache empty shelves — that freezes outages into "0 results".
+  if (books.length > 0) {
+    setCachedSearchPage(cacheKey, {
+      books,
+      sources: SEARCH_SOURCES,
+      sourceCounts,
+      source: "multi",
+      page: pageNumber,
+      hasMore,
+      descriptionSources,
+      googleError: flood.googleError,
+      googleRawCount: flood.googleRawCount,
+    });
+  }
 
   // User-only rated identities → rewrite card ids to rated slugs, then list them.
   // Match by books.slug OR work-level title+author so OL/Google/NYT edition ids align.
@@ -576,8 +559,8 @@ export async function searchBooks(
     userRatedSlugs,
     descriptionSources,
     // Temporary debug fields — remove once Google search stability is confirmed.
-    googleError: googleResult.error,
-    googleRawCount: googleResult.rawCount,
+    googleError: flood.googleError,
+    googleRawCount: flood.googleRawCount,
   };
 }
 
@@ -615,19 +598,26 @@ async function loadCoreBook(
   searchHint: string | undefined,
   onFailure: (failure: ProviderFailure) => void
 ): Promise<BookDetail | null> {
+  const coreDeadline = createDeadline(4000);
   const attempt = <T,>(
     provider: string,
     run: (tries: number) => Promise<T>,
-    timeoutMs = 5000
-  ) => withProviderRetry({ provider, id: bookId, timeoutMs, onFailure }, run);
+    timeoutMs = 2500
+  ) => {
+    const capped = coreDeadline.cap(timeoutMs, 100);
+    if (capped <= 0) return Promise.resolve(null);
+    return withProviderRetry(
+      { provider, id: bookId, timeoutMs: capped, retries: 0, onFailure },
+      run
+    );
+  };
 
   if (isBigBookId(bookId)) {
     const primary = await attempt("bigbook", () => getBigBookBookById(bookId));
     if (isUsableCoreBook(primary)) return primary;
   } else if (isOpenLibraryId(bookId)) {
-    // Retry gets a longer OL budget — most misses here are slow work JSON.
-    const primary = await attempt("openlibrary", (tries) =>
-      getOpenLibraryBookById(bookId, { timeoutMs: tries === 1 ? 3000 : 6000 })
+    const primary = await attempt("openlibrary", () =>
+      getOpenLibraryBookById(bookId, { timeoutMs: 2500 })
     );
     if (isUsableCoreBook(primary)) return primary;
   } else if (isGutendexId(bookId)) {
@@ -639,6 +629,29 @@ async function loadCoreBook(
   } else if (isNytId(bookId)) {
     const primary = await attempt("nyt", () => resolveNytBook(bookId));
     if (isUsableCoreBook(primary)) return primary;
+  } else if (isHardcoverId(bookId) && isHardcoverConfigured()) {
+    const primary = await attempt("hardcover", async () => {
+      const hintTitle =
+        searchHint?.trim() ||
+        bookId.replace(/^hardcover-/i, "").replace(/-/g, " ");
+      const hit = await fetchHardcoverBook(hintTitle);
+      if (!hit) return null;
+      return {
+        id: bookId,
+        title: hit.title,
+        authors: hit.authors.length > 0 ? hit.authors : ["Unknown author"],
+        coverUrl: hit.coverUrl,
+        description: hit.description,
+        genres: hit.genres,
+        publishedYear: hit.publishedYear,
+        source: "hardcover" as const,
+        publisher: null,
+        pageCount: hit.pageCount,
+        language: "en",
+        isbn: hit.isbns[0] ?? null,
+      };
+    });
+    if (isUsableCoreBook(primary)) return primary;
   } else {
     // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
     const primary = await attempt("google", () =>
@@ -648,8 +661,10 @@ async function loadCoreBook(
   }
 
   // Cross-provider recovery: any source that can answer for this id/isbn/title.
+  if (coreDeadline.expired()) return null;
+
   const isbn = isbnFromIsbndbId(bookId) ?? isbnFromNytId(bookId) ?? null;
-  if (isbn) {
+  if (isbn && !coreDeadline.expired()) {
     const viaGoogleIsbn = await attempt("google-isbn", () =>
       getGoogleBookByIsbn(isbn)
     );
@@ -661,21 +676,23 @@ async function loadCoreBook(
     if (isUsableCoreBook(viaOlIsbn)) return { ...viaOlIsbn, id: bookId };
   }
 
-  if (searchHint) {
+  if (searchHint && !coreDeadline.expired()) {
     const viaHint = await attempt(
       "search-hint",
       () => resolveViaSearchHint(bookId, searchHint),
-      8000
+      2000
     );
     if (isUsableCoreBook(viaHint)) return { ...viaHint, id: bookId };
   }
 
-  const viaOl = await attempt(
-    "openlibrary-fallback",
-    () => resolveOpenLibraryFallback({ bookId, searchHint }),
-    8000
-  );
-  if (isUsableCoreBook(viaOl)) return { ...viaOl, id: bookId };
+  if (!coreDeadline.expired()) {
+    const viaOl = await attempt(
+      "openlibrary-fallback",
+      () => resolveOpenLibraryFallback({ bookId, searchHint }),
+      2000
+    );
+    if (isUsableCoreBook(viaOl)) return { ...viaOl, id: bookId };
+  }
 
   return null;
 }
@@ -736,101 +753,94 @@ export const loadBookDetail = cache(async function loadBookDetail(
   // Sync cover fill (provider → OL ISBN → OL OLID) before slower enrichment.
   book = fillMissingCoverUrl(book);
 
-  // 3) Enrichment — every step optional, isolated, and time-boxed.
-  // Cached complete books still get known-edition year enrichment so reprints
-  // can show First published + Latest edition without a schema migration.
+  // 3) Enrichment — every step optional, isolated, and time-boxed under a
+  // hard DETAIL_ENRICH_BUDGET_MS so a slow secondary API cannot take down the page.
+  const enrichDeadline = createDeadline(DETAIL_ENRICH_BUDGET_MS);
   const core = book;
+
+  async function enrichIfBudget(
+    provider: string,
+    desiredMs: number,
+    run: () => Promise<BookDetail>
+  ): Promise<void> {
+    if (!book || enrichDeadline.expired()) return;
+    const timeoutMs = enrichDeadline.cap(desiredMs, 150);
+    if (timeoutMs <= 0) return;
+    const before = book;
+    book = await softStep(
+      { provider, id: bookId, timeoutMs, onFailure },
+      before,
+      async () => fillMissingCoverUrl(await run())
+    );
+  }
+
   if (!fromCache || needsIsbndbEnrichment(core)) {
-    book = await softStep(
-      { provider: "enrichment", id: bookId, onFailure },
-      core,
-      async () => fillMissingCoverUrl(await enrichBookDetail(core))
-    );
+    await enrichIfBudget("enrichment", 2000, () => enrichBookDetail(core));
   } else {
-    book = await softStep(
-      { provider: "known-edition-enrichment", id: bookId, onFailure },
-      core,
-      async () => {
-        const { enrichKnownEditionMetadata } = await import(
-          "@/lib/book-enrichment"
-        );
-        return fillMissingCoverUrl(await enrichKnownEditionMetadata(core));
-      }
-    );
+    await enrichIfBudget("known-edition-enrichment", 800, async () => {
+      const { enrichKnownEditionMetadata } = await import(
+        "@/lib/book-enrichment"
+      );
+      return enrichKnownEditionMetadata(core);
+    });
   }
 
-  if (needsIsbndbEnrichment(book)) {
+  if (book && needsIsbndbEnrichment(book) && !enrichDeadline.expired()) {
     const beforeIsbndb = book;
-    book = await softStep(
-      { provider: "isbndb-enrichment", id: bookId, onFailure },
-      beforeIsbndb,
-      async () =>
-        fillMissingCoverUrl(await enrichBookDetailWithIsbndb(beforeIsbndb))
+    await enrichIfBudget("isbndb-enrichment", 2000, () =>
+      enrichBookDetailWithIsbndb(beforeIsbndb)
     );
   }
 
-  // Open Library work records are frozen at first upload: the cover is often
-  // the publisher's "cover to be revealed" card, and the year can come from
-  // whichever edition happened to be scanned. One pass over the editions list
-  // fixes both.
-  if (isOpenLibraryId(bookId)) {
+  // Open Library editions pass — capped tightly (was 10s and caused timeouts).
+  if (isOpenLibraryId(bookId) && book && !enrichDeadline.expired()) {
     const beforeEditions = book;
-    book = await softStep(
-      {
-        provider: "openlibrary-editions",
-        id: bookId,
-        timeoutMs: 10_000,
-        onFailure,
-      },
-      beforeEditions,
-      async () => {
-        const { fetchOpenLibraryWorkEditions } = await import(
-          "@/lib/book-enrichment"
-        );
-        const editions = await fetchOpenLibraryWorkEditions(bookId, {
-          title: beforeEditions.title,
-        });
-        if (!editions) return beforeEditions;
+    await enrichIfBudget("openlibrary-editions", 2000, async () => {
+      const { fetchOpenLibraryWorkEditions } = await import(
+        "@/lib/book-enrichment"
+      );
+      const editions = await fetchOpenLibraryWorkEditions(bookId, {
+        title: beforeEditions.title,
+      });
+      if (!editions) return beforeEditions;
 
-        const next = { ...beforeEditions };
-        if (editions.coverUrl) {
-          next.coverUrl = editions.coverUrl;
-        }
-        // An earlier printing means the work is older than the scanned edition.
-        if (
-          editions.earliestYear != null &&
-          editions.earliestYear >= 1400 &&
-          (next.firstPublishYear == null ||
-            editions.earliestYear < next.firstPublishYear)
-        ) {
-          next.firstPublishYear = editions.earliestYear;
-        }
-        if (
-          editions.latestYear != null &&
-          next.firstPublishYear != null &&
-          editions.latestYear > next.firstPublishYear
-        ) {
-          next.latestEditionYear = Math.max(
-            editions.latestYear,
-            next.latestEditionYear ?? 0
-          );
-        }
-        return next;
+      const next = { ...beforeEditions };
+      if (editions.coverUrl) {
+        next.coverUrl = editions.coverUrl;
       }
-    );
+      if (
+        editions.earliestYear != null &&
+        editions.earliestYear >= 1400 &&
+        (next.firstPublishYear == null ||
+          editions.earliestYear < next.firstPublishYear)
+      ) {
+        next.firstPublishYear = editions.earliestYear;
+      }
+      if (
+        editions.latestYear != null &&
+        next.firstPublishYear != null &&
+        editions.latestYear > next.firstPublishYear
+      ) {
+        next.latestEditionYear = Math.max(
+          editions.latestYear,
+          next.latestEditionYear ?? 0
+        );
+      }
+      return next;
+    });
   }
 
-  // Final sync catalog year pass after ISBNdb so older ISBN years cannot wipe
-  // First published / Latest edition on popular reprints.
-  const beforeYears = book;
-  book = await softStep(
-    { provider: "known-edition-years", id: bookId, onFailure },
-    beforeYears,
-    async () => {
+  if (book && !enrichDeadline.expired()) {
+    const beforeYears = book;
+    await enrichIfBudget("known-edition-years", 500, async () => {
       const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
       return applyKnownEditionYears(beforeYears);
-    }
-  );
+    });
+  }
+
+  if (!book) {
+    return { book: null, failures, transient: false };
+  }
 
   const canonical = { ...book, id: bookId };
 
@@ -842,15 +852,22 @@ export const loadBookDetail = cache(async function loadBookDetail(
     });
   });
 
-  const sexualContentAverage = await softStep(
-    { provider: "community-ratings", id: bookId, timeoutMs: 3000 },
-    null as number | null,
-    async () => {
-      const { getCommunityRatings } = await import("@/lib/ratings");
-      const community = await getCommunityRatings(bookId);
-      return community.averages?.sexual_content ?? null;
-    }
-  );
+  const sexualContentAverage =
+    enrichDeadline.remaining() >= 400
+      ? await softStep(
+          {
+            provider: "community-ratings",
+            id: bookId,
+            timeoutMs: enrichDeadline.cap(1200, 100),
+          },
+          null as number | null,
+          async () => {
+            const { getCommunityRatings } = await import("@/lib/ratings");
+            const community = await getCommunityRatings(bookId);
+            return community.averages?.sexual_content ?? null;
+          }
+        )
+      : null;
 
   let tagged = canonical;
   try {

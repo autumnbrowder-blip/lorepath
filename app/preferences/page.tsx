@@ -133,7 +133,8 @@ export default async function PreferencesPage() {
           <div className="preference-codex-box relative mt-4 !p-3.5 !pt-4 text-left sm:mt-5 sm:!p-4 sm:!pt-4">
             <CodexBoxOrnament />
             <p className="relative z-[3] px-0.5 font-heading text-sm leading-snug tracking-wide nav-dragon-gold sm:text-[0.95rem]">
-              Set your comfort levels across themes for Match Score. During
+              Set your comfort levels across themes. Match Scores appear once a
+              book has community marks and you’ve set your preferences. During
               Beta, preferences and Match Score are free for every account.
             </p>
           </div>
