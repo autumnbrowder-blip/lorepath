@@ -2,6 +2,7 @@
 
 import { ContactArchivesNote } from "@/components/ContactArchivesNote";
 import { track } from "@/lib/analytics";
+import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -72,20 +73,7 @@ function authErrorMessage(authError: string | null): string | null {
   }
 }
 
-async function readErrorMessage(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { error?: unknown };
-    if (typeof body.error === "string" && body.error.trim()) {
-      return body.error.trim();
-    }
-  } catch {
-    // fall through
-  }
-  return `Sign in failed (${res.status}).`;
-}
-
 type LoginFormProps = {
-  /** Server-computed flag; falls back to client env check when omitted. */
   configured?: boolean;
 };
 
@@ -143,18 +131,26 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
     setLoading(true);
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
+      // Password grant must run in the browser — Netlify cannot reach Supabase Auth.
+      const supabase = createClient();
+      const timeout = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Sign in timed out. Please try again.")), 12000);
+      });
 
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        signal: controller.signal,
-      }).finally(() => clearTimeout(timer));
+      const { data, error: signInError } = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        timeout,
+      ]);
 
-      if (!res.ok) {
-        setError(await readErrorMessage(res));
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      if (!data.session) {
+        setError(
+          "Signed in but no session was returned. Check email confirmation, then try again."
+        );
         return;
       }
 
@@ -165,11 +161,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
           : "/";
       window.location.assign(destination);
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setError("Sign in timed out. Please try again.");
-      } else {
-        setError(err instanceof Error ? err.message : "Sign in failed.");
-      }
+      setError(err instanceof Error ? err.message : "Sign in failed.");
     } finally {
       setLoading(false);
     }
@@ -185,7 +177,8 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
     }
 
     setGoogleLoading(true);
-    // Full navigation — server sets PKCE cookies then redirects to Google.
+    // Server only builds the authorize URL + PKCE cookie (no Supabase API call).
+    // Token exchange happens in the browser at /auth/callback.
     window.location.assign("/api/auth/google");
   }
 
