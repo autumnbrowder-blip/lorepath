@@ -12,9 +12,9 @@ import {
 } from "@/lib/rating-categories";
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 import {
-  createAuthenticatedClient,
-  createClient,
   createServiceRoleClient,
+  getServiceRoleOrCookieClient,
+  getVerifiedUser,
 } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import type { BookDetail, BookSource, BookSummary } from "@/types/book";
@@ -271,24 +271,6 @@ async function ensureProfileExists(
     return { ok: false, error: formatRatingError(upsertError.message) };
   }
 
-  const { data: created, error: verifyError } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (verifyError) {
-    return { ok: false, error: formatRatingError(verifyError.message) };
-  }
-
-  if (!created) {
-    return {
-      ok: false,
-      error:
-        "No profile was found for your account and creating one failed. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
-    };
-  }
-
   return { ok: true };
 }
 
@@ -296,6 +278,16 @@ async function ensureBookRecord(
   supabase: SupabaseClient,
   externalId: string
 ): Promise<{ bookDbId: string } | { error: string }> {
+  const existing = await supabase
+    .from("books")
+    .select("id")
+    .eq("slug", externalId)
+    .maybeSingle();
+
+  if (!existing.error && existing.data?.id) {
+    return { bookDbId: existing.data.id };
+  }
+
   const book = await getBookById(externalId);
   if (!book) {
     return { error: "Book not found." };
@@ -408,14 +400,8 @@ export async function getUserRatingForBook(
   }
 
   try {
-    const admin = createServiceRoleClient();
-    const auth = await createAuthenticatedClient();
-    const supabase =
-      "error" in admin
-        ? "error" in auth
-          ? await createClient()
-          : auth.supabase
-        : admin.supabase;
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return null;
 
     const { data: book, error: bookError } = await supabase
       .from("books")
@@ -536,7 +522,9 @@ export async function getUserRatedBooks(
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return [];
+
     const { data, error } = await supabase
       .from("ratings")
       .select(
@@ -623,41 +611,23 @@ export async function getUserRatedIdentities(
   }
 
   try {
-    const admin = createServiceRoleClient();
-    const auth = await createAuthenticatedClient();
-    const supabase =
-      "error" in admin
-        ? "error" in auth
-          ? await createClient()
-          : auth.supabase
-        : admin.supabase;
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return [];
 
     const { data, error } = await supabase
       .from("ratings")
-      .select("book_id")
+      .select(
+        `
+        books!inner (
+          slug,
+          title,
+          author
+        )
+      `
+      )
       .eq("rated_by", userId);
 
     if (error || !data || data.length === 0) {
-      return [];
-    }
-
-    const bookIds = Array.from(
-      new Set(
-        data
-          .map((row) =>
-            typeof row.book_id === "string" ? row.book_id : null
-          )
-          .filter((id): id is string => Boolean(id))
-      )
-    );
-    if (bookIds.length === 0) return [];
-
-    const { data: bookRows, error: bookError } = await supabase
-      .from("books")
-      .select("id, slug, title, author")
-      .in("id", bookIds);
-
-    if (bookError || !bookRows) {
       return [];
     }
 
@@ -665,16 +635,14 @@ export async function getUserRatedIdentities(
       string,
       import("@/lib/user-rated-identity").UserRatedIdentity
     >();
-    for (const book of bookRows) {
-      const slug =
-        typeof book.slug === "string" ? book.slug.trim() : "";
-      const title =
-        typeof book.title === "string" ? book.title.trim() : "";
+    for (const row of data) {
+      const book = Array.isArray(row.books) ? row.books[0] : row.books;
+      if (!book) continue;
+      const slug = typeof book.slug === "string" ? book.slug.trim() : "";
+      const title = typeof book.title === "string" ? book.title.trim() : "";
       if (!slug || !title || bySlug.has(slug)) continue;
       const author =
-        typeof book.author === "string"
-          ? book.author.trim() || null
-          : null;
+        typeof book.author === "string" ? book.author.trim() || null : null;
       bySlug.set(slug, { slug, title, author });
     }
     return Array.from(bySlug.values());
@@ -688,6 +656,30 @@ export async function getUserReadingStats(
 ): Promise<UserReadingStats> {
   const ratedBooks = await getUserRatedBooks(userId);
   return computeUserReadingStats(ratedBooks);
+}
+
+/** Head-only count of a user's ratings — for onboarding / save routing. */
+export async function getUserRatingCount(userId: string): Promise<number> {
+  noStore();
+
+  if (!userId.trim() || !isSupabaseConfigured()) {
+    return 0;
+  }
+
+  try {
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return 0;
+
+    const { count, error } = await supabase
+      .from("ratings")
+      .select("id", { count: "exact", head: true })
+      .eq("rated_by", userId);
+
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 function sourceFromSlug(slug: string): BookSource {
@@ -900,6 +892,8 @@ type SubmitRatingOptions = {
   expectedUserId?: string;
   /** Browser-supplied access token (Authorization Bearer) — preferred on Netlify. */
   accessToken?: string | null;
+  /** When the route already verified the JWT, skip a second Auth round-trip. */
+  verifiedUserId?: string;
 };
 
 /**
@@ -923,18 +917,23 @@ export async function submitUserRating(
     return { success: false, error: "Supabase is not configured." };
   }
 
-  // 1) Verify the user via access token / cookie session.
-  const auth = await createAuthenticatedClient({
-    accessToken: options?.accessToken,
-  });
-  if ("error" in auth) {
-    return {
-      success: false,
-      error: "You are not signed in. Please sign in and try again.",
-    };
+  // 1) Verify the user via access token / cookie session (skip if the route
+  //    already verified the same JWT).
+  let sessionUserId: string;
+  if (options?.verifiedUserId && options.accessToken) {
+    sessionUserId = options.verifiedUserId;
+  } else {
+    const auth = await getVerifiedUser({
+      accessToken: options?.accessToken,
+    });
+    if ("error" in auth) {
+      return {
+        success: false,
+        error: "You are not signed in. Please sign in and try again.",
+      };
+    }
+    sessionUserId = auth.user.id;
   }
-
-  const sessionUserId = auth.user.id;
 
   if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
     return {

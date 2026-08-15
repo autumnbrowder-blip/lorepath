@@ -4,7 +4,7 @@ import { searchBooks } from "@/lib/books";
 import { decodeAuthorName } from "@/lib/book-links";
 import { getUserRatedIdentities } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/supabase/server";
 import { isBookInscribedByUser } from "@/lib/user-rated-identity";
 import { ArrowLeft, User } from "lucide-react";
 import type { Metadata } from "next";
@@ -34,10 +34,7 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
   let ratedIdentities: Awaited<ReturnType<typeof getUserRatedIdentities>> = [];
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCachedUser();
       if (user) {
         ratedIdentities = await getUserRatedIdentities(user.id);
       }

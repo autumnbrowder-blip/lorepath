@@ -197,8 +197,9 @@ export function BookSearch({
     try {
       const supabase = createClient();
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
 
       if (!user) {
         setClientLoggedIn(false);
@@ -259,8 +260,8 @@ export function BookSearch({
         }
       }
 
-      // 2) API fallback with bearer (server service-role path).
-      if (next.length === 0) {
+      // 2) API fallback only when the browser query itself failed.
+      if (ratingError) {
         const headers: Record<string, string> = {};
         const {
           data: { session },
@@ -328,13 +329,15 @@ export function BookSearch({
 
     void (async () => {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
       if (cancelled) return;
+      const user = session?.user ?? null;
       setClientLoggedIn(Boolean(user));
-      if (user) {
+      if (user && initialRatedIdentities.length === 0) {
         await refreshRatedIdentities();
       } else {
+        if (user) mergeJustRatedFromStorage();
         setRatedLoadAttempted(true);
       }
     })();
@@ -345,18 +348,37 @@ export function BookSearch({
       if (cancelled) return;
       const signedIn = Boolean(session?.user);
       setClientLoggedIn(signedIn);
-      if (signedIn && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION")) {
+      if (signedIn && event === "SIGNED_IN") {
         void refreshRatedIdentities();
       }
     });
 
+    function mergeJustRatedFromStorage() {
+      const slugs = readJustRatedSlugs();
+      if (slugs.length === 0) return;
+      setRatedIdentities((current) => {
+        let changed = false;
+        const next = [...current];
+        for (const slug of slugs) {
+          if (!next.some((row) => row.slug === slug)) {
+            next.push({ slug, title: "", author: null });
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      setInscribedCardIds((ids) =>
+        Array.from(new Set([...ids, ...slugs]))
+      );
+    }
+
     function onVisible() {
       if (document.visibilityState === "visible") {
-        void refreshRatedIdentities();
+        mergeJustRatedFromStorage();
       }
     }
     function onPageShow() {
-      void refreshRatedIdentities();
+      mergeJustRatedFromStorage();
     }
 
     document.addEventListener("visibilitychange", onVisible);
@@ -368,7 +390,7 @@ export function BookSearch({
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [refreshRatedIdentities]);
+  }, [refreshRatedIdentities, initialRatedIdentities.length]);
 
   // Keep in sync if the server re-renders with a newer identity list.
   useEffect(() => {

@@ -3,7 +3,7 @@ import { isGenreSearchMode } from "@/lib/genre-search";
 import { fetchNytBestsellers } from "@/lib/nyt-books";
 import { getUserRatedIdentities } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/supabase/server";
 import type { UserRatedIdentity } from "@/lib/user-rated-identity";
 
 type BrowsePageProps = {
@@ -19,10 +19,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   let initialRatedIdentities: UserRatedIdentity[] = [];
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCachedUser();
       isLoggedIn = !!user;
       if (user) {
         initialRatedIdentities = await getUserRatedIdentities(user.id);

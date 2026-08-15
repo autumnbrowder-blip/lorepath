@@ -5,7 +5,9 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { getSupabaseEnv } from "@/lib/supabase/config";
+import { cache } from "react";
+import { requestHasSupabaseAuthCookie } from "@/lib/supabase/auth-cookies";
+import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 
 /**
  * Preserve Authorization / apikey headers. Spreading a Headers instance into a
@@ -110,6 +112,104 @@ export type AuthenticatedClientResult =
   | { supabase: SupabaseClient; user: User; accessToken: string }
   | { error: string; code?: string };
 
+export type VerifiedUserResult =
+  | { user: User; accessToken: string }
+  | { error: string; code?: string };
+
+/**
+ * True when this request carries a Supabase auth-token cookie.
+ * Anonymous page loads should skip getUser() entirely.
+ */
+export async function hasRequestAuthCookie(): Promise<boolean> {
+  const store = await cookies();
+  return requestHasSupabaseAuthCookie(store.getAll());
+}
+
+/**
+ * Per-request cached auth user. Skips GoTrue when there is no auth cookie.
+ * Use in Server Components that only need "who is signed in".
+ */
+export const getCachedUser = cache(async (): Promise<User | null> => {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    if (!(await hasRequestAuthCookie())) return null;
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user ?? null;
+  } catch {
+    return null;
+  }
+});
+
+/**
+ * Verify the JWT (Bearer preferred, else cookie session) and return user + token.
+ * Does not call setSession — that extra GoTrue round-trip is unused because
+ * trusted writes go through the service role client.
+ */
+export async function getVerifiedUser(options?: {
+  accessToken?: string | null;
+}): Promise<VerifiedUserResult> {
+  const env = getSupabaseEnv();
+  if (!env) {
+    return { error: "Supabase is not configured." };
+  }
+
+  const cookieClient = await createClient();
+  const bearer = options?.accessToken?.trim() || null;
+
+  if (bearer) {
+    const { data, error } = await cookieClient.auth.getUser(bearer);
+    if (error || !data.user) {
+      return { error: "Unauthorized.", code: error?.code ?? "invalid_token" };
+    }
+    return { user: data.user, accessToken: bearer };
+  }
+
+  if (!(await hasRequestAuthCookie())) {
+    return { error: "Unauthorized.", code: "no_user" };
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await cookieClient.auth.getUser();
+
+  if (userError || !user) {
+    return { error: "Unauthorized.", code: userError?.code ?? "no_user" };
+  }
+
+  const {
+    data: { session },
+  } = await cookieClient.auth.getSession();
+
+  if (!session?.access_token) {
+    return {
+      error:
+        "Signed in but no access token was available for the database request. Sign out and back in.",
+      code: "missing_access_token",
+    };
+  }
+
+  return { user, accessToken: session.access_token };
+}
+
+/**
+ * Service-role PostgREST client when configured; otherwise the cookie SSR client.
+ * Prefer this for trusted reads so we never pay for getUser/getSession/setSession.
+ */
+export async function getServiceRoleOrCookieClient(): Promise<SupabaseClient | null> {
+  if (!isSupabaseConfigured()) return null;
+  const admin = createServiceRoleClient();
+  if (!("error" in admin)) return admin.supabase;
+  try {
+    return await createClient();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Build a PostgREST client that ALWAYS sends the user JWT.
  *
@@ -118,13 +218,9 @@ export type AuthenticatedClientResult =
  * Prefer an explicit Bearer token (from the browser Authorization header or
  * cookie session) on every DB call.
  *
- * Durable JWT wiring (all three layers):
- * 1. Custom fetch that forcibly sets Authorization to the user JWT (overwrites
- *    fetchWithAuth's anon-key fallback)
- * 2. `accessToken` callback when no refresh_token (supabase-js 2.110.x) so
- *    getAccessToken() returns the user JWT
- * 3. `setSession` when a refresh_token is available so auth.getSession() also
- *    returns the JWT for any code that reads the session
+ * Wiring (no setSession — that was an extra Auth round-trip on every call):
+ * 1. Custom fetch that forcibly sets Authorization to the user JWT
+ * 2. `accessToken` callback so fetchWithAuth never falls back to the anon key
  */
 export async function createAuthenticatedClient(options?: {
   accessToken?: string | null;
@@ -134,88 +230,17 @@ export async function createAuthenticatedClient(options?: {
     return { error: "Supabase is not configured." };
   }
 
-  const cookieClient = await createClient();
-  const bearer = options?.accessToken?.trim() || null;
-
-  let user: User;
-  let accessToken: string;
-  let refreshToken: string | null = null;
-
-  if (bearer) {
-    const { data, error } = await cookieClient.auth.getUser(bearer);
-    if (error || !data.user) {
-      return { error: "Unauthorized.", code: error?.code ?? "invalid_token" };
-    }
-    user = data.user;
-    accessToken = bearer;
-
-    // Same browser session may still have a refresh_token in cookies.
-    const {
-      data: { session },
-    } = await cookieClient.auth.getSession();
-    if (session?.user?.id === user.id && session.refresh_token) {
-      refreshToken = session.refresh_token;
-    }
-  } else {
-    const {
-      data: { user: cookieUser },
-      error: userError,
-    } = await cookieClient.auth.getUser();
-
-    if (userError || !cookieUser) {
-      return { error: "Unauthorized.", code: userError?.code ?? "no_user" };
-    }
-    user = cookieUser;
-
-    const {
-      data: { session },
-    } = await cookieClient.auth.getSession();
-
-    if (!session?.access_token) {
-      return {
-        error:
-          "Signed in but no access token was available for the database request. Sign out and back in.",
-        code: "missing_access_token",
-      };
-    }
-    accessToken = session.access_token;
-    refreshToken = session.refresh_token ?? null;
+  const verified = await getVerifiedUser(options);
+  if ("error" in verified) {
+    return verified;
   }
 
+  const { user, accessToken } = verified;
   const jwtFetch = createUserJwtFetch(accessToken, env.anonKey);
-  const authHeader = { Authorization: `Bearer ${accessToken}` };
-
-  // Prefer setSession when we have a refresh_token — keeps supabase.auth usable
-  // and makes getAccessToken() return the user JWT from the session.
-  if (refreshToken) {
-    const sessionClient = createSupabaseClient(env.url, env.anonKey, {
-      global: {
-        headers: authHeader,
-        fetch: jwtFetch,
-      },
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
-
-    const { error: sessionError } = await sessionClient.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-
-    if (!sessionError) {
-      return { supabase: sessionClient, user, accessToken };
-    }
-  }
-
-  // Bearer-only (or setSession failed): use accessToken callback so fetchWithAuth
-  // never falls back to the anon key. (Disables supabase.auth on this client.)
   const supabase = createSupabaseClient(env.url, env.anonKey, {
     accessToken: async () => accessToken,
     global: {
-      headers: authHeader,
+      headers: { Authorization: `Bearer ${accessToken}` },
       fetch: jwtFetch,
     },
   });

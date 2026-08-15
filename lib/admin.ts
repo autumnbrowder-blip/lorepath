@@ -8,6 +8,8 @@ import {
   createAuthenticatedClient,
   createClient,
   createServiceRoleClient,
+  getVerifiedUser,
+  hasRequestAuthCookie,
 } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
@@ -123,17 +125,10 @@ export async function sessionUserIsAdmin(): Promise<boolean> {
   }
 
   try {
-    const auth = await createAuthenticatedClient();
-    if (!("error" in auth)) {
-      return userIsAdmin(auth.user);
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return false;
-    return userIsAdmin(user);
+    if (!(await hasRequestAuthCookie())) return false;
+    const auth = await getVerifiedUser();
+    if ("error" in auth) return false;
+    return userIsAdmin(auth.user);
   } catch {
     return false;
   }
@@ -150,20 +145,9 @@ export async function requireAdmin(): Promise<{ user: User }> {
     redirect("/");
   }
 
-  const auth = await createAuthenticatedClient();
+  const auth = await getVerifiedUser();
   if ("error" in auth) {
-    // Cookie-only fallback (same pattern as other portal pages).
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      redirect("/");
-    }
-    if (!(await userIsAdmin(user))) {
-      redirect("/");
-    }
-    return { user };
+    redirect("/");
   }
 
   if (!(await userIsAdmin(auth.user))) {

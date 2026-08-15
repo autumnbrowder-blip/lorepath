@@ -156,53 +156,6 @@ export function RatingForm({
     }
   }, [initialRatings]);
 
-  // Only hydrate from the API when SSR did not provide a rating — avoids a
-  // duplicate GET on every book detail visit for logged-in users.
-  useEffect(() => {
-    if (!isLoggedIn || !bookId || initialRatings != null) return;
-
-    let cancelled = false;
-
-    async function hydrateFromApi() {
-      try {
-        const headers = await authHeaders();
-        const response = await fetch(`/api/books/${bookId}/ratings`, {
-          method: "GET",
-          headers,
-          credentials: "same-origin",
-          cache: "no-store",
-        });
-        if (!response.ok || cancelled) return;
-
-        const data = (await response.json()) as {
-          userRating?: ContentRating | null;
-          averages?: ContentRating | null;
-          count?: number;
-        };
-
-        if (cancelled) return;
-
-        if (data.userRating && !dirtyRef.current) {
-          applyConfirmedRating(data.userRating);
-        }
-
-        if (typeof data.count === "number") {
-          applyCommunityRatings({
-            averages: data.averages ?? null,
-            count: data.count,
-          });
-        }
-      } catch {
-        // SSR props remain the fallback.
-      }
-    }
-
-    void hydrateFromApi();
-    return () => {
-      cancelled = true;
-    };
-  }, [bookId, isLoggedIn, initialRatings]);
-
   function updateRating(key: keyof ContentRating, value: number) {
     dirtyRef.current = true;
     setRatings((prev) => ({ ...prev, [key]: value }));

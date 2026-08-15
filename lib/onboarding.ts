@@ -1,9 +1,5 @@
-import {
-  createAuthenticatedClient,
-  createClient,
-  createServiceRoleClient,
-} from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getServiceRoleOrCookieClient } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 
 export type OnboardingProgress = {
@@ -47,7 +43,8 @@ export async function getOnboardingMatchScoreSeen(
   if (!isSupabaseConfigured()) return false;
 
   try {
-    const supabase = await createClient();
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return false;
     const { data, error } = await supabase
       .from("profiles")
       .select("onboarding_match_score_seen")
@@ -74,14 +71,8 @@ export async function markOnboardingMatchScoreSeen(
   if (!isSupabaseConfigured()) return;
 
   try {
-    const admin = createServiceRoleClient();
-    const auth = await createAuthenticatedClient();
-    const supabase =
-      "error" in admin
-        ? "error" in auth
-          ? await createClient()
-          : auth.supabase
-        : admin.supabase;
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return;
 
     await supabase
       .from("profiles")

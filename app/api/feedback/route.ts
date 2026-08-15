@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
+  createAuthenticatedClient,
   createServiceRoleClient,
   getBearerToken,
 } from "@/lib/supabase/server";
@@ -92,7 +93,19 @@ export async function POST(request: Request) {
   const service = createServiceRoleClient();
   if ("error" in service) {
     // Fallback: insert as the authenticated user (RLS requires user_id = auth.uid()).
-    const { error } = await session.supabase.from("feedback").insert(row);
+    const authClient = await createAuthenticatedClient({
+      accessToken: session.accessToken,
+    });
+    if ("error" in authClient) {
+      return NextResponse.json(
+        {
+          error:
+            "The raven returned empty-handed. Please try again in a moment.",
+        },
+        { status: 500 }
+      );
+    }
+    const { error } = await authClient.supabase.from("feedback").insert(row);
     if (error) {
       return NextResponse.json(
         {

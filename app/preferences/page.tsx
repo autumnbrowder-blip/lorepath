@@ -9,7 +9,7 @@ import {
   resolveDisplayName,
 } from "@/lib/avatars";
 import { loadPreferencesForPage } from "@/lib/preferences";
-import { getUserRatedBooks } from "@/lib/ratings";
+import { getUserRatingCount } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -50,9 +50,9 @@ export default async function PreferencesPage() {
   const prefsLoad = await loadPreferencesForPage(user.id);
   const preferences = prefsLoad.preferences;
   const loadError = "error" in prefsLoad ? prefsLoad.error : null;
-  const ratedBooks = await getUserRatedBooks(user.id);
+  const ratedCount = await getUserRatingCount(user.id);
   const afterSaveHref =
-    ratedBooks.length >= 1 ? "/browse" : "/onboarding/first-rating";
+    ratedCount >= 1 ? "/browse" : "/onboarding/first-rating";
 
   return (
     <div className="preferences-page">
@@ -142,7 +142,7 @@ export default async function PreferencesPage() {
           <OnboardingGuideCard
             userId={user.id}
             hasPreferences={preferences !== null}
-            ratingCount={ratedBooks.length}
+            ratingCount={ratedCount}
             variant="short"
             className="mt-4 text-left sm:mt-5"
           />

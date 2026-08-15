@@ -133,6 +133,7 @@ export async function PUT(request: Request) {
     accessToken: session.accessToken,
     bodyUserId,
     hadAuthorizationHeader,
+    verifiedUserId: session.user.id,
   });
 
   if (!saveResult.success) {

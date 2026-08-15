@@ -11,7 +11,7 @@ import { summarizeFailures, withTimeout } from "@/lib/provider-resilience";
 import { getCommunityRatings, getUserRatingForBook } from "@/lib/ratings";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/supabase/server";
 import { ArrowLeft, ScrollText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -146,10 +146,7 @@ async function loadViewerState(bookExternalId: string): Promise<ViewerState> {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCachedUser();
 
     if (!user) {
       return ANONYMOUS_VIEWER;

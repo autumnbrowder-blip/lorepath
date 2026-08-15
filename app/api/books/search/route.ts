@@ -1,4 +1,3 @@
-import { sessionUserIsAdmin } from "@/lib/admin";
 import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
@@ -43,10 +42,12 @@ export async function GET(request: Request) {
       SEARCH_HANDLER_BUDGET_MS,
       "api/books/search"
     );
-    const isAdmin = await sessionUserIsAdmin();
-    // `?debugSources=1` explains where each description came from — counts
-    // only, no credentials, so it is safe for diagnosing empty result reports.
     const wantsSourceDebug = searchParams.get("debugSources") === "1";
+    let isAdmin = false;
+    if (wantsSourceDebug) {
+      const { sessionUserIsAdmin } = await import("@/lib/admin");
+      isAdmin = await sessionUserIsAdmin();
+    }
 
     // Public clients get books + paging only. Source breakdown is admin-only.
     const payload = isAdmin

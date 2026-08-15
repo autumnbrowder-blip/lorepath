@@ -1,7 +1,7 @@
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/supabase/server";
 import {
   BarChart3,
   BookOpen,
@@ -171,10 +171,7 @@ export default async function FaqPage() {
 
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = await getCachedUser();
       isLoggedIn = !!user;
     } catch {
       isLoggedIn = false;

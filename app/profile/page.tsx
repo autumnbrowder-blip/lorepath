@@ -11,7 +11,7 @@ import {
   resolveAvatarKey,
 } from "@/lib/avatars";
 import { getUserPreferences } from "@/lib/preferences";
-import { getUserRatedBooks } from "@/lib/ratings";
+import { getUserRatingCount } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -91,12 +91,11 @@ export default async function ProfilePage() {
   }
 
   const email = user.email ?? "—";
-  const [preferences, ratedBooks] = await Promise.all([
+  const [preferences, ratingCount] = await Promise.all([
     getUserPreferences(user.id),
-    getUserRatedBooks(user.id),
+    getUserRatingCount(user.id),
   ]);
   const hasPreferences = preferences !== null;
-  const ratingCount = ratedBooks.length;
 
   return (
     <FantasyPageShell>

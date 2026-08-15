@@ -1,4 +1,4 @@
-import { sessionUserIsAdmin } from "@/lib/admin";
+import { emailFromAuthCookies } from "@/lib/supabase/auth-cookies";
 import {
   recordPageView,
   shouldRecordIncomingPageView,
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * Fire-and-forget pageview ping.
  * Always returns 204 so tracking never surfaces as a client error.
  *
- * Skips: admins, bots, non-production hosts, development, blocked paths.
+ * Skips: admins (ADMIN_EMAILS), bots, non-production hosts, development, blocked paths.
  */
 export async function POST(request: Request) {
   try {
@@ -19,15 +19,13 @@ export async function POST(request: Request) {
       return new NextResponse(null, { status: 204 });
     }
 
-    // Same gate as /admin access — skip staff so they do not inflate totals.
-    try {
-      if (await sessionUserIsAdmin()) {
+    // Skip staff listed in ADMIN_EMAILS without a GoTrue/DB round-trip.
+    const adminEmails = process.env.ADMIN_EMAILS?.trim() ?? "";
+    if (adminEmails) {
+      const cookieEmail = emailFromAuthCookies(cookiesFromHeader(request));
+      if (cookieEmail && emailIsPageViewAdmin(cookieEmail, adminEmails)) {
         return new NextResponse(null, { status: 204 });
       }
-    } catch (error) {
-      console.error("[api/page-views] admin check failed:", error);
-      // Fall through and record — do not break tracking for everyone.
-      // Path allowlist still rejects /admin even if this check fails.
     }
 
     let body: { path?: unknown } = {};
@@ -42,4 +40,33 @@ export async function POST(request: Request) {
   }
 
   return new NextResponse(null, { status: 204 });
+}
+
+function cookiesFromHeader(
+  request: Request
+): { name: string; value: string }[] {
+  const header = request.headers.get("cookie");
+  if (!header) return [];
+
+  return header.split(";").map((part) => {
+    const trimmed = part.trim();
+    const idx = trimmed.indexOf("=");
+    if (idx < 0) return { name: trimmed, value: "" };
+    let value = trimmed.slice(idx + 1);
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      // keep raw value
+    }
+    return { name: trimmed.slice(0, idx), value };
+  });
+}
+
+function emailIsPageViewAdmin(email: string, adminEmails: string): boolean {
+  const needle = email.trim().toLowerCase();
+  return adminEmails
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(needle);
 }

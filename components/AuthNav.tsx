@@ -90,9 +90,10 @@ export function AuthNav() {
       const supabase = createClient();
 
       supabase.auth
-        .getUser()
-        .then(({ data: { user: currentUser } }) => {
+        .getSession()
+        .then(({ data: { session } }) => {
           if (cancelled) return;
+          const currentUser = session?.user ?? null;
           setUser(currentUser);
           setLoading(false);
           if (currentUser) void loadProfile(currentUser.id);
@@ -128,8 +129,8 @@ export function AuthNav() {
           }));
         }
 
-        void supabase.auth.getUser().then(({ data: { user: currentUser } }) => {
-          if (currentUser) void loadProfile(currentUser.id);
+        void supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user) void loadProfile(session.user.id);
         });
       };
 

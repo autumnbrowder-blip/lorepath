@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  accessTokenSecondsRemaining,
+  requestHasSupabaseAuthCookie,
+} from "@/lib/supabase/auth-cookies";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+
+/** Refresh via getUser when the access token is this close to expiry. */
+const JWT_REFRESH_MARGIN_SEC = 120;
 
 const protectedRoutes: string[] = [
   "/profile",
@@ -31,15 +38,43 @@ function redirectPreservingCookies(
 }
 
 export async function updateSession(request: NextRequest) {
-  // Never run session refresh on auth routes that set cookies themselves.
+  const { pathname } = request.nextUrl;
+
+  // Never run session refresh on auth routes that set cookies themselves,
+  // or on APIs that verify JWTs in the handler (avoids a getUser per ping).
   if (
-    request.nextUrl.pathname.startsWith("/auth/callback") ||
-    request.nextUrl.pathname.startsWith("/api/auth/")
+    pathname.startsWith("/auth/callback") ||
+    pathname.startsWith("/api/")
   ) {
     return NextResponse.next({ request });
   }
 
   if (!isSupabaseConfigured()) {
+    return NextResponse.next({ request });
+  }
+
+  const isProtected = protectedRoutes.some((route) =>
+    pathname.startsWith(route)
+  );
+  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
+  const cookieList = request.cookies.getAll();
+  const hasAuthCookie = requestHasSupabaseAuthCookie(cookieList);
+
+  // Anonymous traffic: no Auth API call. Protected routes still bounce to login.
+  if (!hasAuthCookie) {
+    if (isProtected) {
+      return redirectLoggedOut(request, pathname);
+    }
+    return NextResponse.next({ request });
+  }
+
+  // Logged-in public pages with a still-fresh access token: skip getUser.
+  // Middleware only needs GoTrue when the JWT is near expiry (refresh) or
+  // when we must know the user for a redirect.
+  const secondsLeft = accessTokenSecondsRemaining(cookieList);
+  const tokenIsFresh =
+    secondsLeft !== null && secondsLeft > JWT_REFRESH_MARGIN_SEC;
+  if (tokenIsFresh && !isProtected && !isAuthRoute) {
     return NextResponse.next({ request });
   }
 
@@ -75,27 +110,11 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
-  const isProtected = protectedRoutes.some((route) =>
-    pathname.startsWith(route)
-  );
-  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
-
   if (!user && isProtected) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("redirect", pathname);
-    const messageKey = protectedRoutes.find((route) =>
-      pathname.startsWith(route)
+    return redirectPreservingCookies(
+      loginRedirectUrl(request, pathname),
+      supabaseResponse
     );
-    const message = messageKey
-      ? protectedRouteMessages[messageKey]
-      : undefined;
-    if (message) {
-      url.searchParams.set("message", message);
-    }
-    return redirectPreservingCookies(url, supabaseResponse);
   }
 
   if (user && isAuthRoute) {
@@ -115,4 +134,22 @@ export async function updateSession(request: NextRequest) {
   }
 
   return supabaseResponse;
+}
+
+function loginRedirectUrl(request: NextRequest, pathname: string): URL {
+  const url = request.nextUrl.clone();
+  url.pathname = "/login";
+  url.searchParams.set("redirect", pathname);
+  const messageKey = protectedRoutes.find((route) =>
+    pathname.startsWith(route)
+  );
+  const message = messageKey ? protectedRouteMessages[messageKey] : undefined;
+  if (message) {
+    url.searchParams.set("message", message);
+  }
+  return url;
+}
+
+function redirectLoggedOut(request: NextRequest, pathname: string): NextResponse {
+  return NextResponse.redirect(loginRedirectUrl(request, pathname));
 }

@@ -65,7 +65,7 @@ import {
   fetchSearchProviderFlood,
   SEARCH_FLOOD_SOURCES,
 } from "@/lib/search-flood";
-import { createAuthenticatedClient } from "@/lib/supabase/server";
+import { getVerifiedUser } from "@/lib/supabase/server";
 import { rankSearchResults } from "@/lib/book-utils";
 import type {
   BookDetail,
@@ -95,10 +95,10 @@ const SEARCH_SOURCES: BookSource[] = SEARCH_FLOOD_SOURCES;
 async function resolveSearchUserId(
   accessToken?: string | null
 ): Promise<string | null> {
+  const token = accessToken?.trim();
+  if (!token) return null;
   try {
-    const auth = await createAuthenticatedClient({
-      accessToken: accessToken ?? null,
-    });
+    const auth = await getVerifiedUser({ accessToken: token });
     if ("error" in auth) return null;
     return auth.user.id;
   } catch {

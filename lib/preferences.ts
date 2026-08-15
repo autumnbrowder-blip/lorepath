@@ -2,9 +2,9 @@ import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { DEFAULT_USER_PREFERENCES } from "@/lib/rating-categories";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
-  createAuthenticatedClient,
-  createClient,
   createServiceRoleClient,
+  getServiceRoleOrCookieClient,
+  getVerifiedUser,
 } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
@@ -214,24 +214,6 @@ async function ensureProfileExists(
     return { ok: false, error: formatPreferenceError(upsertError) };
   }
 
-  const { data: created, error: verifyError } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (verifyError) {
-    return { ok: false, error: formatPreferenceError(verifyError) };
-  }
-
-  if (!created) {
-    return {
-      ok: false,
-      error:
-        "No profile was found for your account and creating one failed. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
-    };
-  }
-
   return { ok: true };
 }
 
@@ -269,14 +251,8 @@ export async function getUserPreferences(
   }
 
   try {
-    const admin = createServiceRoleClient();
-    const auth = await createAuthenticatedClient();
-    const supabase =
-      "error" in admin
-        ? "error" in auth
-          ? await createClient()
-          : auth.supabase
-        : admin.supabase;
+    const supabase = await getServiceRoleOrCookieClient();
+    if (!supabase) return null;
 
     const result = await fetchPreferenceRow(supabase, userId);
     if (result.error || !result.data) {
@@ -347,6 +323,8 @@ type SaveOptions = {
   bodyUserId?: string | null;
   /** Whether the incoming request carried an Authorization Bearer header. */
   hadAuthorizationHeader?: boolean;
+  /** When the route already verified the JWT, skip a second Auth round-trip. */
+  verifiedUserId?: string;
 };
 
 type SaveFailure = {
@@ -395,20 +373,25 @@ export async function saveUserPreferences(
 
   const normalized = normalizePreferences(preferences);
 
-  // 1) Verify the user via access token / cookie session.
-  const auth = await createAuthenticatedClient({
-    accessToken: options?.accessToken,
-  });
-  if ("error" in auth) {
-    return {
-      success: false,
-      error: auth.error === "Unauthorized." ? NO_SESSION_HINT : auth.error,
-      supabaseCode: auth.code,
-      debug: debugBase(null),
-    };
+  // 1) Verify the user via access token / cookie session (skip if the route
+  //    already verified the same JWT).
+  let sessionUserId: string;
+  if (options?.verifiedUserId && options.accessToken) {
+    sessionUserId = options.verifiedUserId;
+  } else {
+    const auth = await getVerifiedUser({
+      accessToken: options?.accessToken,
+    });
+    if ("error" in auth) {
+      return {
+        success: false,
+        error: auth.error === "Unauthorized." ? NO_SESSION_HINT : auth.error,
+        supabaseCode: auth.code,
+        debug: debugBase(null),
+      };
+    }
+    sessionUserId = auth.user.id;
   }
-
-  const sessionUserId = auth.user.id;
 
   if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
     return {
@@ -504,7 +487,6 @@ export async function saveUserPreferences(
     };
   }
 
-  revalidatePath("/preferences");
   revalidatePath("/browse");
   return {
     success: true,
@@ -513,29 +495,23 @@ export async function saveUserPreferences(
   };
 }
 
-/** Resolve a JWT-scoped client + user for API routes that also need writes. */
+/** Resolve the signed-in user for API routes (Bearer preferred). */
 export async function getSessionUser(options?: {
   accessToken?: string | null;
 }): Promise<
-  | { supabase: SupabaseClient; user: User; accessToken: string }
+  | { user: User; accessToken: string }
   | { error: string; code?: string }
 > {
-  const auth = await createAuthenticatedClient({
+  return getVerifiedUser({
     accessToken: options?.accessToken,
   });
-
-  if ("error" in auth) {
-    return { error: auth.error, code: auth.code };
-  }
-
-  return auth;
 }
 
 export async function getUserProfile(userId: string) {
   if (!isSupabaseConfigured()) return null;
 
-  const auth = await createAuthenticatedClient();
-  const supabase = "error" in auth ? await createClient() : auth.supabase;
+  const supabase = await getServiceRoleOrCookieClient();
+  if (!supabase) return null;
   const { data, error } = await supabase
     .from("profiles")
     .select("id, is_subscriber, created_at")

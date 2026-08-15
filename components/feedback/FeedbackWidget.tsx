@@ -70,8 +70,9 @@ export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
 
     let cancelled = false;
     const supabase = createClient();
-    void supabase.auth.getUser().then(({ data: { user } }) => {
+    void supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
+      const user = session?.user ?? null;
       if (!user) {
         router.replace(
           `/login?redirect=${encodeURIComponent(pathname || "/")}`

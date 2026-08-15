@@ -132,6 +132,7 @@ export async function POST(
   const result = await submitUserRating(bookExternalId, body, {
     expectedUserId: session.user.id,
     accessToken: session.accessToken,
+    verifiedUserId: session.user.id,
   });
 
   if (!result.success) {
