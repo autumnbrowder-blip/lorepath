@@ -140,7 +140,10 @@ const ANONYMOUS_VIEWER: ViewerState = {
  * Viewer extras are optional: a Supabase hiccup must degrade to the
  * logged-out view rather than replace the whole tome with an error page.
  */
-async function loadViewerState(bookExternalId: string): Promise<ViewerState> {
+async function loadViewerState(
+  bookExternalId: string,
+  isbn?: string | null
+): Promise<ViewerState> {
   if (!isSupabaseConfigured()) {
     return ANONYMOUS_VIEWER;
   }
@@ -156,7 +159,7 @@ async function loadViewerState(bookExternalId: string): Promise<ViewerState> {
     // (Match Score still needs community marks on the book).
     const [preferences, rating] = await Promise.allSettled([
       getUserPreferences(user.id),
-      getUserRatingForBook(bookExternalId, user.id),
+      getUserRatingForBook(bookExternalId, user.id, isbn),
     ]);
 
     return {
@@ -204,7 +207,7 @@ export default async function BookDetailPage({
   }
 
   const [ratingsResult, viewer] = await Promise.all([
-    withTimeout(getCommunityRatings(id), 1500, "page-community-ratings")
+    withTimeout(getCommunityRatings(id, book.isbn), 1500, "page-community-ratings")
       .catch((error) => {
         console.error("[books/[id]] community ratings failed:", {
           id,
@@ -212,7 +215,7 @@ export default async function BookDetailPage({
         });
         return { averages: null, count: 0 };
       }),
-    withTimeout(loadViewerState(id), 2000, "page-viewer-state").catch(
+    withTimeout(loadViewerState(id, book.isbn), 2000, "page-viewer-state").catch(
       (error) => {
         console.error("[books/[id]] viewer state timed out:", {
           id,

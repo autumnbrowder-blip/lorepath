@@ -1,5 +1,5 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
-import { bookDetailToDbRow, sourceFromBookSlug } from "@/lib/book-cache";
+import { ensureBookRow, findBookIdBySlugOrIsbn, sourceFromBookSlug } from "@/lib/book-cache";
 import { getBookById } from "@/lib/books";
 import {
   normalizeAuthorForDedupe,
@@ -199,10 +199,6 @@ function resolveRatingsReadClient(): SupabaseClient | null {
   return createUncachedPublicClient();
 }
 
-function bookToDbRow(externalId: string, book: BookDetail) {
-  return bookDetailToDbRow(externalId, book);
-}
-
 function isMissingRomanceColumn(message: string): boolean {
   return (
     /romance/i.test(message) &&
@@ -278,14 +274,11 @@ async function ensureBookRecord(
   supabase: SupabaseClient,
   externalId: string
 ): Promise<{ bookDbId: string } | { error: string }> {
-  const existing = await supabase
-    .from("books")
-    .select("id")
-    .eq("slug", externalId)
-    .maybeSingle();
-
-  if (!existing.error && existing.data?.id) {
-    return { bookDbId: existing.data.id };
+  const existing = await findBookIdBySlugOrIsbn(supabase, {
+    slug: externalId,
+  });
+  if (existing) {
+    return { bookDbId: existing };
   }
 
   const book = await getBookById(externalId);
@@ -293,33 +286,11 @@ async function ensureBookRecord(
     return { error: "Book not found." };
   }
 
-  // Prefer: write without RETURNING so missing SELECT grants don't mask a good insert.
-  const { error: upsertError } = await supabase
-    .from("books")
-    .upsert(bookToDbRow(externalId, book), { onConflict: "slug" });
-
-  if (upsertError) {
-    return { error: formatRatingError(upsertError.message) };
+  const result = await ensureBookRow(supabase, externalId, book);
+  if ("error" in result) {
+    return { error: formatRatingError(result.error) };
   }
-
-  const { data, error } = await supabase
-    .from("books")
-    .select("id")
-    .eq("slug", externalId)
-    .maybeSingle();
-
-  if (error) {
-    return { error: formatRatingError(error.message) };
-  }
-
-  if (!data?.id) {
-    return {
-      error:
-        "Book row could not be saved or read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
-    };
-  }
-
-  return { bookDbId: data.id };
+  return result;
 }
 
 /** Public ratings reads — never serve from the default fetch/data cache. */
@@ -339,7 +310,8 @@ function createUncachedPublicClient() {
 }
 
 export async function getCommunityRatings(
-  bookExternalId: string
+  bookExternalId: string,
+  isbn?: string | null
 ): Promise<CommunityRatingsSummary> {
   noStore();
 
@@ -356,17 +328,16 @@ export async function getCommunityRatings(
           return { averages: null, count: 0 };
         }
 
-        const { data: book, error: bookError } = await supabase
-          .from("books")
-          .select("id")
-          .eq("slug", bookExternalId)
-          .maybeSingle();
+        const bookId = await findBookIdBySlugOrIsbn(supabase, {
+          slug: bookExternalId,
+          isbn,
+        });
 
-        if (bookError || !book?.id) {
+        if (!bookId) {
           return { averages: null, count: 0 };
         }
 
-        const result = await fetchAllRatingsForBook(supabase, book.id);
+        const result = await fetchAllRatingsForBook(supabase, bookId);
         if (result.error) {
           return { averages: null, count: 0 };
         }
@@ -391,7 +362,8 @@ export async function getCommunityRatings(
  */
 export async function getUserRatingForBook(
   bookExternalId: string,
-  userId: string
+  userId: string,
+  isbn?: string | null
 ): Promise<ContentRating | null> {
   noStore();
 
@@ -403,17 +375,16 @@ export async function getUserRatingForBook(
     const supabase = await getServiceRoleOrCookieClient();
     if (!supabase) return null;
 
-    const { data: book, error: bookError } = await supabase
-      .from("books")
-      .select("id")
-      .eq("slug", bookExternalId)
-      .maybeSingle();
+    const bookId = await findBookIdBySlugOrIsbn(supabase, {
+      slug: bookExternalId,
+      isbn,
+    });
 
-    if (bookError || !book?.id) {
+    if (!bookId) {
       return null;
     }
 
-    const result = await fetchUserRatingRow(supabase, book.id, userId);
+    const result = await fetchUserRatingRow(supabase, bookId, userId);
     return result.data;
   } catch {
     return null;
