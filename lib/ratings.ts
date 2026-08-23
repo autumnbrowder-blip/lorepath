@@ -21,6 +21,7 @@ import type { BookDetail, BookSource, BookSummary } from "@/types/book";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
+import { cache } from "react";
 
 const RATING_KEYS: (keyof ContentRating)[] = [
   "sexual_content",
@@ -309,7 +310,7 @@ function createUncachedPublicClient() {
   });
 }
 
-export async function getCommunityRatings(
+export const getCommunityRatings = cache(async function getCommunityRatings(
   bookExternalId: string,
   isbn?: string | null
 ): Promise<CommunityRatingsSummary> {
@@ -350,7 +351,7 @@ export async function getCommunityRatings(
   } catch {
     return { averages: null, count: 0 };
   }
-}
+});
 
 /**
  * Load the signed-in user's rating for a book (by external/slug id).
@@ -985,7 +986,6 @@ export async function submitUserRating(
   );
 
   revalidatePath(`/books/${bookExternalId}`, "page");
-  revalidatePath("/browse");
   revalidatePath("/rated");
   revalidatePath("/stats");
 

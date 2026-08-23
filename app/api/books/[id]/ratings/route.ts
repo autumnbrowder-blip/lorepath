@@ -48,11 +48,16 @@ export async function GET(
     );
 
     let userRating: ContentRating | null = null;
-    if (isSupabaseConfigured()) {
+    const accessToken = getBearerToken(request);
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const mightHaveSession =
+      Boolean(accessToken) || /auth-token/i.test(cookieHeader);
+
+    if (isSupabaseConfigured() && mightHaveSession) {
       try {
         const session = await withTimeout(
           createAuthenticatedClient({
-            accessToken: getBearerToken(request),
+            accessToken,
           }),
           2000,
           "ratings-get-auth"

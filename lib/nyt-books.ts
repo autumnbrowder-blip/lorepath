@@ -73,6 +73,7 @@ async function fetchNyt(url: string): Promise<Response> {
 
   try {
     return await fetch(url, {
+      cache: "force-cache",
       next: { revalidate: 3600 },
       signal: controller.signal,
     });

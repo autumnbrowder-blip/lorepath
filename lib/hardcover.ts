@@ -8,6 +8,13 @@ import type { BookSummary } from "@/types/book";
 const HARDCOVER_ENDPOINT = "https://api.hardcover.app/v1/graphql";
 const FETCH_TIMEOUT_MS = 3000;
 const HARDCOVER_ID_PREFIX = "hardcover-";
+const HARDCOVER_MEMO_TTL_MS = 10 * 60 * 1000;
+const HARDCOVER_MEMO_MAX = 80;
+
+const hardcoverSearchMemo = new Map<
+  string,
+  { expires: number; books: HardcoverBook[] }
+>();
 
 const SEARCH_QUERY = `query LorePathSearch($query: String!) {
   search(query: $query, query_type: "Book", per_page: 8, page: 1) {
@@ -101,6 +108,12 @@ async function runHardcoverSearch(query: string): Promise<HardcoverBook[]> {
   const token = process.env.HARDCOVER_API_TOKEN?.trim();
   if (!token || !query.trim()) return [];
 
+  const memoKey = query.trim().toLowerCase();
+  const memoHit = hardcoverSearchMemo.get(memoKey);
+  if (memoHit && memoHit.expires > Date.now()) {
+    return memoHit.books;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -140,9 +153,19 @@ async function runHardcoverSearch(query: string): Promise<HardcoverBook[]> {
       return [];
     }
 
-    return readHits(payload.data?.search?.results)
+    const books = readHits(payload.data?.search?.results)
       .map((hit) => toHardcoverBook(hit))
       .filter((book): book is HardcoverBook => book !== null);
+
+    if (hardcoverSearchMemo.size >= HARDCOVER_MEMO_MAX) {
+      const first = hardcoverSearchMemo.keys().next().value;
+      if (first) hardcoverSearchMemo.delete(first);
+    }
+    hardcoverSearchMemo.set(memoKey, {
+      expires: Date.now() + HARDCOVER_MEMO_TTL_MS,
+      books,
+    });
+    return books;
   } catch (error) {
     console.error("[hardcover] search error:", {
       query,

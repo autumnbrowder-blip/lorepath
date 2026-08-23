@@ -99,6 +99,7 @@ export function BookCover({
       sizes={sizes}
       priority={priority}
       loading={priority ? undefined : "lazy"}
+      unoptimized={!isPlaceholder}
       onError={() => {
         if (index + 1 < candidates.length) {
           setIndex((current) => current + 1);

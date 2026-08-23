@@ -149,6 +149,7 @@ export async function getGutendexBookById(
 
   try {
     const response = await fetch(`https://gutendex.com/books/${numericId}`, {
+      cache: "force-cache",
       next: { revalidate: 3600 },
       signal: controller.signal,
     });
@@ -207,7 +208,7 @@ export async function searchGutendex(
     try {
       const response = await fetch(
         `https://gutendex.com/books/?${params.toString()}`,
-        { cache: "no-store", signal: controller.signal }
+        { cache: "force-cache", next: { revalidate: 3600 }, signal: controller.signal }
       );
 
       if (!response.ok) return { books: [], hasMore: false };

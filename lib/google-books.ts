@@ -37,7 +37,8 @@ export type GoogleBooksProviderError = {
 
 const FETCH_TIMEOUT_MS = 3000;
 const GOOGLE_PAGE_SIZE = 20;
-const MAX_503_ATTEMPTS = 3;
+/** One retry is enough — extra 503 loops keep the serverless function alive. */
+const MAX_503_ATTEMPTS = 2;
 
 function getGoogleBooksApiKey(): string | null {
   const key = process.env.GOOGLE_BOOKS_API_KEY?.trim();
@@ -98,7 +99,11 @@ async function fetchGoogleBooks(
       url,
       options?.noStore
         ? { cache: "no-store", signal: controller.signal }
-        : { next: { revalidate: options?.revalidate ?? 3600 }, signal: controller.signal }
+        : {
+            cache: "force-cache",
+            next: { revalidate: options?.revalidate ?? 3600 },
+            signal: controller.signal,
+          }
     );
     return response;
   } finally {

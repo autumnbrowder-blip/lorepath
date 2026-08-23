@@ -2,8 +2,8 @@ import { searchBigBook } from "@/lib/big-book";
 import type { SearchBooksOptions } from "@/lib/genre-search";
 import { searchGoogleBooks, type GoogleBooksPageResult } from "@/lib/google-books";
 import { searchGutendex } from "@/lib/gutendex";
-import { searchHardcover } from "@/lib/hardcover";
-import { searchIsbndb } from "@/lib/isbndb";
+import { isHardcoverConfigured, searchHardcover } from "@/lib/hardcover";
+import { hasIsbndbApiKey, searchIsbndb } from "@/lib/isbndb";
 import { searchOpenLibrary } from "@/lib/open-library";
 import {
   createDeadline,
@@ -17,6 +17,7 @@ import {
   type NormalizedSearchQuery,
 } from "@/lib/search-query";
 import { recoverPopularTitleHits } from "@/lib/search-recovery";
+import { knownWorkMatchesQuery } from "@/lib/known-editions";
 import type { BookSource, BookSummary } from "@/types/book";
 
 /** Per-provider caps — keep short so the overall search budget stays under Netlify. */
@@ -170,16 +171,15 @@ export async function fetchSearchProviderFlood(input: {
     localDeadline.cap(PROVIDER_TIMEOUT_MS, 200);
 
   const wave: Promise<ProviderPage>[] = [];
+  const catalogQuery = plainQuery(primary) || primary;
 
+  // Google: keep a short strategy fan-out (highest recall, no 1 req/s throttle).
   for (const strategy of strategies) {
-    const googleQuery = strategy;
-    const plain = plainQuery(strategy) || strategy;
     const ms = stepTimeout();
-
     wave.push(
       timedProviderPage("google", `google search:${strategy}`, ms, async () => {
         const result = await searchGoogleBooks(
-          googleQuery,
+          strategy,
           input.page,
           input.searchOptions
         );
@@ -191,31 +191,43 @@ export async function fetchSearchProviderFlood(input: {
         };
       })
     );
+  }
+
+  // Other providers: primary query only. Repeating ISBNdb/Hardcover/OL for
+  // every Google strategy doubled work; ISBNdb also serializes at 1 req/s.
+  if (hasIsbndbApiKey()) {
+    const ms = stepTimeout();
     wave.push(
-      timedProviderPage("isbndb", `isbndb search:${plain}`, ms, async () => {
-        const result = await searchIsbndb(plain, input.page, input.searchOptions);
-        return { books: result.books, hasMore: result.hasMore };
-      })
-    );
-    wave.push(
-      timedProviderPage("hardcover", `hardcover search:${plain}`, ms, async () => {
-        const result = await searchHardcover(plain, input.page);
+      timedProviderPage("isbndb", `isbndb search:${catalogQuery}`, ms, async () => {
+        const result = await searchIsbndb(
+          catalogQuery,
+          input.page,
+          input.searchOptions
+        );
         return { books: result.books, hasMore: result.hasMore };
       })
     );
   }
 
+  if (isHardcoverConfigured()) {
+    const ms = stepTimeout();
+    wave.push(
+      timedProviderPage(
+        "hardcover",
+        `hardcover search:${catalogQuery}`,
+        ms,
+        async () => {
+          const result = await searchHardcover(catalogQuery, input.page);
+          return { books: result.books, hasMore: result.hasMore };
+        }
+      )
+    );
+  }
+
   // Open Library in the SAME wave — do not wait for commercial to finish first.
   if (!input.genreMode) {
-    const olQueries = Array.from(
-      new Set(
-        [normalized.title, plainQuery(primary), ...strategies.map(plainQuery)].filter(
-          Boolean
-        ) as string[]
-      )
-    ).slice(0, 2);
-
-    for (const olQuery of olQueries) {
+    const olQuery = (normalized.title || catalogQuery).trim();
+    if (olQuery) {
       const ms = stepTimeout();
       wave.push(
         timedProviderPage(
@@ -263,11 +275,15 @@ export async function fetchSearchProviderFlood(input: {
     ingest(result.value);
   }
 
-  // Catalog seed recovery — only if budget remains and results are thin / known title.
+  // Catalog seed recovery — only if budget remains and results are thin
+  // (or a known translated title still needs its English edition).
   const recoveryMs = localDeadline.cap(1500, 100);
+  const needsRecovery =
+    books.length < 8 || Boolean(knownWorkMatchesQuery(primary));
   if (
     !input.genreMode &&
     input.page === 1 &&
+    needsRecovery &&
     recoveryMs > 0 &&
     !localDeadline.expired()
   ) {

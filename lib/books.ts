@@ -512,7 +512,7 @@ export async function searchBooks(
 
   const hasMore = flood.hasMore;
 
-  // Cache the anonymous page (before Inscribed) for ~45s.
+  // Cache the anonymous page (before Inscribed) for a few minutes.
   // Never cache empty shelves — that freezes outages into "0 results".
   if (books.length > 0) {
     setCachedSearchPage(cacheKey, {
@@ -825,7 +825,7 @@ export const loadBookDetail = cache(async function loadBookDetail(
           null as number | null,
           async () => {
             const { getCommunityRatings } = await import("@/lib/ratings");
-            const community = await getCommunityRatings(bookId);
+            const community = await getCommunityRatings(bookId, canonical.isbn);
             return community.averages?.sexual_content ?? null;
           }
         )

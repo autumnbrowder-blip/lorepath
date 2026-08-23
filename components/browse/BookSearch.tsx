@@ -43,7 +43,7 @@ type RatedSource =
   | "session-storage"
   | "none";
 
-const CLIENT_SEARCH_CACHE_TTL_MS = 90_000;
+const CLIENT_SEARCH_CACHE_TTL_MS = 180_000;
 const JUST_RATED_STORAGE_KEY = "lorepath-just-rated-slugs";
 const clientSearchCache = new Map<
   string,

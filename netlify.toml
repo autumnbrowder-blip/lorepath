@@ -1,0 +1,7 @@
+# Netlify + Next.js. Do not set `publish` here — @netlify/plugin-nextjs
+# owns the output directory. Site UI / auto-detected plugin stays in charge.
+
+[build]
+  # Exit 0 = skip this deploy (saves production credits). Exit 1 = build.
+  # Skip when the commit only touches docs, probes, or scratch output.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!*.md' ':!*.txt' ':!scripts' ':!repro-*'"

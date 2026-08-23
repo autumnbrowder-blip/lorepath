@@ -71,6 +71,7 @@ async function fetchIsbndb(path: string): Promise<Response | null> {
           Accept: "application/json",
           Authorization: apiKey,
         },
+        cache: "force-cache",
         next: { revalidate: 3600 },
         signal: controller.signal,
       });

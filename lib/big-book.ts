@@ -92,6 +92,7 @@ async function fetchBigBook(path: string): Promise<Response | null> {
         Accept: "application/json",
         "x-api-key": apiKey,
       },
+      cache: "force-cache",
       next: { revalidate: 3600 },
       signal: controller.signal,
     });

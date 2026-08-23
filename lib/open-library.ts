@@ -73,6 +73,7 @@ export async function fetchOpenLibrary(
       options?.noStore
         ? { cache: "no-store", signal: controller.signal, headers }
         : {
+            cache: "force-cache",
             next: { revalidate: options?.revalidate ?? 3600 },
             signal: controller.signal,
             headers,

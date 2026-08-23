@@ -1,7 +1,7 @@
 import type { BookSearchResult, BookSummary } from "@/types/book";
 
 /**
- * Short in-memory cache for browse search pages.
+ * Short in-memory cache for browse search pages (a few minutes).
  * User-specific Inscribed data is reapplied after a hit — never stored here.
  */
 type SearchCacheEntry = {
@@ -17,7 +17,7 @@ type SearchCacheEntry = {
   googleRawCount?: number;
 };
 
-const TTL_MS = 45_000;
+const TTL_MS = 180_000;
 const MAX_ENTRIES = 80;
 
 const cache = new Map<string, SearchCacheEntry>();

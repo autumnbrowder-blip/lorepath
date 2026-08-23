@@ -7,7 +7,7 @@ import {
   getVerifiedUser,
 } from "@/lib/supabase/server";
 import type { ContentRating } from "@/types";
-import { revalidatePath, unstable_noStore as noStore } from "next/cache";
+import { unstable_noStore as noStore } from "next/cache";
 import type { PostgrestError, SupabaseClient, User } from "@supabase/supabase-js";
 
 const PREFERENCE_SELECT =
@@ -487,7 +487,6 @@ export async function saveUserPreferences(
     };
   }
 
-  revalidatePath("/browse");
   return {
     success: true,
     preferences: confirmed,

@@ -2,12 +2,13 @@ import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
 import { withTimeout } from "@/lib/provider-resilience";
+import { publicGetCacheHeaders } from "@/lib/public-cache-headers";
 import { getBearerToken } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-/** Always hit providers at request time (token + live search). */
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+/** Honor per-fetch revalidate even though this handler reads searchParams. */
+export const fetchCache = "default-cache";
 /** Netlify / serverless hard ceiling (seconds). Handler budget is tighter. */
 export const maxDuration = 10;
 
@@ -25,6 +26,8 @@ export async function GET(request: Request) {
   const pageParam = Number(searchParams.get("page") ?? "1");
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
   const mode = isGenreSearchMode(modeParam) ? "genre" : "text";
+  const accessToken = getBearerToken(request);
+  const authenticated = Boolean(accessToken);
 
   if (!query) {
     return NextResponse.json(
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
     const result = await withTimeout(
       searchBooks(query, page, {
         mode,
-        accessToken: getBearerToken(request),
+        accessToken,
       }),
       SEARCH_HANDLER_BUDGET_MS,
       "api/books/search"
@@ -67,10 +70,9 @@ export async function GET(request: Request) {
             : {}),
         };
 
+    const cacheable = result.books.length > 0 && !wantsSourceDebug;
     return NextResponse.json(payload, {
-      headers: {
-        "Cache-Control": "no-store",
-      },
+      headers: publicGetCacheHeaders({ authenticated, cacheable }),
     });
   } catch (error) {
     console.error("[api/books/search] unexpected failure:", error);
@@ -93,9 +95,10 @@ export async function GET(request: Request) {
       {
         // 200 so the browse UI can render an empty state + message without a crash.
         status: 200,
-        headers: {
-          "Cache-Control": "no-store",
-        },
+        headers: publicGetCacheHeaders({
+          authenticated,
+          cacheable: false,
+        }),
       }
     );
   }
