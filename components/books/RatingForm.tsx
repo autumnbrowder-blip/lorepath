@@ -245,7 +245,7 @@ export function RatingForm({
   return (
     <section
       aria-labelledby="rate-book-heading"
-      className={`preference-codex-box-shell rating-form-panel animate-fade-in-up${
+      className={`tome-plaque preference-codex-box-shell rating-form-panel animate-fade-in-up${
         isLoggedIn ? " rating-form-panel--inscribed" : ""
       }`}
       style={{ animationDelay: "150ms" }}

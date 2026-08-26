@@ -13,7 +13,7 @@ export function HomeHero() {
       <LibraryClassicalScene />
 
       <div className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6">
-        <div className="home-hero-frame">
+        <div className="tome-plaque home-hero-frame">
           <h1
             id="home-headline"
             className="home-hero-title"
@@ -24,7 +24,7 @@ export function HomeHero() {
             Rate books by content, set your preferences, and see Match Scores
             on books the community has marked.
           </p>
-          <Link href="/register" className="home-hero-cta">
+          <Link href="/register" className="tome-link home-hero-cta">
             <ScrollText className="h-5 w-5 shrink-0" aria-hidden="true" />
             Create free account
           </Link>

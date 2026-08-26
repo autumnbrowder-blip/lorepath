@@ -37,7 +37,7 @@ export function ContactArchivesNote({
     return (
       <aside
         aria-label="Contact the archives"
-        className={`preference-codex-box relative mt-6 !p-3.5 !pt-4 text-center sm:!p-4 sm:!pt-4 ${className}`}
+        className={`tome-plaque preference-codex-box relative mt-6 !p-3.5 !pt-4 text-center sm:!p-4 sm:!pt-4 ${className}`}
       >
         <CodexBoxOrnament />
         <div className="relative z-[3] px-1 py-0.5">

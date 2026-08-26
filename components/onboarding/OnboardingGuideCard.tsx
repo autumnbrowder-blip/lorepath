@@ -117,7 +117,7 @@ export function OnboardingGuideCard({
 
   return (
     <aside
-      className={`preference-codex-box relative ${padding} ${className}`}
+      className={`tome-plaque preference-codex-box relative ${padding} ${className}`}
       aria-labelledby={`onboarding-guide-${state}-title`}
     >
       <CodexBoxOrnament />

@@ -130,7 +130,7 @@ export default async function PreferencesPage() {
             </div>
           </div>
 
-          <div className="preference-codex-box relative mt-4 !p-3.5 !pt-4 text-left sm:mt-5 sm:!p-4 sm:!pt-4">
+          <div className="tome-plaque preference-codex-box relative mt-4 !p-3.5 !pt-4 text-left sm:mt-5 sm:!p-4 sm:!pt-4">
             <CodexBoxOrnament />
             <p className="relative z-[3] px-0.5 font-heading text-sm leading-snug tracking-wide nav-dragon-gold sm:text-[0.95rem]">
               Set your comfort levels across themes. Match Scores appear once a

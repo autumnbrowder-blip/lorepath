@@ -90,19 +90,19 @@ export function BookInformation({
   }[];
 
   const descriptionBlock = (
-    <div className="preference-codex-box preference-codex-box--compact relative">
+    <div className="tome-plaque preference-codex-box preference-codex-box--compact relative">
       <CodexBoxOrnament />
       {book.description ? (
         <div className="relative z-[3] px-1">
-          <h3 className="mb-2 font-storybook text-base font-bold tracking-[0.12em] nav-dragon-gold sm:text-lg">
+          <h3 className="tome-title mb-2 font-storybook text-base font-bold tracking-[0.12em] nav-dragon-gold sm:text-lg">
             About this book
           </h3>
-          <p className="font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
+          <p className="tome-body font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
             {book.description}
           </p>
         </div>
       ) : (
-        <p className="relative z-[3] px-1 text-center font-heading text-base italic nav-dragon-gold">
+        <p className="tome-body relative z-[3] px-1 text-center font-heading text-base italic nav-dragon-gold">
           No description available for this book.
         </p>
       )}

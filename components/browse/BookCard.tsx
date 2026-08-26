@@ -49,7 +49,7 @@ export function BookCard({
   const showInscribed = hasUserRating;
 
   return (
-    <article className="lp-book-card">
+    <article className="tome-plaque lp-book-card">
       <div className="lp-book-card-plate">
         <BookCover
           book={book}
@@ -61,8 +61,8 @@ export function BookCard({
       </div>
 
       <div className="lp-book-card-body">
-        <h2 className="lp-book-card-title">{displayTitle(book.title)}</h2>
-        <p className="lp-book-card-author">
+        <h2 className="tome-title lp-book-card-title">{displayTitle(book.title)}</h2>
+        <p className="tome-author lp-book-card-author">
           <AuthorLinks authors={book.authors} />
           {displayYear ? (
             <span className="lp-book-card-year"> · {displayYear}</span>
@@ -98,7 +98,7 @@ export function BookCard({
           ) : null}
           <Link
             href={bookHref}
-            className="lp-book-card-open"
+            className="tome-link lp-book-card-open"
             data-testid="open-the-tome"
           >
             Open the Tome

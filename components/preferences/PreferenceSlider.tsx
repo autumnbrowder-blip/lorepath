@@ -49,7 +49,7 @@ export function PreferenceSlider({
 
   return (
     <div
-      className="preference-codex-box animate-fade-in-up"
+      className="tome-plaque preference-codex-box animate-fade-in-up"
       style={{ animationDelay: `${index * 60}ms` }}
     >
       <CodexBoxOrnament />

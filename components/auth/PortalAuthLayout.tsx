@@ -50,7 +50,7 @@ export function PortalAuthLayout({ children }: { children: React.ReactNode }) {
 
       {/* Parchment login box — fixed tile so form growth never reflows cover */}
       <div className="portal-auth-shell">
-        <div className="portal-auth-parchment">
+        <div className="tome-plaque portal-auth-parchment">
           <div className="pointer-events-none absolute inset-[6px] rounded-[2px] border border-[#a67c2d]/30" />
           <div className="relative z-10">{children}</div>
         </div>

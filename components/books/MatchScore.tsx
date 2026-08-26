@@ -20,7 +20,7 @@ type MatchScoreProps = {
 
 function MatchScoreShell({ children }: { children: React.ReactNode }) {
   return (
-    <section className="preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start">
+    <section className="tome-plaque preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start">
       <CodexBoxOrnament />
       <div className="relative z-[3] mb-2 flex items-center gap-2.5 px-0.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">

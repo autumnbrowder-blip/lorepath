@@ -146,7 +146,7 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="preference-codex-box relative">
+    <section className="tome-plaque preference-codex-box relative">
       <CodexBoxOrnament />
       <div className="relative z-[3] mb-4 flex items-start gap-3 px-1">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
@@ -475,7 +475,7 @@ export default async function FaqPage() {
               </p>
             </SectionCard>
 
-            <div className="preference-codex-box relative text-center">
+            <div className="tome-plaque preference-codex-box relative text-center">
               <CodexBoxOrnament />
               <div className="relative z-[3] flex flex-col items-center px-1 py-2">
                 <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
@@ -501,7 +501,7 @@ export default async function FaqPage() {
               </div>
             </div>
 
-            <div className="preference-codex-box relative text-center">
+            <div className="tome-plaque preference-codex-box relative text-center">
               <CodexBoxOrnament />
               <div className="relative z-[3] px-1 py-1">
                 <p className="font-storybook text-sm font-bold uppercase tracking-[0.22em] nav-dragon-gold">

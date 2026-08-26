@@ -93,7 +93,7 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
   return (
     <section
       aria-labelledby="community-ratings-heading"
-      className="preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start"
+      className="tome-plaque preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start"
       style={{ animationDelay: "100ms" }}
     >
       <CodexBoxOrnament />
