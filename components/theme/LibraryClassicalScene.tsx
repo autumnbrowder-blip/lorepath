@@ -1,7 +1,7 @@
 /**
  * Shared classical library backdrop.
- * Viewport-fixed CSS background (not Next/Image fill) so cover size never
- * recrops when content, dropdowns, or rating controls change layout.
+ * Peter Herrmann Unsplash original (photo O_DUcg4cDlc) as a CSS background
+ * on a viewport-fixed layer so cover size never recrops.
  */
 export function LibraryClassicalScene({
   className = "",

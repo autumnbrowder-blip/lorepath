@@ -41,7 +41,7 @@ export function BookCard({
           book={book}
           variant="card"
           className="object-cover"
-          sizes="88px"
+          sizes="120px"
         />
       </div>
 
@@ -50,7 +50,7 @@ export function BookCard({
         <p className="tome-card-author">
           <AuthorLinks
             authors={book.authors}
-            className="font-medium text-[#f0e4c7]"
+            className="font-medium text-[#e8d5b0]"
           />
           {displayYear ? (
             <span className="tome-card-year"> · {displayYear}</span>

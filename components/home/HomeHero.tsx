@@ -12,7 +12,7 @@ export function HomeHero() {
       <TrackOnMount event="view_home" />
       <LibraryClassicalScene />
 
-      <div className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
+      <div className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6">
         <div className="home-hero-frame">
           <h1
             id="home-headline"
@@ -25,7 +25,7 @@ export function HomeHero() {
             on books the community has marked.
           </p>
           <Link href="/register" className="home-hero-cta">
-            <ScrollText className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <ScrollText className="h-5 w-5 shrink-0" aria-hidden="true" />
             Create free account
           </Link>
         </div>

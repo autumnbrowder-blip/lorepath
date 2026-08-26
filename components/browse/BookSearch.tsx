@@ -653,7 +653,7 @@ export function BookSearch({
           >
             <div className="browse-search-scroll">
               <Search
-                className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#8a6424] sm:left-4"
+                className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#8a6424] sm:left-5"
                 aria-hidden="true"
               />
               <input
@@ -697,7 +697,9 @@ export function BookSearch({
             <SignupPrompt
               variant="inline"
               redirectTo="/browse"
-              className="mt-3 max-w-xl sm:mt-4"
+              description="Save your marks with a free account."
+              showGoodreadsHint={false}
+              className="mt-2.5 max-w-xl"
             />
           ) : null}
         </div>
@@ -714,7 +716,7 @@ export function BookSearch({
           )}
 
           {error && (
-            <div className="alert-error mb-8 backdrop-blur-sm">
+            <div className="alert-error mb-8">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <p>{error}</p>
             </div>
@@ -752,7 +754,7 @@ export function BookSearch({
           ) : books.length > 0 ? (
             <>
               <div className="mb-5">
-                <p className="text-center font-heading text-sm font-medium tracking-[0.06em] text-[#f0d78a] sm:text-[15px]">
+                <p className="text-center font-heading text-base font-medium tracking-[0.04em] text-[#d4b36a] sm:text-lg">
                   {books.length} result{books.length !== 1 ? "s" : ""} for
                   &ldquo;{query}&rdquo;
                 </p>
@@ -777,7 +779,7 @@ export function BookSearch({
                 <div className="mt-10 flex flex-col items-center gap-3">
                   {loadingMore && (
                     <p
-                      className="font-heading text-sm font-medium tracking-wide text-[#f0d78a]"
+                      className="font-heading text-sm font-medium tracking-wide text-[#d4b36a]"
                       aria-live="polite"
                     >
                       Fetching the next page from the archives...

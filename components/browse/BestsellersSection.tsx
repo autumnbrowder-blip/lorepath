@@ -19,12 +19,12 @@ export function BestsellersSection({
   return (
     <section aria-labelledby="bestsellers-heading" className="mb-10">
       <div className="mb-5 text-center">
-        <p className="mb-1 font-heading text-[11px] font-medium uppercase tracking-[0.22em] text-[#f0d78a]/80">
+        <p className="mb-1 font-heading text-xs font-medium uppercase tracking-[0.22em] text-[#d4b36a]/85">
           From the New York Times
         </p>
         <h2
           id="bestsellers-heading"
-          className="font-display text-xl font-medium tracking-[0.06em] text-[#f0d78a] sm:text-2xl"
+          className="browse-section-title"
         >
           New Releases & Bestsellers
         </h2>
