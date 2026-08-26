@@ -13,8 +13,8 @@ import type { BookSource, BookSummary } from "@/types/book";
  * Open Library is deliberately below Google / ISBNdb / Hardcover.
  */
 const SOURCE_PRIORITY: Record<BookSource, number> = {
+  hardcover: 7,
   isbndb: 6,
-  hardcover: 5,
   google: 5,
   bigbook: 3,
   nyt: 2,
@@ -60,6 +60,7 @@ function pickBestDescription(
       text: entry.description?.trim() ?? "",
       score:
         descriptionScore(entry.description) +
+        (entry.source === "hardcover" ? 400 : 0) +
         (isCommercialSource(entry.source) ? 200 : 0),
     }))
     .filter((entry) => entry.text.length > 0)
@@ -76,6 +77,7 @@ function pickBestCover(
       if (!url) return null;
       // Prefer https commercial CDN covers over bare OL placeholders when both exist.
       let score = isCommercialSource(entry.source) ? 10 : 1;
+      if (entry.source === "hardcover") score += 12;
       if (/books\.google|googleapis|isbndb|hardcover|cloudfront/i.test(url)) {
         score += 5;
       }
@@ -94,31 +96,48 @@ function pickBestCover(
  * duplicate and fill each metadata field from the strongest record — never keep
  * a weak OL blurb/cover when Google / ISBNdb / Hardcover supplied better data.
  */
+function hardcoverRecord(
+  identity: BookSummary,
+  a: BookSummary,
+  b: BookSummary
+): BookSummary | null {
+  return [identity, a, b].find((book) => book.source === "hardcover") ?? null;
+}
+
 export function mergePreferredBookFields(
   identity: BookSummary,
   a: BookSummary,
   b: BookSummary
 ): BookSummary {
+  const hc = hardcoverRecord(identity, a, b);
+
   const titleCandidates = [identity.title, a.title, b.title].filter(isGoodTitle);
   const title =
-    titleCandidates.sort((x, y) => x!.length - y!.length)[0] ?? "Untitled";
+    (hc && isGoodTitle(hc.title) ? hc.title : null) ??
+    titleCandidates.sort((x, y) => x!.length - y!.length)[0] ??
+    "Untitled";
 
   const authors =
+    (hc && isGoodAuthors(hc.authors) ? hc.authors : null) ||
     (isGoodAuthors(identity.authors) ? identity.authors : null) ||
     (isGoodAuthors(a.authors) ? a.authors : null) ||
     (isGoodAuthors(b.authors) ? b.authors : null) || ["Unknown author"];
 
-  const description = pickBestDescription([
-    { source: identity.source, description: identity.description },
-    { source: a.source, description: a.description },
-    { source: b.source, description: b.description },
-  ]);
+  const description =
+    (hc && hasRealDescription(hc) ? hc.description : null) ??
+    pickBestDescription([
+      { source: identity.source, description: identity.description },
+      { source: a.source, description: a.description },
+      { source: b.source, description: b.description },
+    ]);
 
-  const coverUrl = pickBestCover([
-    { source: identity.source, coverUrl: identity.coverUrl },
-    { source: a.source, coverUrl: a.coverUrl },
-    { source: b.source, coverUrl: b.coverUrl },
-  ]);
+  const coverUrl =
+    (hc?.coverUrl?.trim() || null) ??
+    pickBestCover([
+      { source: identity.source, coverUrl: identity.coverUrl },
+      { source: a.source, coverUrl: a.coverUrl },
+      { source: b.source, coverUrl: b.coverUrl },
+    ]);
 
   const publishedYear = pickPublishedYear(
     identity.publishedYear,
@@ -150,9 +169,12 @@ export function mergePreferredBookFields(
         );
 
   const pageCount =
-    identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;
+    hc?.pageCount ?? identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;
 
   const genreEvidence = [
+    ...(hc?.genres.length
+      ? [{ source: "hardcover" as const, categories: hc.genres }]
+      : []),
     { source: identity.source, categories: identity.genres },
     { source: a.source, categories: a.genres },
     { source: b.source, categories: b.genres },

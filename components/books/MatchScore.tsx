@@ -20,13 +20,13 @@ type MatchScoreProps = {
 
 function MatchScoreShell({ children }: { children: React.ReactNode }) {
   return (
-    <section className="tome-plaque preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start">
+    <section className="ornate-plaque preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start">
       <CodexBoxOrnament />
       <div className="relative z-[3] mb-2 flex items-center gap-2.5 px-0.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
           <Target className="h-4 w-4" />
         </div>
-        <h2 className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg">
+        <h2 className="font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg">
           Match Score
         </h2>
       </div>
@@ -109,7 +109,7 @@ export function MatchScore({
               <span className="truncate font-heading text-[0.8125rem] font-medium leading-tight nav-dragon-gold sm:text-sm">
                 {item.label}
               </span>
-              <span className="shrink-0 font-heading text-[0.8125rem] font-bold tabular-nums leading-tight nav-dragon-gold sm:text-sm">
+              <span className="shrink-0 font-heading text-[0.8125rem] font-medium tabular-nums leading-tight nav-dragon-gold sm:text-sm">
                 {item.score}%
               </span>
             </div>

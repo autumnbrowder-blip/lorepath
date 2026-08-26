@@ -117,7 +117,7 @@ export function OnboardingGuideCard({
 
   return (
     <aside
-      className={`tome-plaque preference-codex-box relative ${padding} ${className}`}
+      className={`ornate-plaque preference-codex-box relative ${padding} ${className}`}
       aria-labelledby={`onboarding-guide-${state}-title`}
     >
       <CodexBoxOrnament />
@@ -141,7 +141,7 @@ export function OnboardingGuideCard({
 
         <h2
           id={`onboarding-guide-${state}-title`}
-          className={`font-storybook font-semibold tracking-[0.06em] nav-dragon-gold ${
+          className={`font-heading font-medium tracking-normal nav-dragon-gold ${
             variant === "short"
               ? "text-lg sm:text-xl"
               : "text-xl sm:text-2xl"

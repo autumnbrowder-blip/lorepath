@@ -37,11 +37,11 @@ export function ContactArchivesNote({
     return (
       <aside
         aria-label="Contact the archives"
-        className={`tome-plaque preference-codex-box relative mt-6 !p-3.5 !pt-4 text-center sm:!p-4 sm:!pt-4 ${className}`}
+        className={`ornate-plaque preference-codex-box relative mt-6 !p-3.5 !pt-4 text-center sm:!p-4 sm:!pt-4 ${className}`}
       >
         <CodexBoxOrnament />
         <div className="relative z-[3] px-1 py-0.5">
-          <h2 className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg">
+          <h2 className="font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg">
             Contact the Archives
           </h2>
           <p className="mt-2 font-heading text-sm leading-relaxed nav-dragon-gold">
@@ -59,7 +59,7 @@ export function ContactArchivesNote({
     >
       <span className="inline-flex items-center justify-center gap-2 text-gold-200/70">
         <Mail className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden="true" />
-        <h2 className="font-storybook text-[11px] font-normal uppercase tracking-[0.16em]">
+        <h2 className="font-display text-[11px] font-normal uppercase tracking-[0.08em]">
           Contact the Archives
         </h2>
       </span>

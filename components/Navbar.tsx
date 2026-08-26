@@ -1,8 +1,16 @@
 "use client";
 
 import { AuthNav } from "@/components/AuthNav";
+import { Cinzel_Decorative } from "next/font/google";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import "./Navbar.css";
+
+const wordmark = Cinzel_Decorative({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-logo",
+});
 
 const navLinks = [
   { href: "/browse", label: "Browse" },
@@ -21,7 +29,7 @@ export function Navbar() {
         <Link
           href="/"
           aria-label="LorePath home"
-          className="site-nav-wordmark cursor-pointer justify-self-start"
+          className={`${wordmark.className} ${wordmark.variable} site-nav-wordmark cursor-pointer justify-self-start`}
         >
           LorePath
         </Link>

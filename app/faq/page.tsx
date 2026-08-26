@@ -146,17 +146,17 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="tome-plaque preference-codex-box relative">
+    <section className="ornate-plaque preference-codex-box relative">
       <CodexBoxOrnament />
       <div className="relative z-[3] mb-4 flex items-start gap-3 px-1">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
           <Icon className="h-5 w-5" />
         </div>
         <div>
-          <p className="font-storybook text-[11px] font-bold uppercase tracking-[0.28em] nav-dragon-gold">
+          <p className="font-display text-[11px] font-normal uppercase tracking-[0.08em] nav-dragon-gold">
             {eyebrow}
           </p>
-          <h2 className="mt-1 font-storybook text-2xl font-bold tracking-[0.08em] nav-dragon-gold">
+          <h2 className="mt-1 font-heading text-2xl font-medium tracking-normal nav-dragon-gold">
             {title}
           </h2>
         </div>
@@ -185,11 +185,11 @@ export default async function FaqPage() {
 
       <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-7 sm:px-6 sm:py-14">
         <header className="mb-5 text-center sm:mb-7">
-          <p className="mx-auto flex items-center justify-center gap-2 font-storybook text-[11px] font-bold uppercase tracking-[0.28em] nav-dragon-gold sm:text-xs sm:tracking-[0.32em]">
+          <p className="mx-auto flex items-center justify-center gap-2 font-display text-[11px] font-normal uppercase tracking-[0.08em] nav-dragon-gold sm:text-xs">
             <Sparkles className="h-3.5 w-3.5 text-[#f0d78a]" />
             From the Wizard&apos;s Desk
           </p>
-          <h1 className="mt-2.5 font-storybook text-3xl font-bold tracking-[0.05em] nav-dragon-gold sm:mt-3 sm:text-4xl md:text-5xl sm:tracking-[0.06em]">
+          <h1 className="mt-2.5 font-heading text-3xl font-medium tracking-normal nav-dragon-gold sm:mt-3 sm:text-4xl md:text-5xl">
             Frequently Asked Questions
           </h1>
         </header>
@@ -252,7 +252,7 @@ export default async function FaqPage() {
                 “bad.”
               </p>
 
-              <p className="mt-4 font-storybook text-sm font-bold uppercase tracking-[0.2em] nav-dragon-gold">
+              <p className="mt-4 font-display text-sm font-normal uppercase tracking-[0.08em] nav-dragon-gold">
                 Understanding the 0–5 Scale
               </p>
               <ul className="mt-2.5 space-y-2">
@@ -261,7 +261,7 @@ export default async function FaqPage() {
                     key={level}
                     className="flex items-start gap-3 codex-inset px-4 py-3"
                   >
-                    <span className="inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-600 to-gold-500 px-1.5 font-storybook text-xs font-bold text-forest-950">
+                    <span className="inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-600 to-gold-500 px-1.5 font-heading text-xs font-medium text-forest-950">
                       {level}
                     </span>
                     <span className="font-heading text-lg leading-snug nav-dragon-gold">
@@ -271,7 +271,7 @@ export default async function FaqPage() {
                 ))}
               </ul>
 
-              <p className="mt-5 font-storybook text-sm font-bold uppercase tracking-[0.2em] nav-dragon-gold">
+              <p className="mt-5 font-display text-sm font-normal uppercase tracking-[0.08em] nav-dragon-gold">
                 Category details
               </p>
               <p className="mt-2 font-heading text-lg leading-relaxed nav-dragon-gold">
@@ -290,7 +290,7 @@ export default async function FaqPage() {
                       <span>{category.label}</span>
                       <span
                         aria-hidden="true"
-                        className="faq-rating-caret shrink-0 font-storybook text-xs font-bold uppercase tracking-[0.18em] text-[#e2c06a]/80"
+                        className="faq-rating-caret shrink-0 font-display text-xs font-normal tracking-normal text-[#e2c06a]/80"
                       >
                         ▾
                       </span>
@@ -475,16 +475,16 @@ export default async function FaqPage() {
               </p>
             </SectionCard>
 
-            <div className="tome-plaque preference-codex-box relative text-center">
+            <div className="ornate-plaque preference-codex-box relative text-center">
               <CodexBoxOrnament />
               <div className="relative z-[3] flex flex-col items-center px-1 py-2">
                 <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
                   <UserPlus className="h-5 w-5" />
                 </div>
-                <p className="font-storybook text-[11px] font-bold uppercase tracking-[0.28em] nav-dragon-gold">
+                <p className="font-display text-[11px] font-normal uppercase tracking-[0.08em] nav-dragon-gold">
                   Join the archives
                 </p>
-                <h2 className="mt-1 font-storybook text-2xl font-bold tracking-[0.08em] nav-dragon-gold">
+                <h2 className="mt-1 font-heading text-2xl font-medium tracking-normal nav-dragon-gold">
                   Sign up for free
                 </h2>
                 <p className="mt-3 max-w-md font-heading text-lg leading-relaxed nav-dragon-gold">
@@ -501,10 +501,10 @@ export default async function FaqPage() {
               </div>
             </div>
 
-            <div className="tome-plaque preference-codex-box relative text-center">
+            <div className="ornate-plaque preference-codex-box relative text-center">
               <CodexBoxOrnament />
               <div className="relative z-[3] px-1 py-1">
-                <p className="font-storybook text-sm font-bold uppercase tracking-[0.22em] nav-dragon-gold">
+                <p className="font-display text-sm font-normal uppercase tracking-[0.08em] nav-dragon-gold">
                   Ready to turn a page?
                 </p>
                 <p className="mt-3 font-heading text-lg leading-relaxed nav-dragon-gold">

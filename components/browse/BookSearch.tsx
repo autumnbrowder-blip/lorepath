@@ -647,7 +647,7 @@ export function BookSearch({
           >
             <div className="browse-search-scroll">
               <Search
-                className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-[#8a6424] sm:left-5"
+                className="browse-search-icon"
                 aria-hidden="true"
               />
               <input
@@ -655,26 +655,15 @@ export function BookSearch({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 // Search runs only on form submit — never on each keystroke
-                placeholder="Search by title, author, or ISBN..."
+                placeholder="Search by title, author, or ISBN…"
                 autoComplete="off"
                 className="browse-search-ink"
-                style={{
-                  color: "#2f1f0f",
-                  fontFamily: "var(--font-heading), Georgia, serif",
-                  WebkitTextFillColor: "#2f1f0f",
-                  caretColor: "#2f1f0f",
-                  background: "transparent",
-                  backgroundColor: "transparent",
-                  border: "none",
-                  boxShadow: "none",
-                  colorScheme: "light",
-                }}
               />
             </div>
             <button
               type="submit"
               disabled={loading || loadingMore || !query.trim()}
-              className="parchment-search-btn"
+              className="browse-search-submit"
             >
               {loading ? (
                 <>

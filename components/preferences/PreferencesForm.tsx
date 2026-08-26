@@ -195,13 +195,13 @@ export function PreferencesForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="tome-plaque preference-codex-box flex items-start gap-3">
+      <div className="ornate-plaque preference-codex-box flex items-start gap-3">
         <CodexBoxOrnament />
         <div className="relative z-[3] flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent shadow-[0_0_16px_rgba(166,124,45,0.22)]">
           <Scroll className="h-5 w-5" />
         </div>
         <div className="relative z-[3]">
-          <h2 className="font-storybook text-2xl font-bold tracking-[0.14em] nav-dragon-gold">
+          <h2 className="font-heading text-2xl font-medium tracking-normal nav-dragon-gold">
             Your Reading Path
           </h2>
           <p className="mt-2 font-heading text-lg leading-relaxed tracking-wide nav-dragon-gold">

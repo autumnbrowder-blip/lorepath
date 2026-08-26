@@ -2,27 +2,21 @@ import { cleanDescription, parsePublishedYear } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 
 /**
- * Optional Hardcover.app enrichment + browse search source (GraphQL, token-gated).
- * Soft-fails when HARDCOVER_API_TOKEN is unset.
+ * Optional Hardcover.app browse search + enrichment (GraphQL, token-gated).
+ * Soft-fails when HARDCOVER_API_TOKEN is unset — other providers still return.
  */
 const HARDCOVER_ENDPOINT = "https://api.hardcover.app/v1/graphql";
 const FETCH_TIMEOUT_MS = 3000;
 const HARDCOVER_ID_PREFIX = "hardcover-";
-const HARDCOVER_MEMO_TTL_MS = 10 * 60 * 1000;
-const HARDCOVER_MEMO_MAX = 80;
 
-const hardcoverSearchMemo = new Map<
-  string,
-  { expires: number; books: HardcoverBook[] }
->();
-
-const SEARCH_QUERY = `query LorePathSearch($query: String!) {
-  search(query: $query, query_type: "Book", per_page: 8, page: 1) {
+const SEARCH_QUERY = `query LorePathSearch($query: String!, $page: Int!) {
+  search(query: $query, query_type: "Book", per_page: 8, page: $page) {
     results
   }
 }`;
 
 export type HardcoverBook = {
+  id: string;
   title: string;
   authors: string[];
   description: string | null;
@@ -37,8 +31,10 @@ export function isHardcoverConfigured(): boolean {
   return Boolean(process.env.HARDCOVER_API_TOKEN?.trim());
 }
 
-function authorizationHeader(token: string): string {
-  return /^bearer\s/i.test(token) ? token : `Bearer ${token}`;
+function hardcoverBearerToken(): string | null {
+  const raw = process.env.HARDCOVER_API_TOKEN?.trim();
+  if (!raw) return null;
+  return raw.replace(/^bearer\s+/i, "").trim() || null;
 }
 
 function textList(value: unknown): string[] {
@@ -79,6 +75,29 @@ function readHits(results: unknown): Record<string, unknown>[] {
     .filter((hit): hit is Record<string, unknown> => hit !== null);
 }
 
+function slugifyTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function hardcoverRecordId(
+  hit: Record<string, unknown>,
+  title: string,
+  isbnDigits: string
+): string {
+  const raw = hit.id ?? hit.book_id ?? hit.work_id;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return String(raw);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim().replace(/\s+/g, "-").slice(0, 64);
+  }
+  return isbnDigits || slugifyTitle(title) || "work";
+}
+
 function toHardcoverBook(hit: Record<string, unknown>): HardcoverBook | null {
   const title = typeof hit.title === "string" ? hit.title.trim() : "";
   if (!title) return null;
@@ -86,8 +105,15 @@ function toHardcoverBook(hit: Record<string, unknown>): HardcoverBook | null {
   const image = hit.image as { url?: unknown } | undefined;
   const coverUrl =
     typeof image?.url === "string" && image.url.trim() ? image.url.trim() : null;
+  const isbns = textList(hit.isbns);
+  const isbnDigits =
+    isbns.find((value) => value.replace(/\D/g, "").length >= 10)?.replace(
+      /\D/g,
+      ""
+    ) ?? "";
 
   return {
+    id: `${HARDCOVER_ID_PREFIX}${hardcoverRecordId(hit, title, isbnDigits)}`,
     title,
     authors: textList(hit.author_names ?? hit.contributions),
     description: cleanDescription(
@@ -100,22 +126,24 @@ function toHardcoverBook(hit: Record<string, unknown>): HardcoverBook | null {
     ),
     pageCount: typeof hit.pages === "number" ? hit.pages : null,
     genres: textList(hit.genres),
-    isbns: textList(hit.isbns),
+    isbns,
   };
 }
 
-async function runHardcoverSearch(query: string): Promise<HardcoverBook[]> {
-  const token = process.env.HARDCOVER_API_TOKEN?.trim();
-  if (!token || !query.trim()) return [];
-
-  const memoKey = query.trim().toLowerCase();
-  const memoHit = hardcoverSearchMemo.get(memoKey);
-  if (memoHit && memoHit.expires > Date.now()) {
-    return memoHit.books;
-  }
+/**
+ * Live Hardcover search for this query only. Never reuses another q's payload.
+ */
+async function runHardcoverSearch(
+  query: string,
+  page = 1
+): Promise<HardcoverBook[]> {
+  const token = hardcoverBearerToken();
+  const trimmed = query.trim();
+  if (!token || !trimmed) return [];
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const pageNumber = Math.max(1, page);
 
   try {
     const response = await fetch(HARDCOVER_ENDPOINT, {
@@ -124,18 +152,22 @@ async function runHardcoverSearch(query: string): Promise<HardcoverBook[]> {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: authorizationHeader(token),
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         query: SEARCH_QUERY,
-        variables: { query: query.trim().slice(0, 150) },
+        variables: {
+          query: trimmed.slice(0, 150),
+          page: pageNumber,
+        },
       }),
     });
 
     if (!response.ok) {
       console.error("[hardcover] search failed:", {
         status: response.status,
-        query,
+        query: trimmed,
+        page: pageNumber,
       });
       return [];
     }
@@ -147,28 +179,20 @@ async function runHardcoverSearch(query: string): Promise<HardcoverBook[]> {
 
     if (payload.errors?.length) {
       console.error("[hardcover] search returned errors:", {
-        query,
+        query: trimmed,
+        page: pageNumber,
         message: payload.errors[0]?.message,
       });
       return [];
     }
 
-    const books = readHits(payload.data?.search?.results)
+    return readHits(payload.data?.search?.results)
       .map((hit) => toHardcoverBook(hit))
       .filter((book): book is HardcoverBook => book !== null);
-
-    if (hardcoverSearchMemo.size >= HARDCOVER_MEMO_MAX) {
-      const first = hardcoverSearchMemo.keys().next().value;
-      if (first) hardcoverSearchMemo.delete(first);
-    }
-    hardcoverSearchMemo.set(memoKey, {
-      expires: Date.now() + HARDCOVER_MEMO_TTL_MS,
-      books,
-    });
-    return books;
   } catch (error) {
     console.error("[hardcover] search error:", {
-      query,
+      query: trimmed,
+      page: pageNumber,
       message: error instanceof Error ? error.message : String(error),
     });
     return [];
@@ -196,7 +220,8 @@ export async function fetchHardcoverBook(
     (name) => name && name.toLowerCase() !== "unknown author"
   );
   const results = await runHardcoverSearch(
-    author ? `${title} ${author}` : title
+    author ? `${title} ${author}` : title,
+    1
   );
   if (results.length === 0) return null;
 
@@ -211,15 +236,11 @@ export async function fetchHardcoverBook(
     );
   });
 
-  return exact ?? results.find((book) => normalizeForCompare(book.title) === wantedTitle) ?? null;
-}
-
-function slugifyTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+  return (
+    exact ??
+    results.find((book) => normalizeForCompare(book.title) === wantedTitle) ??
+    null
+  );
 }
 
 function toBookSummary(book: HardcoverBook): BookSummary {
@@ -227,14 +248,8 @@ function toBookSummary(book: HardcoverBook): BookSummary {
     book.isbns.find((value) => value.replace(/\D/g, "").length >= 10) ?? null;
   const isbnDigits = isbn?.replace(/\D/g, "") ?? "";
 
-  // Prefer ISBN-backed ids so Open the Tome resolves via existing ISBN paths.
-  const id =
-    isbnDigits.length >= 10
-      ? `isbndb-${isbnDigits}`
-      : `${HARDCOVER_ID_PREFIX}${slugifyTitle(book.title) || "work"}`;
-
   return {
-    id,
+    id: book.id,
     title: book.title,
     authors: book.authors.length > 0 ? book.authors : ["Unknown author"],
     coverUrl: book.coverUrl,
@@ -254,11 +269,12 @@ export type HardcoverPageResult = {
 };
 
 /**
- * Browse flood search via Hardcover Typesense. Soft-fails when unconfigured.
+ * Browse flood search via Hardcover Typesense.
+ * Missing HARDCOVER_API_TOKEN → empty page so Google/OL/Gutendex still return.
  */
 export async function searchHardcover(
   query: string,
-  _page = 1
+  page = 1
 ): Promise<HardcoverPageResult> {
   if (!isHardcoverConfigured() || !query.trim()) {
     return { books: [], hasMore: false };
@@ -272,10 +288,11 @@ export async function searchHardcover(
     .trim();
   if (!cleaned) return { books: [], hasMore: false };
 
-  const hits = await runHardcoverSearch(cleaned);
+  const hits = await runHardcoverSearch(cleaned, page);
   const books = hits
     .map((hit) => toBookSummary(hit))
-    .filter((book) => Boolean(book.title?.trim()));
+    .filter((book) => Boolean(book.title?.trim()))
+    .map((book) => ({ ...book, genres: [...book.genres] }));
 
   return { books, hasMore: false };
 }

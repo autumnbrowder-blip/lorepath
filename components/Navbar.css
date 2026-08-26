@@ -1,0 +1,19 @@
+/* Logo only: previous Cinzel Decorative wordmark (1.65rem / 2rem, gold, not italic). */
+a.site-nav-wordmark {
+  font-family: var(--font-logo), "Cinzel Decorative", Georgia, serif;
+  font-size: 1.65rem;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: #d4b36a;
+  -webkit-text-fill-color: #d4b36a;
+  text-transform: none;
+  text-shadow: 0 1px 0 rgba(20, 12, 4, 0.7);
+}
+
+@media (min-width: 640px) {
+  a.site-nav-wordmark {
+    font-size: 2rem;
+  }
+}

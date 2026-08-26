@@ -13,7 +13,7 @@ export function HomeHero() {
       <LibraryClassicalScene />
 
       <div className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6">
-        <div className="tome-plaque home-hero-frame">
+        <div className="ornate-plaque home-hero-frame">
           <h1
             id="home-headline"
             className="home-hero-title"

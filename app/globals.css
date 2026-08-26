@@ -27,9 +27,9 @@
   --glow-strong: rgba(166, 124, 45, 0.32);
   --vine: rgba(61, 107, 79, 0.12);
 
-  --font-body: var(--font-storybook), Georgia, serif;
-  --font-heading: var(--font-storybook), Georgia, serif;
-  --font-display: var(--font-storybook), Georgia, serif;
+  --font-body: var(--font-heading), Georgia, serif;
+  --font-display: var(--font-label), Georgia, serif;
+  --font-storybook: var(--font-heading);
   --antique-gold: #a67c2d;
   --antique-gold-deep: #8a6424;
   --antique-gold-soft: #b38b4d;
@@ -38,7 +38,7 @@
 .dark {
   /* LorePath — deep forest & antique gold (dark mode) */
   --background: #080f0b;
-  --foreground: #f0ead8;
+  --foreground: #e8d7b0;
   --surface: #0f1f17;
   --surface-elevated: #152a1e;
   --border: #2d4a38;
@@ -129,8 +129,8 @@
   h5,
   h6 {
     font-family: var(--font-heading), Georgia, serif;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-weight: 500;
+    letter-spacing: 0.01em;
     line-height: 1.2;
   }
 
@@ -293,12 +293,13 @@
   }
 
   .site-nav-gold {
-    font-family: var(--font-display), Georgia, "Times New Roman", serif;
+    font-family: var(--font-label), Georgia, "Times New Roman", serif;
     font-size: 1rem;
     font-style: normal;
-    font-weight: 500;
-    letter-spacing: 0.06em;
+    font-weight: 400;
+    letter-spacing: 0.04em;
     line-height: 1.2;
+    text-transform: none;
   }
 
   @media (min-width: 640px) {
@@ -590,7 +591,17 @@
     display: flex;
     flex: 1 1 auto;
     width: 100%;
-    background-color: #070e0a;
+    min-height: 100vh;
+    background-color: #07080a;
+    background-image: url("/images/auth-hall.jpg");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+    background-attachment: fixed;
+    filter: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    transform: none;
   }
 
   .preferences-page {
@@ -606,7 +617,6 @@
    * Chamfered corners + inner gold line match the mock overlay.
    */
   .home-hero-frame {
-    --hero-notch: 16px;
     position: relative;
     z-index: 1;
     display: flex;
@@ -616,34 +626,11 @@
     margin-inline: auto;
     padding: 2.35rem 1.75rem 2.4rem;
     text-align: center;
-    transform: none;
-    transition: none;
     color: #d4b36a;
-    background: linear-gradient(
-      165deg,
-      rgba(14, 40, 32, 0.78) 0%,
-      rgba(7, 18, 13, 0.86) 100%
-    );
-    border: 1px solid rgba(201, 162, 39, 0.82);
-    box-shadow:
-      0 28px 56px rgba(0, 0, 0, 0.48),
-      inset 0 0 0 7px rgba(8, 20, 14, 0.5),
-      inset 0 0 0 8px rgba(212, 179, 106, 0.55);
-    clip-path: polygon(
-      var(--hero-notch) 0,
-      calc(100% - var(--hero-notch)) 0,
-      100% var(--hero-notch),
-      100% calc(100% - var(--hero-notch)),
-      calc(100% - var(--hero-notch)) 100%,
-      var(--hero-notch) 100%,
-      0 calc(100% - var(--hero-notch)),
-      0 var(--hero-notch)
-    );
   }
 
   @media (min-width: 640px) {
     .home-hero-frame {
-      --hero-notch: 18px;
       width: min(100%, 57.5rem);
       padding: 2.85rem 3rem 2.95rem;
     }
@@ -651,15 +638,14 @@
 
   .home-hero-title {
     max-width: 46rem;
-    font-family: var(--font-display), Georgia, serif;
+    font-family: var(--font-heading), Georgia, serif;
     font-size: 2rem;
-    font-weight: 600;
-    line-height: 1.12;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.18;
+    letter-spacing: 0.01em;
+    text-transform: none;
     color: #d4b36a;
     -webkit-text-fill-color: #d4b36a;
-    text-shadow: 0 1px 0 rgba(20, 12, 4, 0.85);
   }
 
   @media (min-width: 640px) {
@@ -679,9 +665,9 @@
     max-width: 40rem;
     font-family: var(--font-heading), Georgia, serif;
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: 400;
     line-height: 1.5;
-    color: #e8d5b0;
+    color: #e8d7b0;
   }
 
   @media (min-width: 640px) {
@@ -699,11 +685,11 @@
     margin-top: 1.65rem;
     min-height: 3.15rem;
     padding: 0.85rem 1.7rem;
-    font-family: var(--font-display), Georgia, serif;
-    font-size: 0.82rem;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    font-family: var(--font-heading), Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: none;
     text-decoration: none;
     color: #1a1205;
     -webkit-text-fill-color: #1a1205;
@@ -793,25 +779,13 @@
     padding: 3rem 1.5rem;
   }
 
-  /* Auth parchment card — fixed tile; form height changes never reflow cover */
+  /* Auth plaque — layout only; ornate-plaque owns the box */
   .portal-auth-parchment {
     position: relative;
     z-index: 0;
     width: 100%;
-    max-width: 28rem; /* max-w-md */
-    overflow: hidden;
-    border-radius: 0.375rem; /* rounded-md */
-    padding: 1.75rem; /* p-7 */
-    background-color: #e6d9b8;
-    background-image: url("/images/parchment.jpg");
-    background-size: 520px auto;
-    background-position: top left;
-    background-repeat: repeat;
-    background-attachment: scroll;
-    border: 3px solid #a67c2d;
-    box-shadow:
-      0 6px 16px rgba(0, 0, 0, 0.35),
-      inset 0 0 40px rgba(166, 124, 45, 0.14);
+    max-width: 28rem;
+    padding: 1.75rem;
     font-family: var(--font-heading), Georgia, serif;
     transition: none;
     transform: none;
@@ -911,13 +885,13 @@
   }
 
   .browse-section-title {
-    font-family: var(--font-display), Georgia, serif;
+    font-family: var(--font-heading), Georgia, serif;
     font-size: 1.65rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    text-transform: none;
     color: #d4b36a;
     -webkit-text-fill-color: #d4b36a;
-    text-shadow: 0 1px 0 rgba(20, 12, 4, 0.75);
   }
 
   @media (min-width: 640px) {
@@ -1110,10 +1084,10 @@
     border: 2px solid #c9a227;
     background: linear-gradient(180deg, #184033 0%, #0c241c 100%);
     padding: 0.75rem 1.55rem;
-    font-family: var(--font-display), Georgia, serif;
+    font-family: var(--font-label), Georgia, serif;
     font-size: 1.05rem;
-    font-weight: 500;
-    letter-spacing: 0.08em;
+    font-weight: 400;
+    letter-spacing: 0.04em;
     text-transform: none;
     color: #d4b36a;
     -webkit-text-fill-color: #d4b36a;
@@ -1268,7 +1242,7 @@
   }
 
   .page-title {
-    @apply metallic-gold font-storybook text-3xl font-normal tracking-[0.06em];
+    @apply metallic-gold font-heading text-3xl font-medium tracking-normal;
   }
 
   .page-subtitle {
@@ -1276,7 +1250,8 @@
   }
 
   .section-label {
-    @apply mb-2 flex items-center gap-2 font-storybook text-[11px] font-normal uppercase tracking-[0.28em];
+    @apply mb-2 flex items-center gap-2 text-[11px] font-normal uppercase tracking-[0.08em];
+    font-family: var(--font-label), Georgia, serif;
   }
 
   .gold-gradient-text {
@@ -1285,7 +1260,7 @@
 
   /* Raised antique-gold lettering, as if carved from solid metal */
   .carved-gold-text {
-    font-family: var(--font-storybook), var(--font-display), Georgia, serif;
+    font-family: var(--font-heading), Georgia, serif;
     font-weight: 400;
     letter-spacing: 0.03em;
   }
@@ -1624,11 +1599,11 @@
   .match-score-seal-value {
     position: relative;
     z-index: 2;
-    font-family: var(--font-storybook), var(--font-display), Georgia, serif;
+    font-family: var(--font-heading), Georgia, serif;
     font-size: 1.55rem;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.01em;
     color: #f0d78a;
     -webkit-text-fill-color: #f0d78a;
     text-shadow:
@@ -1708,10 +1683,10 @@
   }
 
   .match-score-badge-label {
-    font-family: var(--font-storybook), var(--font-display), Georgia, serif;
+    font-family: var(--font-heading), Georgia, serif;
     font-size: 0.875rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    font-weight: 500;
+    letter-spacing: 0.01em;
     line-height: 1.25;
     /* Solid antique gold — no background-clip white-box risk */
     color: #f0d78a;
@@ -2171,106 +2146,93 @@
 
 /* ============================================================
    Browse search — UNLAYERED so it beats Tailwind utilities.
-   Parchment bar + attached dark-green Search button (forced even in .dark)
+   One 44px parchment + forest-green control on the library photo.
    ============================================================ */
 .browse-search-row {
   position: relative;
   display: flex;
-  width: min(100%, 52rem);
-  max-width: 52rem;
-  flex-direction: column;
+  flex-direction: row;
   align-items: stretch;
+  width: min(100%, 720px);
+  max-width: 720px;
+  height: 44px;
   margin-left: auto;
   margin-right: auto;
-  gap: 0.55rem;
-}
-
-@media (min-width: 640px) {
-  .browse-search-row {
-    flex-direction: row;
-    align-items: stretch;
-    gap: 0;
-  }
+  gap: 0;
 }
 
 .browse-search-scroll {
   position: relative !important;
+  display: flex !important;
   flex: 1 1 auto !important;
-  width: 100% !important;
-  min-height: 3.65rem;
-  overflow: visible !important;
+  align-items: center !important;
+  width: auto !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  overflow: hidden !important;
   color-scheme: light !important;
-  background-color: #e4d4ad !important;
-  background-image:
-    linear-gradient(180deg, rgba(248, 236, 204, 0.28), rgba(196, 168, 108, 0.18)),
-    url("/images/parchment.jpg") !important;
-  background-size: cover !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  border: 2px solid #c9a227 !important;
-  border-radius: 2px 0 0 2px;
-  box-shadow:
-    inset 0 0 0 1px rgba(232, 204, 134, 0.45),
-    inset 0 0 22px rgba(90, 60, 20, 0.1),
-    0 10px 24px rgba(0, 0, 0, 0.38) !important;
+  background: #efe3c0 !important;
+  background-image: none !important;
+  border: 1px solid #c4a056 !important;
+  border-right: 0 !important;
+  border-radius: 2px 0 0 2px !important;
+  box-shadow: none !important;
 }
 
-@media (min-width: 640px) {
-  .browse-search-scroll {
-    border-right-width: 0 !important;
-    border-radius: 2px 0 0 2px !important;
-  }
-}
-
-.browse-search-scroll::before {
-  content: "" !important;
-  display: block !important;
-  pointer-events: none !important;
-  position: absolute !important;
-  inset: 5px !important;
-  border: 1px solid rgba(201, 162, 39, 0.55) !important;
-  z-index: 1 !important;
-}
-
+.browse-search-scroll::before,
 .browse-search-scroll::after {
-  content: "" !important;
-  display: block !important;
-  pointer-events: none !important;
-  position: absolute !important;
-  inset: -3px !important;
-  z-index: 2 !important;
-  background:
-    linear-gradient(#c9a227, #c9a227) 0 0 / 18px 3px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 0 0 / 3px 18px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 100% 0 / 18px 3px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 100% 0 / 3px 18px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 0 100% / 18px 3px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 0 100% / 3px 18px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 100% 100% / 18px 3px no-repeat,
-    linear-gradient(#c9a227, #c9a227) 100% 100% / 3px 18px no-repeat;
+  content: none !important;
+  display: none !important;
 }
 
-.browse-search-row .parchment-search-btn {
+.browse-search-icon {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 0.7rem;
+  z-index: 2;
+  width: 0.9rem;
+  height: 0.9rem;
+  transform: translateY(-50%);
+  color: #3f2a1e;
+  opacity: 0.55;
+}
+
+.browse-search-row .browse-search-submit {
+  display: inline-flex;
   flex: 0 0 auto;
-  min-height: 3.65rem;
-  width: 100%;
-  border: 2px solid #c9a227;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #1a4638 0%, #0c241c 100%);
-  box-shadow: inset 0 0 0 1px rgba(212, 179, 106, 0.32);
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: auto;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 0 1.25rem;
+  border: 1px solid #c4a056;
+  border-radius: 0 2px 2px 0;
+  background: #14261a;
+  box-shadow: none;
   font-family: var(--font-heading), Georgia, serif;
-  font-size: 1.22rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-style: normal;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: none;
+  color: #d4b36a;
+  -webkit-text-fill-color: #d4b36a;
 }
 
-@media (min-width: 640px) {
-  .browse-search-row .parchment-search-btn {
-    width: auto;
-    min-width: 9.5rem;
-    border-left-width: 2px;
-    border-radius: 0 2px 2px 0;
-  }
+.browse-search-row .browse-search-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.browse-search-row .browse-search-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .browse-search-scroll .browse-search-ink,
@@ -2279,8 +2241,9 @@
   appearance: none !important;
   -webkit-appearance: none !important;
   width: 100% !important;
-  flex: 1 1 auto !important;
-  min-height: 3.5rem !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
   border-radius: 0 !important;
   border: none !important;
   background: transparent !important;
@@ -2290,12 +2253,12 @@
   -webkit-text-fill-color: #3f2a1e !important;
   caret-color: #3f2a1e !important;
   font-family: var(--font-heading), Georgia, "Times New Roman", serif !important;
-  font-size: 1.22rem !important;
-  font-weight: 500 !important;
+  font-size: 0.95rem !important;
+  font-weight: 400 !important;
   font-style: normal !important;
-  letter-spacing: 0.02em !important;
-  line-height: 1.4 !important;
-  padding: 0.9rem 1.15rem 0.9rem 3.1rem !important;
+  letter-spacing: 0.01em !important;
+  line-height: 44px !important;
+  padding: 0 0.85rem 0 2.15rem !important;
   margin: 0 !important;
   box-shadow: none !important;
   outline: none !important;
@@ -2306,9 +2269,9 @@
 .browse-search-scroll .browse-search-ink::placeholder,
 .browse-search-scroll input[type="search"]::placeholder,
 .browse-search-scroll input.browse-search-ink::placeholder {
-  color: #5c3f0f !important;
-  opacity: 0.75 !important;
-  -webkit-text-fill-color: #5c3f0f !important;
+  color: rgba(63, 42, 30, 0.6) !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: rgba(63, 42, 30, 0.6) !important;
   font-style: italic !important;
   font-family: var(--font-heading), Georgia, serif !important;
 }
@@ -2328,6 +2291,7 @@
 .dark .browse-search-scroll,
 html.dark .browse-search-scroll {
   color-scheme: light !important;
+  background: #efe3c0 !important;
 }
 
 .dark .browse-search-scroll .browse-search-ink,
@@ -2349,9 +2313,9 @@ html.dark .browse-search-scroll input[type="search"]:focus {
 .dark .browse-search-scroll input[type="search"]::placeholder,
 html.dark .browse-search-scroll .browse-search-ink::placeholder,
 html.dark .browse-search-scroll input[type="search"]::placeholder {
-  color: #5c3f0f !important;
-  -webkit-text-fill-color: #5c3f0f !important;
-  opacity: 0.75 !important;
+  color: rgba(63, 42, 30, 0.6) !important;
+  -webkit-text-fill-color: rgba(63, 42, 30, 0.6) !important;
+  opacity: 1 !important;
 }
 
 @keyframes fade-in-up {
@@ -2543,45 +2507,100 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
   }
 }
 
-/* Shared forest-green plaque — Home, Browse cards, book boxes, FAQ, Preferences, Login */
-.tome-plaque {
-  background: rgba(10, 22, 16, 0.92);
+/* Ornate cornered plaque — Home, Browse cards, book boxes, FAQ, Preferences, Login */
+.ornate-plaque {
+  position: relative;
+  background: rgba(9, 20, 14, 0.93);
   border: 1px solid #c4a056;
   border-radius: 2px;
   box-shadow:
-    inset 0 0 0 1px rgba(196, 160, 86, 0.25),
-    0 8px 24px rgba(0, 0, 0, 0.45);
-  padding: 1.1rem 1.2rem;
+    inset 0 0 0 1px rgba(196, 160, 86, 0.4),
+    inset 0 0 42px rgba(0,0,0,0.35),
+    0 10px 28px rgba(0,0,0,0.5);
 }
-.tome-plaque h2, .tome-plaque h3, .tome-title {
-  font-family: var(--font-storybook), Georgia, serif;
+.ornate-plaque::before,
+.ornate-plaque::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #c4a056;
+}
+.ornate-plaque::before { top: 7px; left: 7px; border-right: 0; border-bottom: 0; }
+.ornate-plaque::after { right: 7px; bottom: 7px; border-left: 0; border-top: 0; }
+
+.ornate-plaque h2, .ornate-plaque h3, .tome-title {
+  font-family: var(--font-heading), Georgia, serif;
   color: #d4b36a;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 .tome-author, .tome-body {
-  font-family: var(--font-storybook), Georgia, serif;
-  color: #e6d7b0;
+  font-family: var(--font-heading), Georgia, serif;
+  font-weight: 400;
+  color: #e8d7b0;
 }
 .tome-link {
-  font-family: var(--font-storybook), Georgia, serif;
+  font-family: var(--font-heading), Georgia, serif;
   font-style: italic;
+  font-weight: 400;
   color: #d4b36a;
 }
 
-.lp-book-card.tome-plaque {
+.lp-book-card.ornate-plaque {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 16px;
   min-height: 148px;
   height: 100%;
+  padding: 1.1rem 1.2rem;
 }
 
-.tome-plaque .lp-book-card-title {
-  font-family: var(--font-storybook), Georgia, serif;
-  font-size: 1.7rem;
-  font-weight: 700;
-  line-height: 1.15;
+.ornate-plaque .lp-book-card-title {
+  font-family: var(--font-heading), Georgia, serif;
+  font-size: 1.55rem;
+  font-weight: 500;
+  line-height: 1.2;
   letter-spacing: 0.01em;
+  color: #d4b36a;
+  -webkit-text-fill-color: #d4b36a;
+  background: none;
 }
+
+.ornate-plaque::before,
+.ornate-plaque::after {
+  pointer-events: none;
+  z-index: 4;
+}
+
+.ornate-plaque.preference-codex-box,
+.ornate-plaque.preference-codex-box-shell,
+.ornate-plaque.portal-auth-parchment {
+  overflow: visible;
+}
+
+.ornate-plaque p,
+.ornate-plaque label,
+.ornate-plaque li,
+.ornate-plaque .tome-body {
+  font-family: var(--font-heading), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: #e8d7b0;
+  -webkit-text-fill-color: #e8d7b0;
+  background: none;
+  background-image: none;
+}
+
+.ornate-plaque a:not(.btn-primary):not(.home-hero-cta) {
+  color: #d4b36a;
+  -webkit-text-fill-color: #d4b36a;
+}
+
+.ornate-plaque .lp-book-card-author,
+.ornate-plaque .lp-book-card-author a {
+  color: #e8d7b0;
+  -webkit-text-fill-color: #e8d7b0;
+}
+

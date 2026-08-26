@@ -20,7 +20,7 @@ export function BookMetadataItem({
         <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
       </div>
       <div className="min-w-0">
-        <dt className="font-storybook text-[13px] font-bold uppercase tracking-[0.18em] nav-dragon-gold">
+        <dt className="font-display text-[13px] font-normal uppercase tracking-[0.08em] nav-dragon-gold">
           {label}
         </dt>
         <dd className="mt-1 font-heading text-lg font-medium leading-snug nav-dragon-gold">

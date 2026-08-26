@@ -534,8 +534,8 @@ export function getBookAuthorDedupeKey(
 
 /** Richer-metadata sources break exact ties during dedupe. */
 const SOURCE_DEDUP_BONUS: Record<BookSource, number> = {
+  hardcover: 8,
   isbndb: 6,
-  hardcover: 5,
   google: 5,
   bigbook: 3,
   nyt: 2,

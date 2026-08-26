@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cinzel_Decorative } from "next/font/google";
+import { Cinzel, Cormorant_Garamond, Italianno } from "next/font/google";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { BackToTop } from "@/components/BackToTop";
 import { Navbar } from "@/components/Navbar";
@@ -8,10 +8,23 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { ScrollParallax } from "@/components/theme/ScrollParallax";
 import "./globals.css";
 
-const cinzelDecorative = Cinzel_Decorative({
+const italianno = Italianno({
   subsets: ["latin"],
-  weight: ["400", "700"],
-  variable: "--font-storybook",
+  weight: "400",
+  variable: "--font-wordmark",
+});
+
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  variable: "--font-heading",
+});
+
+const cinzel = Cinzel({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-label",
 });
 
 export const metadata: Metadata = {
@@ -25,9 +38,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${cinzelDecorative.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${italianno.variable} ${cormorant.variable} ${cinzel.variable}`}
+      suppressHydrationWarning
+    >
       <body
-        className={`${cinzelDecorative.variable} min-h-screen bg-background font-storybook text-foreground antialiased selection:bg-accent/30`}
+        className={`${italianno.variable} ${cormorant.variable} ${cinzel.variable} min-h-screen bg-background font-heading font-normal text-foreground antialiased selection:bg-accent/30`}
       >
         <ThemeProvider>
           <AnalyticsProvider>

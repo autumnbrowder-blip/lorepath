@@ -245,7 +245,7 @@ export function RatingForm({
   return (
     <section
       aria-labelledby="rate-book-heading"
-      className={`tome-plaque preference-codex-box-shell rating-form-panel animate-fade-in-up${
+      className={`ornate-plaque preference-codex-box-shell rating-form-panel animate-fade-in-up${
         isLoggedIn ? " rating-form-panel--inscribed" : ""
       }`}
       style={{ animationDelay: "150ms" }}
@@ -262,7 +262,7 @@ export function RatingForm({
           <div>
             <h2
               id="rate-book-heading"
-              className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
+              className="font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg"
             >
               {hasExistingRating
                 ? "Update Your Rating"

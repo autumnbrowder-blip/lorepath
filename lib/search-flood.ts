@@ -2,7 +2,7 @@ import { searchBigBook } from "@/lib/big-book";
 import type { SearchBooksOptions } from "@/lib/genre-search";
 import { searchGoogleBooks, type GoogleBooksPageResult } from "@/lib/google-books";
 import { searchGutendex } from "@/lib/gutendex";
-import { isHardcoverConfigured, searchHardcover } from "@/lib/hardcover";
+import { searchHardcover } from "@/lib/hardcover";
 import { hasIsbndbApiKey, searchIsbndb } from "@/lib/isbndb";
 import { searchOpenLibrary } from "@/lib/open-library";
 import {
@@ -194,8 +194,8 @@ export async function fetchSearchProviderFlood(input: {
     );
   }
 
-  // Other providers: primary query only. Repeating ISBNdb/Hardcover/OL for
-  // every Google strategy doubled work; ISBNdb also serializes at 1 req/s.
+  // Other providers: primary query only. Repeating ISBNdb/OL for every Google
+  // strategy doubled work; ISBNdb also serializes at 1 req/s.
   if (hasIsbndbApiKey()) {
     const ms = stepTimeout();
     wave.push(
@@ -210,20 +210,19 @@ export async function fetchSearchProviderFlood(input: {
     );
   }
 
-  if (isHardcoverConfigured()) {
-    const ms = stepTimeout();
-    wave.push(
-      timedProviderPage(
-        "hardcover",
-        `hardcover search:${catalogQuery}`,
-        ms,
-        async () => {
-          const result = await searchHardcover(catalogQuery, input.page);
-          return { books: result.books, hasMore: result.hasMore };
-        }
-      )
-    );
-  }
+  // Always in the same Promise.allSettled wave as Google / OL / Gutendex.
+  // Missing HARDCOVER_API_TOKEN → searchHardcover returns [] and others still run.
+  wave.push(
+    timedProviderPage(
+      "hardcover",
+      `hardcover search:${catalogQuery}`,
+      stepTimeout(),
+      async () => {
+        const result = await searchHardcover(catalogQuery, input.page);
+        return { books: result.books, hasMore: result.hasMore };
+      }
+    )
+  );
 
   // Open Library in the SAME wave — do not wait for commercial to finish first.
   if (!input.genreMode) {

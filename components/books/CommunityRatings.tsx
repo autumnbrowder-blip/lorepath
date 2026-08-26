@@ -68,7 +68,7 @@ function RatingBar({
           ) : null}
         </div>
         <span className="inline-flex shrink-0 flex-col items-end">
-          <span className="font-storybook text-lg font-bold tabular-nums leading-none nav-dragon-gold sm:text-xl">
+          <span className="font-heading text-lg font-medium tabular-nums leading-none nav-dragon-gold sm:text-xl">
             {displayValue !== null ? displayValue.toFixed(1) : "—"}
           </span>
           <span className="mt-0.5 font-heading text-[11px] nav-dragon-gold/80">
@@ -93,7 +93,7 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
   return (
     <section
       aria-labelledby="community-ratings-heading"
-      className="tome-plaque preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start"
+      className="ornate-plaque preference-codex-box animate-fade-in-up relative flex h-auto flex-col self-start"
       style={{ animationDelay: "100ms" }}
     >
       <CodexBoxOrnament />
@@ -104,7 +104,7 @@ export function CommunityRatings({ data }: CommunityRatingsProps) {
         <div className="min-w-0">
           <h2
             id="community-ratings-heading"
-            className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
+            className="font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg"
           >
             Marks of the Realm
           </h2>

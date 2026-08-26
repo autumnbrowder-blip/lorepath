@@ -43,3 +43,10 @@ next-env.d.ts
 .env.*
 !.env.example
 !.env*.example
+
+# local probe / repro dumps — do not ship to Netlify
+/repro-*.txt
+/repro-*.json
+/scripts/probe-*
+/scripts/repro-*
+/scripts/api-health-check*

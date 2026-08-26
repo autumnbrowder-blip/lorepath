@@ -1,52 +1,31 @@
 # LorePath rating funnel health report
 
-Generated: 2026-08-11T21:39:44.160Z  
+Generated: 2026-08-13T18:56:10.880Z
 Base URL: https://lorepath.net
 
 ## Summary
 
-- PASS: 12 (routes, search samples, anon POST 401, GET ratings, anon keys)
-- FAIL: 1 (local `SUPABASE_SERVICE_ROLE_KEY` missing)
-- WARN: 1+ (verify Netlify service role; mobile fold; soft CTA)
+- PASS: 10
+- FAIL: 1
+- WARN: 2
 
 ## Runtime checks
 
 | Status | Check | Detail |
 |---|---|---|
-| PASS | NEXT_PUBLIC_SUPABASE_URL | present (local process) |
-| PASS | NEXT_PUBLIC_SUPABASE_ANON_KEY | present (local process) |
-| FAIL | SUPABASE_SERVICE_ROLE_KEY | MISSING in `.env.local` — local rating saves cannot upsert |
-| WARN | Prod SERVICE_ROLE (Netlify) | Cannot verify remotely — confirm Site env |
+| PASS | NEXT_PUBLIC_SUPABASE_URL | present |
+| PASS | NEXT_PUBLIC_SUPABASE_ANON_KEY | present |
+| WARN | SUPABASE_SERVICE_ROLE_KEY (local process) | Not in local .env — verify Netlify Site env has SUPABASE_SERVICE_ROLE_KEY (required for prod rating writes) |
 | PASS | GET / | HTTP 200 |
 | PASS | GET /browse | HTTP 200 |
 | PASS | GET /login | HTTP 200 |
 | PASS | GET /register | HTTP 200 |
-| PASS | GET /preferences | HTTP 307 (auth gate) |
-| PASS | Search "Fourth Wing" | HTTP 200, books=1 |
+| PASS | GET /preferences | HTTP 307 |
+| PASS | Search "Fourth Wing" | HTTP 200, books=5 |
 | PASS | Search "Tender Is the Flesh" | HTTP 200, books=2 |
-| PASS | Search "Divine Rivals" | HTTP 200, books=4 |
+| WARN | Search "Divine Rivals" | HTTP 200, books=0 |
 | PASS | Anonymous POST /api/books/[id]/ratings | HTTP 401 — You must be signed in to submit a rating. |
-| PASS | GET /api/books/[id]/ratings | HTTP 200 |
-
-## Funnel code audit
-
-| Status | Check | Notes |
-|---|---|---|
-| PASS | Signup / login | `?redirect=` honored from RatingForm; nav default `/profile` |
-| PASS | Profile creation | `handle_new_user` + `ensureProfileExists` |
-| PASS | Browse → detail | BookCard → `/books/{id}` |
-| WARN | Rating form visibility | Mobile: form under description/community |
-| PASS | POST ratings API | JWT + validation; no silent success |
-| PASS | books upsert | `ensureBookRecord` before rating |
-| PASS | rated_by | JWT `user.id` only |
-| PASS | Community refresh | Context + `router.refresh` + `revalidatePath` |
-| PASS | Preferences | `/api/preferences` + first-rating redirect |
-| PASS | Reading Stats | `revalidatePath("/stats")` on save |
-
-## Schema note
-
-Ratings columns: `sexual_content, romance, lgbt, horror, ideology, pacing`.  
-There is no `spice_level` / `themes` column — UI “spice” maps to `sexual_content`.
+| FAIL | GET /api/books/[id]/ratings | HTTP 500 |
 
 ## Files involved in rating save
 
@@ -70,34 +49,21 @@ There is no `spice_level` / `themes` column — UI “spice” maps to `sexual_c
 
 ## Top 5 blockers (ranked)
 
-1. **[CRITICAL] SUPABASE_SERVICE_ROLE_KEY missing locally (verify Netlify)**  
-   `submitUserRating` writes via service role after JWT verify. Missing key → every save fails.
-
-2. **[HIGH] Email confirmation can create user without session**  
-   Account exists but rating POST returns 401 until session exists.
-
-3. **[HIGH] Nav signup defaults to /profile, not the book**  
-   Easy to leave the rating surface and never return to the tome.
-
+1. **[CRITICAL] Missing SUPABASE_SERVICE_ROLE_KEY in production**  
+   submitUserRating writes via service role after JWT verify. Without the key, every save fails after signup.
+2. **[HIGH] Email confirmation blocks immediate session**  
+   RegisterForm can create auth.users without a session; user believes they signed up but cannot rate until confirm/disable Confirm email.
+3. **[HIGH] Signup without book redirect lands on /profile**  
+   Nav Register defaults redirect=/profile → Preferences onboarding. Users who never opened a book from SignupPrompt on detail never return to rate that tome.
 4. **[MEDIUM] Mobile rating form below the fold**  
-   Inscribe panel may never be seen without scroll.
-
+   BookInformation stacks description then Match Score → Community → RatingForm. First-time raters may not scroll to Inscribe.
 5. **[MEDIUM] Soft signup copy vs rate intent**  
-   CTA sells account benefits more than “sign in to rate.”
+   SignupPrompt emphasizes account benefits, not 'Sign in to leave marks' as the primary verb — weaker conversion at the rating panel.
 
-## Additional findings (code explore)
+## Expected anonymous POST behavior
 
-| Severity | Finding |
-|---|---|
-| MEDIUM | `loadViewerState` failure → signed-in user sees SignupPrompt |
-| MEDIUM | Open redirect: middleware/Login/Register unsanitized `?redirect=` (callback is safe) |
-| MEDIUM | Silent empty community/stats reads on transient DB errors |
-| LOW | `schema.sql` DELETE grant without DELETE policy vs migrations 20260716/17 |
+`POST /api/books/[id]/ratings` without auth must return **401** with message containing "signed in".
 
-Explore agent: [Explore rating funnel code](c1b62560-76e3-48b2-ae4e-13078f87d61c)
+## Schema note
 
-## Re-run
-
-```bash
-npx tsx --env-file=.env.local scripts/rating-funnel-health.ts https://lorepath.net
-```
+Ratings columns are `sexual_content, romance, lgbt, horror, ideology, pacing` (not `spice_level` / `themes`). UI "spice" maps to `sexual_content`.

@@ -90,11 +90,11 @@ export function BookInformation({
   }[];
 
   const descriptionBlock = (
-    <div className="tome-plaque preference-codex-box preference-codex-box--compact relative">
+    <div className="ornate-plaque preference-codex-box preference-codex-box--compact relative">
       <CodexBoxOrnament />
       {book.description ? (
         <div className="relative z-[3] px-1">
-          <h3 className="tome-title mb-2 font-storybook text-base font-bold tracking-[0.12em] nav-dragon-gold sm:text-lg">
+          <h3 className="tome-title mb-2 font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg">
             About this book
           </h3>
           <p className="tome-body font-heading text-base leading-relaxed nav-dragon-gold sm:text-lg">
@@ -118,7 +118,7 @@ export function BookInformation({
       <div className="border-b border-gold-600/30 px-4 py-3 sm:px-8 sm:py-4">
         <p
           id="book-info-heading"
-          className="font-storybook text-[12px] font-bold uppercase tracking-[0.24em] nav-dragon-gold sm:text-[13px] sm:tracking-[0.28em]"
+          className="font-display text-[12px] font-normal uppercase tracking-[0.08em] nav-dragon-gold sm:text-[13px]"
         >
           Magical Tome
         </p>
@@ -155,15 +155,15 @@ export function BookInformation({
         </div>
 
         <div className="flex min-w-0 flex-col">
-          <h1 className="metallic-emerald-book-title mb-3 font-storybook text-2xl font-bold tracking-[0.04em] sm:mb-4 sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
+          <h1 className="metallic-emerald-book-title mb-3 font-heading text-2xl font-medium tracking-normal sm:mb-4 sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
             {book.title}
           </h1>
 
-          <p className="metallic-emerald mb-3 font-heading text-base font-semibold leading-relaxed sm:mb-4 sm:text-lg">
+          <p className="metallic-emerald mb-3 font-heading text-base font-normal leading-relaxed sm:mb-4 sm:text-lg">
             by{" "}
             <AuthorLinks
               authors={book.authors}
-              className="font-bold metallic-emerald"
+              className="font-normal metallic-emerald"
             />
           </p>
 

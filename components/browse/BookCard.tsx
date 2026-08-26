@@ -49,7 +49,7 @@ export function BookCard({
   const showInscribed = hasUserRating;
 
   return (
-    <article className="tome-plaque lp-book-card">
+    <article className="ornate-plaque lp-book-card">
       <div className="lp-book-card-plate">
         <BookCover
           book={book}

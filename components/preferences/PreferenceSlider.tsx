@@ -49,7 +49,7 @@ export function PreferenceSlider({
 
   return (
     <div
-      className="tome-plaque preference-codex-box animate-fade-in-up"
+      className="ornate-plaque preference-codex-box animate-fade-in-up"
       style={{ animationDelay: `${index * 60}ms` }}
     >
       <CodexBoxOrnament />
@@ -65,7 +65,7 @@ export function PreferenceSlider({
         <div className="min-w-0">
           <label
             htmlFor={id}
-            className="font-storybook text-lg font-bold tracking-[0.12em] nav-dragon-gold"
+            className="font-heading text-lg font-medium tracking-normal nav-dragon-gold"
           >
             {label}
           </label>
@@ -80,12 +80,12 @@ export function PreferenceSlider({
         </div>
         <div className="shrink-0 text-right">
           <span
-            className="inline-flex h-12 min-w-[3rem] items-center justify-center rounded-sm border border-gold-600/55 px-2.5 font-storybook text-xl font-normal text-forest-950 shadow-[0_4px_12px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,245,210,0.45)]"
+            className="inline-flex h-12 min-w-[3rem] items-center justify-center rounded-sm border border-gold-600/55 px-2.5 font-heading text-xl font-medium text-forest-950 shadow-[0_4px_12px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,245,210,0.45)]"
             style={{ background: ANTIQUE_GOLD_FILL }}
           >
             {value}
           </span>
-          <p className="nav-dragon-gold mt-1.5 max-w-[7.5rem] font-storybook text-sm uppercase leading-snug tracking-[0.14em]">
+          <p className="nav-dragon-gold mt-1.5 max-w-[7.5rem] font-display text-sm uppercase leading-snug tracking-[0.08em]">
             {badgeLabel}
           </p>
         </div>
@@ -136,7 +136,7 @@ export function PreferenceSlider({
             onClick={() => onChange(level)}
             aria-label={`Set ${label} to ${level} out of 5`}
             aria-pressed={value === level}
-            className={`flex-1 rounded-sm border border-gold-600/30 py-2.5 font-storybook text-base font-normal tabular-nums tracking-wide transition-colors duration-150 ${
+            className={`flex-1 rounded-sm border border-gold-600/30 py-2.5 font-heading text-base font-normal tabular-nums tracking-normal transition-colors duration-150 ${
               value === level
                 ? "border-gold-600/75 text-forest-950"
                 : "bg-forest-950/45 antique-gold-text hover:border-gold-500/50"

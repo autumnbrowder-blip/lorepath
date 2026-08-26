@@ -35,8 +35,7 @@ function GoogleIcon() {
   );
 }
 
-const storybookFont =
-  "var(--font-storybook), var(--font-display), Georgia, serif";
+const storybookFont = "var(--font-heading), Georgia, serif";
 const bodyFont = "var(--font-heading), Georgia, serif";
 const antiqueGold = "#a67c2d";
 const antiqueGoldSoft = "#b38b4d";
@@ -185,13 +184,13 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
   return (
     <div style={{ fontFamily: bodyFont }}>
       <p
-        className="metallic-emerald-deep mb-1 text-[11px] font-bold uppercase tracking-[0.28em]"
+        className="mb-1 font-display text-[11px] font-normal uppercase tracking-[0.08em] text-[#d4b36a]"
         style={{ fontFamily: storybookFont }}
       >
         Cross the Threshold
       </p>
       <h1
-        className="metallic-emerald-deep mb-2 text-3xl font-normal tracking-[0.06em]"
+        className="mb-2 text-3xl font-medium tracking-normal text-[#d4b36a]"
         style={{ fontFamily: storybookFont }}
       >
         Return to the Library
@@ -229,7 +228,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
           className="h-px flex-1"
           style={{ backgroundColor: `${antiqueGold}66` }}
         />
-        <span className="text-xs text-[#5c3f0f]/80">or</span>
+        <span className="text-xs text-[#e8d7b0]/80">or</span>
         <div
           className="h-px flex-1"
           style={{ backgroundColor: `${antiqueGold}66` }}
@@ -240,7 +239,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
         <div>
           <label
             htmlFor="email"
-            className="mb-1.5 block text-sm font-normal tracking-[0.04em] text-[#5c3f0f]"
+            className="mb-1.5 block text-sm font-normal tracking-normal text-[#e8d7b0]"
             style={{ fontFamily: storybookFont }}
           >
             Email
@@ -261,7 +260,7 @@ export function LoginForm({ configured: configuredProp }: LoginFormProps) {
         <div>
           <label
             htmlFor="password"
-            className="mb-1.5 block text-sm font-normal tracking-[0.04em] text-[#5c3f0f]"
+            className="mb-1.5 block text-sm font-normal tracking-normal text-[#e8d7b0]"
             style={{ fontFamily: storybookFont }}
           >
             Password
