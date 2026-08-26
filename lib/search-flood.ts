@@ -141,6 +141,7 @@ export async function fetchSearchProviderFlood(input: {
   const floodCapMs = Math.min(FLOOD_BUDGET_MS, floodDeadline.remaining());
   const localDeadline = createDeadline(floodCapMs);
 
+  // Fresh arrays every call — never reuse a previous flood's leftover books.
   const books: BookSummary[] = [];
   const sourceCounts: Partial<Record<BookSource, number>> = {};
   const timedOutProviders: string[] = [];

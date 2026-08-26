@@ -79,7 +79,10 @@ type BigBookInfoResponse = BigBookSearchBook & {
   number_of_pages?: number | string | null;
 };
 
-async function fetchBigBook(path: string): Promise<Response | null> {
+async function fetchBigBook(
+  path: string,
+  options?: { noStore?: boolean }
+): Promise<Response | null> {
   const apiKey = getBigBookApiKey();
   if (!apiKey) return null;
 
@@ -92,8 +95,12 @@ async function fetchBigBook(path: string): Promise<Response | null> {
         Accept: "application/json",
         "x-api-key": apiKey,
       },
-      cache: "force-cache",
-      next: { revalidate: 3600 },
+      ...(options?.noStore
+        ? { cache: "no-store" as const }
+        : {
+            cache: "force-cache" as const,
+            next: { revalidate: 3600 },
+          }),
       signal: controller.signal,
     });
   } catch (error) {
@@ -217,7 +224,9 @@ export async function searchBigBook(
     params.set("query", `${trimmed} books`);
   }
 
-  const response = await fetchBigBook(`/search-books?${params.toString()}`);
+  const response = await fetchBigBook(`/search-books?${params.toString()}`, {
+    noStore: true,
+  });
   if (!response) return EMPTY_PAGE;
 
   if (!response.ok) {

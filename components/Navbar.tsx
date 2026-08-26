@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navLinks = [
-  { href: "/", label: "Home" },
   { href: "/browse", label: "Browse" },
   { href: "/faq", label: "FAQ" },
 ];
@@ -22,7 +21,7 @@ export function Navbar() {
         <Link
           href="/"
           aria-label="LorePath home"
-          className="site-nav-wordmark justify-self-start"
+          className="site-nav-wordmark cursor-pointer justify-self-start"
         >
           LorePath
         </Link>

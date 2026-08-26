@@ -57,7 +57,10 @@ function getIsbndbApiKey(): string | null {
   return key || null;
 }
 
-async function fetchIsbndb(path: string): Promise<Response | null> {
+async function fetchIsbndb(
+  path: string,
+  options?: { noStore?: boolean }
+): Promise<Response | null> {
   const apiKey = getIsbndbApiKey();
   if (!apiKey) return null;
 
@@ -71,8 +74,12 @@ async function fetchIsbndb(path: string): Promise<Response | null> {
           Accept: "application/json",
           Authorization: apiKey,
         },
-        cache: "force-cache",
-        next: { revalidate: 3600 },
+        ...(options?.noStore
+          ? { cache: "no-store" as const }
+          : {
+              cache: "force-cache" as const,
+              next: { revalidate: 3600 },
+            }),
         signal: controller.signal,
       });
     } catch (error) {
@@ -265,7 +272,8 @@ export async function searchIsbndb(
     }
 
     const response = await fetchIsbndb(
-      `/books/${encodeURIComponent(trimmed)}?${params.toString()}`
+      `/books/${encodeURIComponent(trimmed)}?${params.toString()}`,
+      { noStore: true }
     );
 
     if (!response) {

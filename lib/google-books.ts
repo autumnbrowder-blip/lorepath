@@ -251,9 +251,8 @@ async function fetchGoogleSearch(
   }
 
   const url = buildGoogleBooksUrl("volumes", params);
-  // Short Data Cache window — avoids burning daily quota on identical searches
-  // while still staying fresh enough for browse. Do not use no-store here.
-  const response = await fetchGoogleBooksWithRetry(url, { revalidate: 300 });
+  // Search must never reuse a Data Cache entry from a previous q.
+  const response = await fetchGoogleBooksWithRetry(url, { noStore: true });
 
   if (response.status === 429) {
     const bodyMessage = await readGoogleErrorBody(response);

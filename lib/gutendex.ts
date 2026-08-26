@@ -208,7 +208,7 @@ export async function searchGutendex(
     try {
       const response = await fetch(
         `https://gutendex.com/books/?${params.toString()}`,
-        { cache: "force-cache", next: { revalidate: 3600 }, signal: controller.signal }
+        { cache: "no-store", signal: controller.signal }
       );
 
       if (!response.ok) return { books: [], hasMore: false };

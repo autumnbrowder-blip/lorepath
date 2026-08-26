@@ -712,6 +712,59 @@ function normalizeForMatch(text: string): string {
     .trim();
 }
 
+function queryLooksLikeTitle(query: string, needle: string): boolean {
+  const q = normalizeForMatch(query);
+  const n = normalizeForMatch(needle);
+  if (!q || !n) return false;
+  return q === n || q.startsWith(`${n} `) || q.includes(n);
+}
+
+/**
+ * True when this card belongs to the active search string.
+ * Used as a hard wall so a leftover Dune page cannot survive q=harry potter.
+ */
+export function bookMatchesSearchQuery(
+  book: BookSummary,
+  query: string
+): boolean {
+  const cleaned = query
+    .replace(/\b(intitle|inauthor|isbn):/gi, " ")
+    .replace(/"/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return true;
+
+  const isbnDigits = cleaned.replace(/\D/g, "");
+  if (isbnDigits.length >= 10 && book.isbn) {
+    const bookIsbn = book.isbn.replace(/\D/g, "");
+    if (
+      bookIsbn &&
+      (bookIsbn.includes(isbnDigits) || isbnDigits.includes(bookIsbn))
+    ) {
+      return true;
+    }
+  }
+
+  const q = normalizeForMatch(cleaned);
+  if (!q) return true;
+
+  const title = normalizeForMatch(book.title);
+  const authors = normalizeForMatch(book.authors.join(" "));
+  if (title.includes(q) || authors.includes(q)) return true;
+
+  const haystack = `${title} ${authors}`;
+  const tokens = q.split(" ").filter((token) => token.length >= 2);
+  if (tokens.length === 0) return haystack.includes(q);
+
+  const matched = tokens.filter((token) => haystack.includes(token));
+  if (matched.length === tokens.length) return true;
+  if (matched.some((token) => token.length >= 4)) return true;
+  if (tokens.length >= 2 && matched.length >= Math.ceil(tokens.length / 2)) {
+    return true;
+  }
+  return false;
+}
+
 function isAcademicNoise(book: BookSummary): boolean {
   const title = book.title.toLowerCase();
   const noise =
@@ -763,18 +816,70 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
     if (authorMatches) score += 30;
   }
 
-  // Strong boost for well-known novel titles
-  if (/^the three[- ]body problem$/i.test(book.title.trim())) score += 45;
-  if (/^the hunger games$/i.test(book.title.trim())) score += 45;
-  if (/^fourth wing$/i.test(book.title.trim())) score += 45;
-  if (/^dune$/i.test(book.title.trim())) score += 40;
-  if (/^between two fires$/i.test(book.title.trim())) score += 45;
-  if (/^divine rivals$/i.test(book.title.trim())) score += 45;
-  if (/^ruthless vows$/i.test(book.title.trim())) score += 40;
-  if (/^tender is the flesh$/i.test(book.title.trim())) score += 45;
-  if (/^cad[aá]ver exquisito$/i.test(book.title.trim())) score += 45;
-  if (/^for the wolf$/i.test(book.title.trim())) score += 45;
-  if (/^godkiller$/i.test(book.title.trim())) score += 45;
+  // Strong boost for well-known novel titles — only when the query is about them.
+  if (
+    /^the three[- ]body problem$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "three body")
+  ) {
+    score += 45;
+  }
+  if (
+    /^the hunger games$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "hunger games")
+  ) {
+    score += 45;
+  }
+  if (
+    /^fourth wing$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "fourth wing")
+  ) {
+    score += 45;
+  }
+  if (/^dune$/i.test(book.title.trim()) && queryLooksLikeTitle(query, "dune")) {
+    score += 40;
+  }
+  if (
+    /^between two fires$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "between two fires")
+  ) {
+    score += 45;
+  }
+  if (
+    /^divine rivals$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "divine rivals")
+  ) {
+    score += 45;
+  }
+  if (
+    /^ruthless vows$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "ruthless vows")
+  ) {
+    score += 40;
+  }
+  if (
+    /^tender is the flesh$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "tender is the flesh")
+  ) {
+    score += 45;
+  }
+  if (
+    /^cad[aá]ver exquisito$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "cadaver exquisito")
+  ) {
+    score += 45;
+  }
+  if (
+    /^for the wolf$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "for the wolf")
+  ) {
+    score += 45;
+  }
+  if (
+    /^godkiller$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "godkiller")
+  ) {
+    score += 45;
+  }
 
   if (!authorSearch) {
     if (normalizedTitle === normalizedQuery) score += 50;
@@ -834,16 +939,13 @@ export function rankSearchResults(
   query: string
 ): BookSummary[] {
   const scored = [...books]
+    .filter((book) => bookMatchesSearchQuery(book, query))
     .map((book) => ({ book, score: scoreBookRelevance(book, query) }))
     .sort((a, b) => b.score - a.score);
 
-  const filtered = scored.filter(({ score }) => score > -10);
-  // Never collapse a non-empty retrieval set to [] due to ranking thresholds.
-  const results = (filtered.length > 0 ? filtered : scored).map(
-    ({ book }) => book
-  );
-
-  return results;
+  return scored
+    .filter(({ score }) => score > -10)
+    .map(({ book }) => book);
 }
 
 function hasDescription(book: BookSummary): boolean {

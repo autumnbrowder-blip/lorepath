@@ -57,16 +57,15 @@ import {
 } from "@/lib/provider-resilience";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import {
-  getCachedSearchPage,
-  searchCacheKey,
-  setCachedSearchPage,
-} from "@/lib/search-cache";
-import {
   fetchSearchProviderFlood,
   SEARCH_FLOOD_SOURCES,
 } from "@/lib/search-flood";
 import { getVerifiedUser } from "@/lib/supabase/server";
-import { rankSearchResults } from "@/lib/book-utils";
+import {
+  bookMatchesSearchQuery,
+  rankSearchResults,
+} from "@/lib/book-utils";
+import { unstable_noStore as noStore } from "next/cache";
 import type {
   BookDetail,
   BookSearchResult,
@@ -111,13 +110,15 @@ async function resolveSearchUserId(
  * 1) Query normalization + safe variants (title never lost when author added)
  * 2) Parallel provider flood (Google, ISBNdb, Hardcover, Open Library, …)
  * 3–4) Normalize / merge via finalize (language-aware; commercial preferred)
- * Then enrich + English editions with budgets; cache the anonymous page.
+ * Then enrich + English editions with budgets.
+ * Never reuse a previous request's page — q must drive every call.
  */
 export async function searchBooks(
   query: string,
   page = 1,
   options?: SearchBooksOptions
 ): Promise<BookSearchResult> {
+  noStore();
   const pageNumber = Math.max(1, page);
   const genreMode = isGenreSearchMode(options?.mode);
   const searchQuery = genreMode ? normalizeGenreQuery(query) : query.trim();
@@ -125,43 +126,7 @@ export async function searchBooks(
     ? { mode: "genre" }
     : undefined;
 
-  const cacheKey = searchCacheKey({
-    query: searchQuery,
-    page: pageNumber,
-    mode: genreMode ? "genre" : "text",
-  });
-  const cachedPage = getCachedSearchPage(cacheKey);
-
   const userIdPromise = resolveSearchUserId(options?.accessToken);
-
-  // Fast path: reuse a recent page, then re-apply Inscribed for this user.
-  if (cachedPage) {
-    let books = cachedPage.books;
-    let userRatedSlugs: string[] = [];
-    try {
-      const userId = await userIdPromise;
-      if (userId) {
-        const { getUserRatedIdentities } = await import("@/lib/ratings");
-        const {
-          alignBooksToRatedSlugs,
-          inscribedCardIdsForBooks,
-        } = await import("@/lib/user-rated-identity");
-        const identities = await getUserRatedIdentities(userId);
-        if (identities.length > 0) {
-          books = alignBooksToRatedSlugs(books, identities);
-          userRatedSlugs = inscribedCardIdsForBooks(books, identities);
-        }
-      }
-    } catch (error) {
-      console.error("[searchBooks] cached rated-identity lookup failed:", error);
-    }
-
-    return {
-      ...cachedPage,
-      books,
-      userRatedSlugs,
-    };
-  }
 
   const bigBookConfigured = isBigBookConfigured();
   const deadline = createDeadline(SEARCH_OVERALL_BUDGET_MS);
@@ -504,6 +469,10 @@ export async function searchBooks(
 
   if (genreMode) {
     books = preferMatchingGenreTags(books, searchQuery);
+  } else {
+    // Drop leftover/unrelated titles (e.g. a prior Dune page) even if ranking
+    // would otherwise keep a non-empty retrieval set.
+    books = books.filter((book) => bookMatchesSearchQuery(book, searchQuery));
   }
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
@@ -511,22 +480,6 @@ export async function searchBooks(
   };
 
   const hasMore = flood.hasMore;
-
-  // Cache the anonymous page (before Inscribed) for a few minutes.
-  // Never cache empty shelves — that freezes outages into "0 results".
-  if (books.length > 0) {
-    setCachedSearchPage(cacheKey, {
-      books,
-      sources: SEARCH_SOURCES,
-      sourceCounts,
-      source: "multi",
-      page: pageNumber,
-      hasMore,
-      descriptionSources,
-      googleError: flood.googleError,
-      googleRawCount: flood.googleRawCount,
-    });
-  }
 
   // User-only rated identities → rewrite card ids to rated slugs, then list them.
   // Match by books.slug OR work-level title+author so OL/Google/NYT edition ids align.

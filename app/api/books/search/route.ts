@@ -2,37 +2,45 @@ import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
 import { withTimeout } from "@/lib/provider-resilience";
-import { publicGetCacheHeaders } from "@/lib/public-cache-headers";
 import { getBearerToken } from "@/lib/supabase/server";
-import { NextResponse } from "next/server";
+import { unstable_noStore as noStore } from "next/cache";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-/** Honor per-fetch revalidate even though this handler reads searchParams. */
-export const fetchCache = "default-cache";
+/** Never statically cache this GET — q must be read from the live request. */
+export const dynamic = "force-dynamic";
+/** Override per-fetch force-cache so provider results cannot leak across q. */
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
 /** Netlify / serverless hard ceiling (seconds). Handler budget is tighter. */
 export const maxDuration = 10;
 
 /** Overall handler budget — must finish before Netlify kills the function. */
 const SEARCH_HANDLER_BUDGET_MS = 8000;
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+} as const;
+
 /**
  * Search books via Open Library, Google Books, Gutendex, and Big Book.
  * Provider outages soft-fail inside searchBooks (Promise.allSettled).
  */
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.get("q")?.trim();
+export async function GET(request: NextRequest) {
+  noStore();
+
+  const searchParams = request.nextUrl.searchParams;
+  const query = searchParams.get("q")?.trim() ?? "";
   const modeParam = searchParams.get("mode");
   const pageParam = Number(searchParams.get("page") ?? "1");
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
   const mode = isGenreSearchMode(modeParam) ? "genre" : "text";
   const accessToken = getBearerToken(request);
-  const authenticated = Boolean(accessToken);
 
   if (!query) {
     return NextResponse.json(
-      { error: "Search query is required." },
-      { status: 400 }
+      { error: "Search query is required.", query: "" },
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
@@ -53,9 +61,11 @@ export async function GET(request: Request) {
     }
 
     // Public clients get books + paging only. Source breakdown is admin-only.
+    // Echo `query` so a stale CDN/Data Cache hit can be rejected client-side.
     const payload = isAdmin
-      ? result
+      ? { ...result, query }
       : {
+          query,
           books: result.books,
           page: result.page,
           hasMore: result.hasMore,
@@ -70,9 +80,8 @@ export async function GET(request: Request) {
             : {}),
         };
 
-    const cacheable = result.books.length > 0 && !wantsSourceDebug;
     return NextResponse.json(payload, {
-      headers: publicGetCacheHeaders({ authenticated, cacheable }),
+      headers: NO_STORE_HEADERS,
     });
   } catch (error) {
     console.error("[api/books/search] unexpected failure:", error);
@@ -87,6 +96,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
+        query,
         books: [],
         page,
         hasMore: false,
@@ -95,10 +105,7 @@ export async function GET(request: Request) {
       {
         // 200 so the browse UI can render an empty state + message without a crash.
         status: 200,
-        headers: publicGetCacheHeaders({
-          authenticated,
-          cacheable: false,
-        }),
+        headers: NO_STORE_HEADERS,
       }
     );
   }

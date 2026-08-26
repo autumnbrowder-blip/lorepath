@@ -5,7 +5,7 @@ import { BookCard } from "@/components/browse/BookCard";
 import { SignupPrompt } from "@/components/auth/SignupPrompt";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { queryHint, track } from "@/lib/analytics";
-import { rankSearchResults } from "@/lib/book-utils";
+import { bookMatchesSearchQuery, rankSearchResults } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -31,6 +31,8 @@ type SearchPagePayload = {
   books?: BookSummary[];
   hasMore?: boolean;
   page?: number;
+  /** Echo of the q that produced this payload — reject stale cache hits. */
+  query?: string;
   /** Card ids on this page that match the user's rated works. */
   userRatedSlugs?: string[];
 };
@@ -43,20 +45,7 @@ type RatedSource =
   | "session-storage"
   | "none";
 
-const CLIENT_SEARCH_CACHE_TTL_MS = 180_000;
 const JUST_RATED_STORAGE_KEY = "lorepath-just-rated-slugs";
-const clientSearchCache = new Map<
-  string,
-  { expires: number; data: SearchPagePayload }
->();
-
-function searchCacheKey(
-  searchQuery: string,
-  pageNumber: number,
-  mode: "text" | "genre"
-) {
-  return `${mode}|${pageNumber}|${searchQuery.trim().toLowerCase()}`;
-}
 
 function mergeSearchResults(
   existing: BookSummary[],
@@ -117,6 +106,8 @@ export function BookSearch({
   const [query, setQuery] = useState(initialQuery);
   const [searchMode, setSearchMode] = useState<"text" | "genre">(initialMode);
   const [books, setBooks] = useState<BookSummary[]>([]);
+  /** Query that produced `books` — heading/empty state must not use live input. */
+  const [resultsQuery, setResultsQuery] = useState(initialQuery);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -458,12 +449,6 @@ export function BookSearch({
     pageNumber: number,
     mode: "text" | "genre"
   ) {
-    const key = searchCacheKey(searchQuery, pageNumber, mode);
-    const cached = clientSearchCache.get(key);
-    if (cached && cached.expires > Date.now()) {
-      return cached.data;
-    }
-
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -493,11 +478,26 @@ export function BookSearch({
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
       credentials: "same-origin",
+      cache: "no-store",
       headers,
     });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error ?? "Search failed.");
+    }
+    const echoed =
+      typeof data.query === "string" ? data.query.trim().toLowerCase() : "";
+    if (echoed && echoed !== searchQuery.trim().toLowerCase()) {
+      console.warn("[BookSearch] dropping mismatched search payload", {
+        requested: searchQuery,
+        echoed: data.query,
+      });
+      return {
+        books: [],
+        hasMore: false,
+        page: pageNumber,
+        query: searchQuery,
+      } satisfies SearchPagePayload;
     }
     const books = Array.isArray(data.books) ? data.books : [];
     if (
@@ -505,23 +505,10 @@ export function BookSearch({
       typeof data.error === "string" &&
       data.error.trim()
     ) {
-      // Soft empty payload from the API — show a gentle message, not a crash.
+      // Soft empty payload from the API — show a gentle message, not leftover cards.
       throw new Error(data.error);
     }
-    const payload = data as SearchPagePayload;
-    // Do not cache empty userRatedSlugs while logged in — cookie/bearer race.
-    const canCache =
-      !effectivelyLoggedIn ||
-      (Array.isArray(payload.userRatedSlugs) &&
-        payload.userRatedSlugs.length > 0) ||
-      ratedIdentities.length > 0;
-    if (canCache) {
-      clientSearchCache.set(key, {
-        expires: Date.now() + CLIENT_SEARCH_CACHE_TTL_MS,
-        data: payload,
-      });
-    }
-    return payload;
+    return data as SearchPagePayload;
   }
 
   async function runSearch(
@@ -533,13 +520,14 @@ export function BookSearch({
     if (!trimmed) return;
 
     const requestId = ++searchRequestIdRef.current;
+    setBooks([]);
+    setPage(1);
+    setHasMore(false);
+    setResultsQuery(trimmed);
     setLoading(true);
     setLoadingMore(false);
     setError(null);
     setHasSearched(true);
-    setBooks([]);
-    setPage(1);
-    setHasMore(false);
     setSearchMode(mode);
     searchModeRef.current = mode;
 
@@ -555,15 +543,19 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      const results = applyRatedAlignment(data.books ?? []);
-      setBooks(results);
+      const incoming = applyRatedAlignment(data.books ?? []);
+      const matched = incoming.filter((book) =>
+        bookMatchesSearchQuery(book, trimmed)
+      );
+      setBooks(matched);
+      setResultsQuery(trimmed);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
       mergeInscribedCardIds(data.userRatedSlugs);
       track("search_performed", {
         ...queryHint(trimmed),
         mode,
-        result_count: results.length,
+        result_count: matched.length,
         has_more: Boolean(data.hasMore),
       });
     } catch (err) {
@@ -602,7 +594,9 @@ export function BookSearch({
       );
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = applyRatedAlignment(data.books ?? []);
+      const incoming = applyRatedAlignment(data.books ?? []).filter((book) =>
+        bookMatchesSearchQuery(book, trimmed)
+      );
 
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
       setPage(data.page ?? nextPage);
@@ -743,7 +737,7 @@ export function BookSearch({
                 No tomes on this shelf
               </p>
               <p className="mt-3 font-heading text-lg leading-relaxed text-[#3f2a1e]/90">
-                Nothing with a clear description matched &ldquo;{query}&rdquo;.
+                Nothing with a clear description matched &ldquo;{resultsQuery}&rdquo;.
                 Try another title, author name, or ISBN — the archives are
                 vast.
               </p>
@@ -756,7 +750,7 @@ export function BookSearch({
               <div className="mb-5">
                 <p className="text-center font-heading text-base font-medium tracking-[0.04em] text-[#d4b36a] sm:text-lg">
                   {books.length} result{books.length !== 1 ? "s" : ""} for
-                  &ldquo;{query}&rdquo;
+                  &ldquo;{resultsQuery}&rdquo;
                 </p>
               </div>
 
@@ -769,7 +763,7 @@ export function BookSearch({
                   <BookCard
                     key={book.id}
                     book={book}
-                    searchQuery={query}
+                    searchQuery={resultsQuery}
                     hasUserRating={hasUserRating(book)}
                   />
                 ))}
