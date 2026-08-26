@@ -73,10 +73,10 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-body)", "system-ui", "sans-serif"],
-        heading: ["var(--font-heading)", "Georgia", "serif"],
-        display: ["var(--font-display)", "Georgia", "serif"],
-        storybook: ["var(--font-storybook)", "var(--font-display)", "Georgia", "serif"],
+        sans: ["var(--font-storybook)", "Georgia", "serif"],
+        heading: ["var(--font-storybook)", "Georgia", "serif"],
+        display: ["var(--font-storybook)", "Georgia", "serif"],
+        storybook: ["var(--font-storybook)", "Georgia", "serif"],
       },
       letterSpacing: {
         story: "0.04em",

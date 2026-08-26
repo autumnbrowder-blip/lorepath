@@ -27,9 +27,9 @@
   --glow-strong: rgba(166, 124, 45, 0.32);
   --vine: rgba(61, 107, 79, 0.12);
 
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-heading: "Cormorant Garamond", Georgia, serif;
-  --font-display: "Cinzel", Georgia, serif;
+  --font-body: var(--font-storybook), Georgia, serif;
+  --font-heading: var(--font-storybook), Georgia, serif;
+  --font-display: var(--font-storybook), Georgia, serif;
   --antique-gold: #a67c2d;
   --antique-gold-deep: #8a6424;
   --antique-gold-soft: #b38b4d;
@@ -2190,35 +2190,6 @@
     flex-direction: row;
     align-items: stretch;
     gap: 0;
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-
-  .browse-search-row::before,
-  .browse-search-row::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    z-index: 3;
-    width: 26px;
-    height: 26px;
-    pointer-events: none;
-    background-color: #e4d4ad;
-    background-image:
-      linear-gradient(180deg, rgba(248, 236, 204, 0.28), rgba(196, 168, 108, 0.18)),
-      url("/images/parchment.jpg");
-    background-size: cover;
-    background-position: center;
-    border: 2px solid #c9a227;
-    transform: translateY(-50%) rotate(45deg);
-  }
-
-  .browse-search-row::before {
-    left: 1px;
-  }
-
-  .browse-search-row::after {
-    right: 1px;
   }
 }
 
@@ -2583,17 +2554,17 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
   padding: 1.1rem 1.2rem;
 }
 .tome-plaque h2, .tome-plaque h3, .tome-title {
-  font-family: "Cormorant Garamond", "Cinzel", Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   color: #d4b36a;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 .tome-author, .tome-body {
-  font-family: "Cormorant Garamond", Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   color: #e6d7b0;
 }
 .tome-link {
-  font-family: "Cormorant Garamond", Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   font-style: italic;
   color: #d4b36a;
 }
@@ -2608,5 +2579,9 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
 }
 
 .tome-plaque .lp-book-card-title {
-  font-size: 1.35rem;
+  font-family: var(--font-storybook), Georgia, serif;
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
 }

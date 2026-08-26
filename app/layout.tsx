@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cinzel, Cinzel_Decorative, Cormorant_Garamond, Inter } from "next/font/google";
+import { Cinzel_Decorative } from "next/font/google";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { BackToTop } from "@/components/BackToTop";
 import { Navbar } from "@/components/Navbar";
@@ -7,24 +7,6 @@ import { PageViewTracker } from "@/components/PageViewTracker";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ScrollParallax } from "@/components/theme/ScrollParallax";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-body",
-});
-
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-heading",
-});
-
-const cinzel = Cinzel({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-display",
-});
 
 const cinzelDecorative = Cinzel_Decorative({
   subsets: ["latin"],
@@ -43,9 +25,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" className={`dark ${cinzelDecorative.variable}`} suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${cormorant.variable} ${cinzel.variable} ${cinzelDecorative.variable} min-h-screen bg-background font-sans text-foreground antialiased selection:bg-accent/30`}
+        className={`${cinzelDecorative.variable} min-h-screen bg-background font-storybook text-foreground antialiased selection:bg-accent/30`}
       >
         <ThemeProvider>
           <AnalyticsProvider>

@@ -118,11 +118,11 @@
   margin: 0;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-family: var(--font-heading), "Cormorant Garamond", Georgia, serif;
-  font-size: 1.35rem;
+  font-family: var(--font-storybook), Georgia, serif;
+  font-size: 1.7rem;
   font-style: normal;
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 700;
+  line-height: 1.15;
   letter-spacing: 0.01em;
   text-transform: none;
   color: #d4b36a;
@@ -134,7 +134,7 @@
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-heading), "Cormorant Garamond", Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   font-size: 15px;
   font-weight: 500;
   line-height: 1.3;
@@ -165,7 +165,7 @@
   border: 1px solid #c9a227;
   border-radius: 999px;
   background: transparent;
-  font-family: var(--font-heading), Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   font-size: 11px;
   font-weight: 500;
   line-height: 1.35;
@@ -193,7 +193,7 @@
   width: fit-content;
   align-items: center;
   gap: 4px;
-  font-family: var(--font-heading), Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   font-size: 12px;
   font-style: italic;
   color: #d4b36a;
@@ -201,7 +201,7 @@
 
 .lp-book-card-open {
   width: fit-content;
-  font-family: var(--font-heading), "Cormorant Garamond", Georgia, serif;
+  font-family: var(--font-storybook), Georgia, serif;
   font-size: 15px;
   font-style: italic;
   font-weight: 500;
