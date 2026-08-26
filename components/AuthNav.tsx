@@ -176,10 +176,7 @@ export function AuthNav() {
 
   if (loading) {
     return (
-      <div
-        className="h-10 w-[7.5rem] shrink-0 sm:w-[9rem]"
-        aria-hidden="true"
-      />
+      <div className="site-nav-avatar shrink-0 opacity-40" aria-hidden="true" />
     );
   }
 
@@ -200,42 +197,24 @@ export function AuthNav() {
         <div ref={containerRef} className="relative shrink-0">
           <button
             type="button"
-            className={`flex max-w-[10.5rem] items-center gap-1.5 rounded-sm border border-gold-600/35 bg-forest-950/80 px-1.5 py-1 transition-[border-color,filter] hover:border-gold-500/55 sm:max-w-[13rem] ${
+            className={`site-nav-avatar ${
               open || onProfile || onPreferences || onStats || onSettings
-                ? "border-gold-500/60"
+                ? "site-nav-avatar--active"
                 : ""
             }`}
             aria-expanded={open}
             aria-haspopup="menu"
             aria-controls={menuId}
+            aria-label={`Account menu for ${label}`}
             onClick={() => setOpen((prev) => !prev)}
           >
             <AvatarCrest
               avatarKey={profile?.avatar_key}
-              className="h-10 w-10 rounded-sm"
+              className="h-full w-full rounded-full !border-0 shadow-none"
               size={40}
               title={avatar.label}
             />
-            <span className="site-nav-gold min-w-0 truncate">
-              {label}
-            </span>
-            <svg
-              className={`h-3 w-3 shrink-0 text-gold-500/80 transition-transform ${
-                open ? "rotate-180" : ""
-              }`}
-              viewBox="0 0 12 12"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M2.5 4.25L6 7.75L9.5 4.25"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span className="sr-only">Account menu</span>
+            <span className="sr-only">{label}</span>
           </button>
 
           {open ? (
@@ -325,24 +304,49 @@ export function AuthNav() {
     );
   }
 
+  const onLogin = pathname === "/login";
+  const onRegister = pathname === "/register";
+
   return (
-    <div className="flex shrink-0 items-center gap-2.5 sm:gap-4">
-      <Link
-        href="/login"
-        className={`site-nav-gold inline-flex min-h-[2.5rem] items-center px-0.5 sm:min-h-0 ${
-          pathname === "/login" ? "site-nav-gold--active" : ""
+    <div ref={containerRef} className="relative shrink-0">
+      <button
+        type="button"
+        className={`site-nav-avatar ${
+          open || onLogin || onRegister ? "site-nav-avatar--active" : ""
         }`}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls={menuId}
+        aria-label="Account"
+        onClick={() => setOpen((prev) => !prev)}
       >
-        Login
-      </Link>
-      <Link
-        href="/register"
-        className={`site-nav-gold inline-flex min-h-[2.5rem] items-center px-0.5 sm:min-h-0 ${
-          pathname === "/register" ? "site-nav-gold--active" : ""
-        }`}
-      >
-        Register
-      </Link>
+        <UserIcon className="h-4 w-4 sm:h-[1.15rem] sm:w-[1.15rem]" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Account"
+          className="absolute right-0 z-[60] mt-2 min-w-[9.5rem] overflow-hidden rounded-sm border border-gold-500/60 bg-[#0a1812] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.65),0_0_0_1px_rgba(166,124,45,0.28),inset_0_1px_0_rgba(240,215,138,0.1)]"
+        >
+          <Link
+            href="/login"
+            role="menuitem"
+            className={`${menuItemClass} ${onLogin ? menuItemActiveClass : ""}`}
+            onClick={() => setOpen(false)}
+          >
+            Login
+          </Link>
+          <Link
+            href="/register"
+            role="menuitem"
+            className={`${menuItemClass} ${onRegister ? menuItemActiveClass : ""}`}
+            onClick={() => setOpen(false)}
+          >
+            Register
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 }

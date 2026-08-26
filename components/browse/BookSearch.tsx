@@ -700,7 +700,7 @@ export function BookSearch({
                 // Search runs only on form submit — never on each keystroke
                 placeholder="Search by title, author, or ISBN..."
                 autoComplete="off"
-                className="min-h-[2.75rem] flex-1 bg-transparent py-3 pl-11 pr-3 text-base placeholder:text-[#4a2f0f] placeholder:opacity-75 focus:outline-none sm:pl-14 sm:pr-4 sm:text-[17px]"
+                className="min-h-[2.75rem] flex-1 bg-transparent py-3 pl-11 pr-3 text-base placeholder:italic placeholder:text-[#4a2f0f] placeholder:opacity-80 focus:outline-none sm:pl-14 sm:pr-4 sm:text-[17px]"
                 style={{
                   color: "#2f1f0f",
                   fontFamily: "var(--font-heading), Georgia, serif",
@@ -717,7 +717,7 @@ export function BookSearch({
               <button
                 type="submit"
                 disabled={loading || loadingMore || !query.trim()}
-                className="btn-primary min-h-[2.75rem] w-full px-8 py-3 text-sm tracking-[0.14em] sm:w-auto"
+                className="parchment-search-btn w-full sm:w-auto"
               >
                 {loading ? (
                   <>
@@ -797,8 +797,8 @@ export function BookSearch({
               </div>
 
               <div
-                className={`grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${
-                  loadingMore ? "opacity-70 transition-opacity" : ""
+                className={`tome-card-grid ${
+                  loadingMore ? "opacity-70" : ""
                 }`}
               >
                 {books.map((book) => (
