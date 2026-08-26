@@ -645,54 +645,17 @@ export function BookSearch({
 
   return (
     <FantasyPageShell variant="browse" priority>
-      <div
-        className="pointer-events-none absolute inset-0 overflow-hidden"
-        aria-hidden="true"
-      >
-        {[
-          { t: "18%", l: "22%", d: "0s" },
-          { t: "35%", l: "72%", d: "1.2s" },
-          { t: "55%", l: "40%", d: "2.1s" },
-          { t: "68%", l: "80%", d: "0.5s" },
-          { t: "42%", l: "12%", d: "1.7s" },
-        ].map((p, i) => (
-          <span
-            key={i}
-            className="absolute h-1 w-1 animate-dust rounded-full bg-gold-300/55"
-            style={{ top: p.t, left: p.l, animationDelay: p.d }}
-          />
-        ))}
-      </div>
-
       <div className="relative flex min-h-full flex-col">
-        <div
-          className={`mx-auto flex w-full max-w-2xl flex-col items-center px-4 sm:px-6 ${
-            hasSearched || loading
-              ? "pb-6 pt-8 sm:pb-8 sm:pt-16"
-              : "flex-1 justify-center pb-12 pt-6 sm:pb-24 sm:pt-10"
-          }`}
-        >
-          <p className="relative mb-5 max-w-xl px-1 text-center text-base leading-relaxed sm:mb-8 sm:text-xl md:text-[1.35rem]">
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 top-[2px] select-none font-[family-name:var(--font-storybook)] tracking-[0.03em] text-[#1a1205]/80 blur-[0.4px]"
-            >
-              A reader who knows themselves will never be truly lost among the
-              shelves.
-            </span>
-            <span className="carved-gold-text relative">
-              A reader who knows themselves will never be truly lost among the
-              shelves.
-            </span>
-          </p>
-
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-8">
           <form
             onSubmit={handleSearch}
-            className="parchment-plaque mx-auto w-full max-w-3xl px-3 py-3 sm:px-5 sm:py-3.5"
+            className="browse-search-row"
           >
-            <div className="relative flex flex-col items-stretch gap-2.5 sm:flex-row sm:items-center sm:gap-3">
-              <Search className="pointer-events-none absolute left-3.5 top-3.5 z-10 h-5 w-5 text-[#a67c2d] sm:left-6 sm:top-1/2 sm:-translate-y-1/2" />
-
+            <div className="browse-search-scroll">
+              <Search
+                className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-[#8a6424] sm:left-4"
+                aria-hidden="true"
+              />
               <input
                 type="search"
                 value={query}
@@ -700,7 +663,7 @@ export function BookSearch({
                 // Search runs only on form submit — never on each keystroke
                 placeholder="Search by title, author, or ISBN..."
                 autoComplete="off"
-                className="min-h-[2.75rem] flex-1 bg-transparent py-3 pl-11 pr-3 text-base placeholder:italic placeholder:text-[#4a2f0f] placeholder:opacity-80 focus:outline-none sm:pl-14 sm:pr-4 sm:text-[17px]"
+                className="browse-search-ink"
                 style={{
                   color: "#2f1f0f",
                   fontFamily: "var(--font-heading), Georgia, serif",
@@ -713,34 +676,33 @@ export function BookSearch({
                   colorScheme: "light",
                 }}
               />
-
-              <button
-                type="submit"
-                disabled={loading || loadingMore || !query.trim()}
-                className="parchment-search-btn w-full sm:w-auto"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    Searching...
-                  </>
-                ) : (
-                  "Search"
-                )}
-              </button>
             </div>
+            <button
+              type="submit"
+              disabled={loading || loadingMore || !query.trim()}
+              className="parchment-search-btn"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Searching...
+                </>
+              ) : (
+                "Search"
+              )}
+            </button>
           </form>
 
           {!effectivelyLoggedIn ? (
             <SignupPrompt
               variant="inline"
               redirectTo="/browse"
-              className="mt-4 max-w-xl sm:mt-5"
+              className="mt-3 max-w-xl sm:mt-4"
             />
           ) : null}
         </div>
 
-        <div className="mx-auto w-full max-w-5xl px-4 pb-12 sm:px-6 sm:pb-16">
+        <div className="mx-auto w-full max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
           {!hasSearched && !loading && (
             <BestsellersSection
               books={bestsellers}
@@ -789,8 +751,8 @@ export function BookSearch({
             </div>
           ) : books.length > 0 ? (
             <>
-              <div className="mb-6">
-                <p className="font-storybook text-sm font-semibold tracking-[0.12em] nav-dragon-gold sm:text-[15px]">
+              <div className="mb-5">
+                <p className="text-center font-heading text-sm font-medium tracking-[0.06em] text-[#f0d78a] sm:text-[15px]">
                   {books.length} result{books.length !== 1 ? "s" : ""} for
                   &ldquo;{query}&rdquo;
                 </p>
@@ -815,7 +777,7 @@ export function BookSearch({
                 <div className="mt-10 flex flex-col items-center gap-3">
                   {loadingMore && (
                     <p
-                      className="font-heading text-sm font-medium tracking-wide nav-dragon-gold"
+                      className="font-heading text-sm font-medium tracking-wide text-[#f0d78a]"
                       aria-live="polite"
                     >
                       Fetching the next page from the archives...
@@ -825,7 +787,7 @@ export function BookSearch({
                     type="button"
                     onClick={handleLoadMore}
                     disabled={loadingMore || !hasMore}
-                    className="btn-primary min-w-[12rem] px-10 py-3.5 text-sm tracking-[0.16em]"
+                    className="parchment-search-btn min-w-[12rem] px-10"
                   >
                     {loadingMore ? (
                       <>

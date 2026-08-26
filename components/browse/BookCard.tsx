@@ -36,7 +36,7 @@ export function BookCard({
 
   return (
     <article className="tome-card">
-      <div className="relative h-[7.25rem] w-[4.85rem] shrink-0 overflow-hidden border-r border-gold-600/25 bg-[#0c1f19] sm:h-[8.25rem] sm:w-[5.5rem]">
+      <div className="tome-card-cover">
         <BookCover
           book={book}
           variant="card"
@@ -45,24 +45,20 @@ export function BookCard({
         />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col px-3 py-2.5 sm:px-3.5 sm:py-3">
-        <h2 className="line-clamp-2 font-storybook text-[0.95rem] font-bold leading-snug tracking-[0.02em] text-[#f0d78a] sm:text-base">
-          {book.title}
-        </h2>
-        <p className="mt-0.5 line-clamp-1 font-heading text-sm leading-snug text-[#f0e4c7]/90">
+      <div className="tome-card-body">
+        <h2 className="tome-card-title">{book.title}</h2>
+        <p className="tome-card-author">
           <AuthorLinks
             authors={book.authors}
-            className="font-medium text-[#f0e4c7]/90"
+            className="font-medium text-[#f0e4c7]"
           />
+          {displayYear ? (
+            <span className="tome-card-year"> · {displayYear}</span>
+          ) : null}
         </p>
-        {displayYear ? (
-          <p className="mt-0.5 font-heading text-[11px] text-[#f0e4c7]/65">
-            {displayYear}
-          </p>
-        ) : null}
 
         {book.genres.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="tome-card-tags">
             {book.genres.slice(0, 2).map((genre) => (
               <GenreTag key={genre} size="sm">
                 {genre}
@@ -71,7 +67,7 @@ export function BookCard({
           </div>
         ) : null}
 
-        <div className="mt-auto flex flex-col gap-1 pt-2">
+        <div className="tome-card-actions">
           {showInscribed ? (
             <div
               className="inline-flex w-fit items-center gap-1 text-[#e2c06a]"

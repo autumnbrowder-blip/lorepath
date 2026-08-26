@@ -1,6 +1,6 @@
 import { BookCard } from "@/components/browse/BookCard";
 import type { BookSummary } from "@/types/book";
-import { Crown, ScrollText } from "lucide-react";
+import { ScrollText } from "lucide-react";
 
 type BestsellersSectionProps = {
   books: BookSummary[];
@@ -17,24 +17,17 @@ export function BestsellersSection({
   if (!books.length && !error) return null;
 
   return (
-    <section
-      aria-labelledby="bestsellers-heading"
-      className="mb-12 border-b border-gold-600/25 pb-12"
-    >
-      <div className="mb-7 text-center sm:text-left">
-        <p className="mb-2 inline-flex items-center gap-2 font-storybook text-[11px] font-bold uppercase tracking-[0.28em] nav-dragon-gold">
-          <Crown className="h-3.5 w-3.5 text-[#e2c06a]" aria-hidden="true" />
+    <section aria-labelledby="bestsellers-heading" className="mb-10">
+      <div className="mb-5 text-center">
+        <p className="mb-1 font-heading text-[11px] font-medium uppercase tracking-[0.22em] text-[#f0d78a]/80">
           From the New York Times
         </p>
         <h2
           id="bestsellers-heading"
-          className="font-storybook text-2xl font-bold tracking-[0.06em] nav-dragon-gold sm:text-3xl"
+          className="font-display text-xl font-medium tracking-[0.06em] text-[#f0d78a] sm:text-2xl"
         >
           New Releases & Bestsellers
         </h2>
-        <p className="mt-2 max-w-2xl font-heading text-base font-medium leading-relaxed nav-dragon-gold">
-          Current hardcover and trade paperback fiction lists.
-        </p>
       </div>
 
       {error && books.length === 0 ? (
@@ -43,7 +36,7 @@ export function BestsellersSection({
             className="relative z-[1] mx-auto mb-3 h-8 w-8 text-[#e2c06a]/80"
             aria-hidden="true"
           />
-          <p className="relative z-[1] font-heading text-base font-medium leading-relaxed nav-dragon-gold">
+          <p className="relative z-[1] font-heading text-base font-medium leading-relaxed text-[#f0d78a]">
             {error}
           </p>
         </div>
