@@ -242,6 +242,71 @@
     background-color: #0a1410;
   }
 
+  /*
+   * Shared classical library — viewport-fixed cover, no parallax, no recrop.
+   * The element is position:fixed (same visual as background-attachment:fixed)
+   * so clicks, dropdowns, and rating controls cannot zoom the photo.
+   */
+  .library-classical-scene {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 100%;
+    min-height: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
+    overflow: hidden;
+    transform: none !important;
+    transition: none !important;
+    background-color: #070e0a;
+    background-image:
+      radial-gradient(
+        ellipse at 50% 38%,
+        rgba(7, 14, 10, 0.18) 0%,
+        rgba(7, 14, 10, 0.42) 52%,
+        rgba(4, 8, 6, 0.72) 100%
+      ),
+      url("/images/backgrounds/library-classical.png");
+    background-size: cover, cover;
+    background-position: center center, center center;
+    background-repeat: no-repeat, no-repeat;
+    background-attachment: scroll, scroll;
+  }
+
+  /* Navbar gold — solid antique gold, same family/size on every page */
+  .site-nav-gold {
+    font-family: var(--font-storybook), var(--font-display), Georgia, serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+    color: #f0d78a;
+    -webkit-text-fill-color: #f0d78a;
+    background: none;
+    background-image: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    filter: none;
+    text-shadow:
+      0 1px 0 rgba(20, 12, 4, 0.95),
+      0 0 12px rgba(201, 162, 74, 0.4);
+  }
+
+  @media (min-width: 640px) {
+    .site-nav-gold {
+      font-size: 1rem;
+    }
+  }
+
+  a.site-nav-gold:hover,
+  .site-nav-gold--active {
+    color: #fff1c9;
+    -webkit-text-fill-color: #fff1c9;
+  }
+
   /* Viewport shell — backdrop stays pinned while content scrolls */
   .fantasy-page-shell {
     flex: 1 1 auto;
@@ -252,6 +317,7 @@
     min-height: calc(100svh - 4.5rem);
     min-height: calc(100dvh - 4.5rem);
     max-height: calc(100dvh - 4.5rem);
+    background-color: transparent;
   }
 
   .fantasy-page-shell,

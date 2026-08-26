@@ -216,7 +216,7 @@ export function AuthNav() {
               size={40}
               title={avatar.label}
             />
-            <span className="min-w-0 truncate font-storybook text-sm tracking-wide nav-dragon-gold sm:text-base">
+            <span className="site-nav-gold min-w-0 truncate">
               {label}
             </span>
             <svg
@@ -329,16 +329,16 @@ export function AuthNav() {
     <div className="flex shrink-0 items-center gap-2.5 sm:gap-4">
       <Link
         href="/login"
-        className={`font-storybook transition-[filter] nav-dragon-gold ${
-          pathname === "/login" ? "nav-dragon-gold--active" : ""
+        className={`site-nav-gold inline-flex min-h-[2.5rem] items-center px-0.5 sm:min-h-0 ${
+          pathname === "/login" ? "site-nav-gold--active" : ""
         }`}
       >
         Login
       </Link>
       <Link
         href="/register"
-        className={`font-storybook transition-[filter] nav-dragon-gold ${
-          pathname === "/register" ? "nav-dragon-gold--active" : ""
+        className={`site-nav-gold inline-flex min-h-[2.5rem] items-center px-0.5 sm:min-h-0 ${
+          pathname === "/register" ? "site-nav-gold--active" : ""
         }`}
       >
         Register

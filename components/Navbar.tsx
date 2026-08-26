@@ -11,6 +11,9 @@ const navLinks = [
   { href: "/faq", label: "FAQ" },
 ];
 
+const navLinkClass =
+  "site-nav-gold inline-flex min-h-[2.5rem] items-center px-0.5 sm:min-h-0";
+
 export function Navbar() {
   const pathname = usePathname();
 
@@ -38,8 +41,8 @@ export function Navbar() {
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className={`nav-dragon-gold inline-flex min-h-[2.5rem] items-center px-0.5 font-storybook text-[0.8125rem] transition-[filter] sm:min-h-0 sm:text-base ${
-                    pathname === link.href ? "nav-dragon-gold--active" : ""
+                  className={`${navLinkClass} ${
+                    pathname === link.href ? "site-nav-gold--active" : ""
                   }`}
                 >
                   {link.label}

@@ -1,5 +1,6 @@
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
+import { LibraryClassicalScene } from "@/components/theme/LibraryClassicalScene";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { hasRequestAuthCookie } from "@/lib/supabase/server";
 import {
@@ -17,7 +18,6 @@ import {
   UserPlus,
 } from "lucide-react";
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -181,26 +181,7 @@ export default async function FaqPage() {
 
   return (
     <div className="faq-page">
-      {/* Same viewport-locked library scene as the homepage hero */}
-      <div className="faq-page-scene" aria-hidden="true">
-        <div className="scroll-parallax-layer" data-scroll-parallax="">
-          <Image
-            src="/images/lorepath-library-hero.png"
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="faq-page-scene-image"
-          />
-        </div>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,_rgba(7,14,10,0.1)_0%,_rgba(7,14,10,0.5)_55%,_rgba(4,8,6,0.9)_100%)]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#070e0a]/65 via-transparent to-[#070e0a]/92" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#070e0a]/40 via-transparent to-[#070e0a]/40" />
-        {/* Candlelight pools — matches homepage */}
-        <div className="absolute bottom-[8%] left-[12%] h-56 w-56 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(212,170,60,0.22)_0%,_transparent_70%)] blur-2xl" />
-        <div className="absolute bottom-[12%] right-[14%] h-48 w-48 animate-candle-flicker rounded-full bg-[radial-gradient(circle,_rgba(184,148,31,0.18)_0%,_transparent_70%)] blur-2xl [animation-delay:0.9s]" />
-        <div className="absolute left-1/2 top-[32%] h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(212,184,74,0.12)_0%,_transparent_68%)] blur-2xl" />
-      </div>
+      <LibraryClassicalScene />
 
       <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-7 sm:px-6 sm:py-14">
         <header className="mb-5 text-center sm:mb-7">
