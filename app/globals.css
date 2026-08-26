@@ -892,21 +892,21 @@
   .tome-card-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1.25rem;
+    gap: 1.35rem;
     align-items: stretch;
   }
 
-  @media (min-width: 720px) {
+  @media (min-width: 680px) {
     .tome-card-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1.35rem 1.4rem;
+      gap: 1.4rem 1.45rem;
     }
   }
 
-  @media (min-width: 1100px) {
+  @media (min-width: 980px) {
     .tome-card-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1.45rem 1.5rem;
+      gap: 1.5rem 1.55rem;
     }
   }
 
@@ -931,47 +931,49 @@
     display: flex;
     flex-direction: row;
     align-items: stretch;
-    min-height: 11.75rem;
+    min-height: 12.5rem;
     height: 100%;
     overflow: hidden;
     border-radius: 2px;
-    border: 1px solid rgba(201, 162, 39, 0.72);
+    border: 1px solid rgba(201, 162, 39, 0.88);
     background: linear-gradient(
       165deg,
-      rgba(14, 38, 30, 0.7) 0%,
-      rgba(7, 16, 12, 0.8) 100%
+      rgba(16, 46, 36, 0.44) 0%,
+      rgba(8, 22, 16, 0.5) 100%
     );
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     box-shadow:
-      0 14px 32px rgba(0, 0, 0, 0.4),
-      inset 0 0 0 1px rgba(212, 179, 106, 0.32);
+      0 12px 28px rgba(0, 0, 0, 0.32),
+      inset 0 0 0 1px rgba(212, 179, 106, 0.42);
     transform: none;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
   .tome-card:hover {
-    border-color: rgba(212, 179, 106, 0.92);
+    border-color: rgba(232, 204, 134, 0.95);
     transform: none;
     box-shadow:
-      0 16px 36px rgba(0, 0, 0, 0.45),
-      inset 0 0 0 1px rgba(212, 179, 106, 0.48);
+      0 14px 32px rgba(0, 0, 0, 0.38),
+      inset 0 0 0 1px rgba(232, 204, 134, 0.5);
   }
 
   .tome-card-cover {
     position: relative;
     align-self: stretch;
-    width: 5.75rem;
-    min-height: 10rem;
+    width: 6rem;
+    min-height: 10.5rem;
     flex-shrink: 0;
-    margin: 0.85rem 0 0.85rem 0.85rem;
+    margin: 0.9rem 0 0.9rem 0.9rem;
     overflow: hidden;
     background: #0c1f19;
-    border: 1px solid rgba(212, 179, 106, 0.55);
+    border: 1px solid rgba(201, 162, 39, 0.75);
     box-shadow: inset 0 0 0 1px rgba(12, 24, 18, 0.35);
   }
 
   @media (min-width: 640px) {
     .tome-card-cover {
-      width: 6.75rem;
+      width: 7rem;
     }
   }
 
@@ -987,7 +989,7 @@
     min-width: 0;
     flex: 1;
     flex-direction: column;
-    padding: 0.95rem 1.05rem 0.95rem 0.95rem;
+    padding: 0.95rem 1.1rem 0.95rem 1rem;
   }
 
   .tome-card-title {
@@ -995,36 +997,44 @@
     overflow: hidden;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
-    font-family: var(--font-display), Georgia, serif;
-    font-size: 1.375rem;
+    font-family: var(--font-heading), "Palatino Linotype", Georgia, serif;
+    font-size: 1.7rem;
     font-weight: 600;
-    line-height: 1.22;
-    letter-spacing: 0.015em;
+    font-style: normal;
+    line-height: 1.16;
+    letter-spacing: 0.01em;
     text-transform: none;
-    color: #d4b36a;
-    -webkit-text-fill-color: #d4b36a;
+    color: #e2c06a;
+    -webkit-text-fill-color: #e2c06a;
+    text-shadow: 0 1px 0 rgba(12, 8, 2, 0.55);
   }
 
   .tome-card-author {
-    margin-top: 0.3rem;
+    margin-top: 0.28rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-heading), Georgia, serif;
-    font-size: 1.125rem;
+    font-size: 1.05rem;
+    font-weight: 500;
     line-height: 1.35;
-    color: #e8d5b0;
+    color: #f0e6d2;
+  }
+
+  .tome-card-author-link {
+    color: inherit;
+    font: inherit;
   }
 
   .tome-card-year {
-    color: rgba(232, 213, 176, 0.72);
+    color: rgba(240, 230, 210, 0.7);
   }
 
   .tome-card-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
-    margin-top: 0.65rem;
+    margin-top: 0.7rem;
   }
 
   .tome-card-actions {
@@ -1032,14 +1042,22 @@
     flex-direction: column;
     gap: 0.25rem;
     margin-top: auto;
-    padding-top: 0.65rem;
+    padding-top: 0.7rem;
   }
 
   .tome-card .codex-tag {
     transform: none;
-    background: rgba(12, 32, 26, 0.72);
-    border-color: rgba(201, 162, 39, 0.7);
+    gap: 0;
+    padding: 0.18rem 0.55rem;
+    border-radius: 2px;
+    border: 1px solid rgba(201, 162, 39, 0.78);
+    background: rgba(10, 28, 22, 0.72);
     box-shadow: none;
+    font-family: var(--font-heading), Georgia, serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: none;
   }
 
   .tome-card .codex-tag:hover,
@@ -1054,14 +1072,19 @@
 
   .tome-card .codex-tag-label {
     background: none;
-    color: #e8d5b0;
-    -webkit-text-fill-color: #e8d5b0;
+    color: #d4b36a;
+    -webkit-text-fill-color: #d4b36a;
     filter: none;
+    font-family: var(--font-heading), Georgia, serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: none;
   }
 
   .tome-open-link {
     font-family: var(--font-heading), Georgia, serif;
-    font-size: 1.05rem;
+    font-size: 1.12rem;
     font-style: italic;
     font-weight: 500;
     letter-spacing: 0.01em;
@@ -2151,6 +2174,7 @@
    Parchment bar + attached dark-green Search button (forced even in .dark)
    ============================================================ */
 .browse-search-row {
+  position: relative;
   display: flex;
   width: min(100%, 52rem);
   max-width: 52rem;
@@ -2173,24 +2197,28 @@
   position: relative !important;
   flex: 1 1 auto !important;
   width: 100% !important;
-  min-height: 3.6rem;
-  overflow: hidden !important;
+  min-height: 3.65rem;
+  overflow: visible !important;
   color-scheme: light !important;
-  background-color: #e6d9b8 !important;
-  background-image: url("/images/parchment.jpg") !important;
+  background-color: #e4d4ad !important;
+  background-image:
+    linear-gradient(180deg, rgba(248, 236, 204, 0.28), rgba(196, 168, 108, 0.18)),
+    url("/images/parchment.jpg") !important;
   background-size: cover !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
-  border: 3px solid #8c6b2e !important;
+  border: 2px solid #c9a227 !important;
+  border-radius: 2px 0 0 2px;
   box-shadow:
-    inset 0 0 0 1px rgba(166, 124, 45, 0.45),
-    inset 0 0 28px rgba(90, 60, 20, 0.12),
+    inset 0 0 0 1px rgba(232, 204, 134, 0.45),
+    inset 0 0 22px rgba(90, 60, 20, 0.1),
     0 10px 24px rgba(0, 0, 0, 0.38) !important;
 }
 
 @media (min-width: 640px) {
   .browse-search-scroll {
-    border-right-width: 2px !important;
+    border-right-width: 0 !important;
+    border-radius: 2px 0 0 2px !important;
   }
 }
 
@@ -2199,29 +2227,49 @@
   display: block !important;
   pointer-events: none !important;
   position: absolute !important;
-  inset: 7px !important;
-  border: 1px solid rgba(139, 105, 20, 0.42) !important;
+  inset: 5px !important;
+  border: 1px solid rgba(201, 162, 39, 0.55) !important;
   z-index: 1 !important;
 }
 
 .browse-search-scroll::after {
-  display: none !important;
+  content: "" !important;
+  display: block !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  inset: -3px !important;
+  z-index: 2 !important;
+  background:
+    linear-gradient(#c9a227, #c9a227) 0 0 / 18px 3px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 0 0 / 3px 18px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 100% 0 / 18px 3px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 100% 0 / 3px 18px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 0 100% / 18px 3px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 0 100% / 3px 18px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 100% 100% / 18px 3px no-repeat,
+    linear-gradient(#c9a227, #c9a227) 100% 100% / 3px 18px no-repeat;
 }
 
 .browse-search-row .parchment-search-btn {
   flex: 0 0 auto;
-  min-height: 3.6rem;
+  min-height: 3.65rem;
   width: 100%;
-  border: 3px solid #c9a227;
-  box-shadow: inset 0 0 0 1px rgba(212, 179, 106, 0.28);
+  border: 2px solid #c9a227;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #1a4638 0%, #0c241c 100%);
+  box-shadow: inset 0 0 0 1px rgba(212, 179, 106, 0.32);
+  font-family: var(--font-heading), Georgia, serif;
+  font-size: 1.22rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 @media (min-width: 640px) {
   .browse-search-row .parchment-search-btn {
     width: auto;
-    min-width: 9.25rem;
+    min-width: 9.5rem;
     border-left-width: 2px;
-    border-radius: 0 3px 3px 0;
+    border-radius: 0 2px 2px 0;
   }
 }
 
@@ -2242,8 +2290,9 @@
   -webkit-text-fill-color: #3f2a1e !important;
   caret-color: #3f2a1e !important;
   font-family: var(--font-heading), Georgia, "Times New Roman", serif !important;
-  font-size: 1.2rem !important;
+  font-size: 1.22rem !important;
   font-weight: 500 !important;
+  font-style: normal !important;
   letter-spacing: 0.02em !important;
   line-height: 1.4 !important;
   padding: 0.9rem 1.15rem 0.9rem 3.1rem !important;

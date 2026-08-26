@@ -50,7 +50,7 @@ export function BookCard({
         <p className="tome-card-author">
           <AuthorLinks
             authors={book.authors}
-            className="font-medium text-[#e8d5b0]"
+            className="tome-card-author-link"
           />
           {displayYear ? (
             <span className="tome-card-year"> · {displayYear}</span>
