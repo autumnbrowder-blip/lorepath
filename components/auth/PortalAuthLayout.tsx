@@ -1,7 +1,7 @@
 /**
  * Immersive login/register scene.
  * Hall photo is a CSS full-page background on .portal-auth-page so Login and
- * Register share the same contained image. Form boxes sit on top.
+ * Register share the same cover image. Form boxes sit on top.
  */
 export function PortalAuthLayout({ children }: { children: React.ReactNode }) {
   return (

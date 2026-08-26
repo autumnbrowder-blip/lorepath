@@ -592,12 +592,12 @@
     flex: 1 1 auto;
     width: 100%;
     min-height: 100vh;
-    background-color: #07080a;
+    background-color: #1a120c;
     background-image: url("/images/auth-hall.jpg");
     background-repeat: no-repeat;
-    background-position: center center;
-    background-size: contain;
-    background-attachment: fixed;
+    background-position: center bottom;
+    background-size: cover;
+    background-attachment: scroll;
     filter: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -2142,6 +2142,21 @@
       #0b2019 100%
     );
   }
+}
+
+/* Login / Register hall — unlayered so cover reaches the viewport bottom. */
+.portal-auth-page {
+  min-height: 100vh;
+  background-image: url("/images/auth-hall.jpg");
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: cover;
+  background-attachment: scroll;
+  background-color: #1a120c;
+  filter: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transform: none;
 }
 
 /* ============================================================
