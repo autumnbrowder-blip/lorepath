@@ -183,7 +183,7 @@ export default async function FaqPage() {
     <div className="faq-page">
       <LibraryClassicalScene />
 
-      <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-7 sm:px-6 sm:py-14">
+      <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-3xl flex-col justify-start px-4 py-7 sm:px-6 sm:py-14 pb-[max(1.75rem,env(safe-area-inset-bottom))]">
         <header className="mb-5 text-center sm:mb-7">
           <p className="mx-auto flex items-center justify-center gap-2 font-display text-[11px] font-normal uppercase tracking-[0.08em] nav-dragon-gold sm:text-xs">
             <Sparkles className="h-3.5 w-3.5 text-[#f0d78a]" />

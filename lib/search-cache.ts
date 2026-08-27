@@ -17,7 +17,8 @@ type SearchCacheEntry = {
   googleRawCount?: number;
 };
 
-const TTL_MS = 180_000;
+/** Five minutes — GET /api/books/search is keyed on q + page. */
+const TTL_MS = 300_000;
 const MAX_ENTRIES = 80;
 
 const cache = new Map<string, SearchCacheEntry>();
@@ -27,7 +28,10 @@ export function searchCacheKey(input: {
   page: number;
   mode?: string;
 }): string {
-  return `${input.mode ?? "text"}:${input.page}:${input.query.trim().toLowerCase()}`;
+  const q = input.query.trim().toLowerCase();
+  const page = Math.max(1, input.page);
+  const mode = input.mode ?? "text";
+  return `q=${q}|page=${page}|mode=${mode}`;
 }
 
 function pruneExpired(now: number) {

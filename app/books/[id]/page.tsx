@@ -237,7 +237,7 @@ export default async function BookDetailPage({
         event="open_book"
         props={{ book_id: id, source: "detail" }}
       />
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <Link href={back.href} className="preference-codex-box--nav relative mb-4 sm:mb-5">
           <ArrowLeft className="h-4 w-4" />
           <span className="relative z-[1] nav-dragon-gold">{back.label}</span>

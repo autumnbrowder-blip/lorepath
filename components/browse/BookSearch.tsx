@@ -478,7 +478,6 @@ export function BookSearch({
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
       credentials: "same-origin",
-      cache: "no-store",
       headers,
     });
     const data = await response.json();
@@ -639,7 +638,7 @@ export function BookSearch({
 
   return (
     <FantasyPageShell variant="browse" priority>
-      <div className="relative flex min-h-full flex-col">
+      <div className="relative flex min-h-full flex-col pb-[env(safe-area-inset-bottom,0px)]">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-8">
           <form
             onSubmit={handleSearch}
@@ -687,7 +686,7 @@ export function BookSearch({
           ) : null}
         </div>
 
-        <div className="mx-auto w-full max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
+        <div className="mx-auto w-full max-w-6xl px-4 pb-[max(3rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-16">
           {!hasSearched && !loading && (
             <BestsellersSection
               books={bestsellers}
@@ -748,12 +747,13 @@ export function BookSearch({
                   loadingMore ? "opacity-70" : ""
                 }`}
               >
-                {books.map((book) => (
+                {books.map((book, index) => (
                   <BookCard
                     key={book.id}
                     book={book}
                     searchQuery={resultsQuery}
                     hasUserRating={hasUserRating(book)}
+                    priority={index < 3}
                   />
                 ))}
               </div>

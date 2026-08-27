@@ -42,11 +42,12 @@ export function BestsellersSection({
         </div>
       ) : (
         <div className="tome-card-grid">
-          {books.map((book) => (
+          {books.map((book, index) => (
             <BookCard
               key={book.id}
               book={book}
               hasUserRating={Boolean(isBookInscribed?.(book))}
+              priority={index < 3}
             />
           ))}
         </div>

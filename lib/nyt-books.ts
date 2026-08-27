@@ -9,6 +9,12 @@ import type { BookDetail, BookSummary } from "@/types/book";
 
 const NYT_ID_PREFIX = "nyt-";
 const FETCH_TIMEOUT_MS = 3000;
+const NYT_CACHE_TTL_MS = 60 * 60 * 1000;
+
+let nytBestsellersCache: {
+  expiresAt: number;
+  value: NytBestsellersResult;
+} | null = null;
 
 export const NYT_BESTSELLER_LISTS = [
   {
@@ -190,6 +196,11 @@ export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
     return { books: [] };
   }
 
+  const now = Date.now();
+  if (nytBestsellersCache && nytBestsellersCache.expiresAt > now) {
+    return nytBestsellersCache.value;
+  }
+
   try {
     const results = await Promise.all(
       NYT_BESTSELLER_LISTS.map((list) => fetchNytList(list.url, list.label))
@@ -207,21 +218,36 @@ export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
     }
 
     if (books.length === 0) {
-      return {
+      const empty: NytBestsellersResult = {
         books: [],
         error:
           "The bestsellers archive is resting for now. Try searching below for any tome.",
       };
+      nytBestsellersCache = {
+        expiresAt: now + NYT_CACHE_TTL_MS,
+        value: empty,
+      };
+      return empty;
     }
 
-    return { books };
+    const value: NytBestsellersResult = { books };
+    nytBestsellersCache = {
+      expiresAt: now + NYT_CACHE_TTL_MS,
+      value,
+    };
+    return value;
   } catch (error) {
     console.error("NYT bestsellers fetch failed:", error);
-    return {
+    const failed: NytBestsellersResult = {
       books: [],
       error:
         "The bestsellers archive is resting for now. Try searching below for any tome.",
     };
+    nytBestsellersCache = {
+      expiresAt: now + NYT_CACHE_TTL_MS,
+      value: failed,
+    };
+    return failed;
   }
 }
 

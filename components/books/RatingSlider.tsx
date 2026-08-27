@@ -48,7 +48,7 @@ export function RatingSlider({
         </span>
       </div>
 
-      <div className="relative mb-1.5 py-0.5">
+      <div className="relative mb-1.5 min-h-11 py-0.5">
         <div className="h-2 overflow-hidden rounded-sm border border-gold-600/25 bg-forest-950/65">
           <div
             className="h-full rounded-sm bg-gradient-to-r from-gold-600 to-gold-400 transition-[width] duration-200"
@@ -63,7 +63,7 @@ export function RatingSlider({
           step={1}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            className="absolute inset-0 h-11 w-full cursor-pointer opacity-0"
           aria-valuemin={0}
           aria-valuemax={5}
           aria-valuenow={value}
@@ -79,7 +79,7 @@ export function RatingSlider({
             onClick={() => onChange(level)}
             aria-label={`Rate ${label} ${level} out of 5`}
             aria-pressed={value === level}
-            className={`flex-1 rounded-sm border border-gold-600/35 py-1.5 text-sm font-semibold tabular-nums transition-colors duration-150 ${
+            className={`flex-1 rounded-sm border border-gold-600/35 py-1.5 text-sm font-semibold tabular-nums min-h-11 transition-colors duration-150 ${
               value === level
                 ? "border-gold-600/75 bg-gradient-to-r from-gold-600 to-gold-500 text-forest-950"
                 : "bg-forest-950/50 antique-gold-text hover:border-gold-500/50"

@@ -57,6 +57,11 @@ import {
 } from "@/lib/provider-resilience";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import {
+  getCachedSearchPage,
+  searchCacheKey,
+  setCachedSearchPage,
+} from "@/lib/search-cache";
+import {
   fetchSearchProviderFlood,
   SEARCH_FLOOD_SOURCES,
 } from "@/lib/search-flood";
@@ -105,6 +110,32 @@ async function resolveSearchUserId(
   }
 }
 
+async function overlayUserRatedIdentities(
+  books: BookSummary[],
+  accessToken?: string | null
+): Promise<{ books: BookSummary[]; userRatedSlugs: string[] }> {
+  let next = books;
+  let userRatedSlugs: string[] = [];
+  try {
+    const userId = await resolveSearchUserId(accessToken);
+    if (userId) {
+      const { getUserRatedIdentities } = await import("@/lib/ratings");
+      const {
+        alignBooksToRatedSlugs,
+        inscribedCardIdsForBooks,
+      } = await import("@/lib/user-rated-identity");
+      const identities = await getUserRatedIdentities(userId);
+      if (identities.length > 0) {
+        next = alignBooksToRatedSlugs(next, identities);
+        userRatedSlugs = inscribedCardIdsForBooks(next, identities);
+      }
+    }
+  } catch (error) {
+    console.error("[searchBooks] user rated-identity lookup failed:", error);
+  }
+  return { books: next, userRatedSlugs };
+}
+
 /**
  * Multi-stage browse search:
  * 1) Query normalization + safe variants (title never lost when author added)
@@ -125,6 +156,30 @@ export async function searchBooks(
   const searchOptions: SearchBooksOptions | undefined = genreMode
     ? { mode: "genre" }
     : undefined;
+
+  const cacheKey = searchCacheKey({
+    query: searchQuery,
+    page: pageNumber,
+    mode: genreMode ? "genre" : "text",
+  });
+  const canUsePublicCache = !options?.accessToken?.trim();
+  if (canUsePublicCache) {
+    const cachedPage = getCachedSearchPage(cacheKey);
+    if (cachedPage) {
+      return {
+        books: cachedPage.books,
+        sources: cachedPage.sources,
+        sourceCounts: cachedPage.sourceCounts,
+        source: cachedPage.source,
+        page: cachedPage.page,
+        hasMore: cachedPage.hasMore,
+        userRatedSlugs: [],
+        descriptionSources: cachedPage.descriptionSources,
+        googleError: cachedPage.googleError,
+        googleRawCount: cachedPage.googleRawCount,
+      };
+    }
+  }
 
   const userIdPromise = resolveSearchUserId(options?.accessToken);
 
@@ -481,35 +536,33 @@ export async function searchBooks(
 
   const hasMore = flood.hasMore;
 
-  // User-only rated identities → rewrite card ids to rated slugs, then list them.
-  // Match by books.slug OR work-level title+author so OL/Google/NYT edition ids align.
-  let userRatedSlugs: string[] = [];
-  try {
-    const userId = await userIdPromise;
-    if (userId) {
-      const { getUserRatedIdentities } = await import("@/lib/ratings");
-      const {
-        alignBooksToRatedSlugs,
-        inscribedCardIdsForBooks,
-      } = await import("@/lib/user-rated-identity");
-      const identities = await getUserRatedIdentities(userId);
-      if (identities.length > 0) {
-        books = alignBooksToRatedSlugs(books, identities);
-        userRatedSlugs = inscribedCardIdsForBooks(books, identities);
-      }
-    }
-  } catch (error) {
-    console.error("[searchBooks] user rated-identity lookup failed:", error);
+  if (canUsePublicCache) {
+    setCachedSearchPage(cacheKey, {
+      books,
+      sources: SEARCH_SOURCES,
+      sourceCounts,
+      source: "multi",
+      page: pageNumber,
+      hasMore,
+      descriptionSources,
+      googleError: flood.googleError,
+      googleRawCount: flood.googleRawCount,
+    });
   }
 
-  return {
+  const overlay = await overlayUserRatedIdentities(
     books,
+    options?.accessToken
+  );
+
+  return {
+    books: overlay.books,
     sources: SEARCH_SOURCES,
     sourceCounts,
     source: "multi",
     page: pageNumber,
     hasMore,
-    userRatedSlugs,
+    userRatedSlugs: overlay.userRatedSlugs,
     descriptionSources,
     // Temporary debug fields — remove once Google search stability is confirmed.
     googleError: flood.googleError,

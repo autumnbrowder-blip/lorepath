@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
-import { Cinzel, Cormorant_Garamond, Italianno } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Cinzel, Cinzel_Decorative, Cormorant_Garamond, Italianno } from "next/font/google";
 import { AnalyticsProvider } from "@/components/AnalyticsProvider";
 import { BackToTop } from "@/components/BackToTop";
 import { Navbar } from "@/components/Navbar";
@@ -27,9 +27,21 @@ const cinzel = Cinzel({
   variable: "--font-label",
 });
 
+const cinzelDecorative = Cinzel_Decorative({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-logo",
+});
+
 export const metadata: Metadata = {
   title: "LorePath",
   description: "Know before you turn the page",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -40,11 +52,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${italianno.variable} ${cormorant.variable} ${cinzel.variable}`}
+      className={`dark ${italianno.variable} ${cormorant.variable} ${cinzel.variable} ${cinzelDecorative.variable}`}
       suppressHydrationWarning
     >
       <body
-        className={`${italianno.variable} ${cormorant.variable} ${cinzel.variable} min-h-screen bg-background font-heading font-normal text-foreground antialiased selection:bg-accent/30`}
+        className={`${italianno.variable} ${cormorant.variable} ${cinzel.variable} ${cinzelDecorative.variable} min-h-screen bg-background font-heading font-normal text-foreground antialiased selection:bg-accent/30`}
       >
         <ThemeProvider>
           <AnalyticsProvider>

@@ -7,14 +7,14 @@
   align-items: stretch;
 }
 
-@media (min-width: 700px) {
+@media (min-width: 768px) {
   .tome-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
   }
 }
 
-@media (min-width: 980px) {
+@media (min-width: 1024px) {
   .tome-card-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 18px;
@@ -118,10 +118,10 @@
   margin: 0;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-family: var(--font-heading), Georgia, serif;
+  font-family: var(--font-logo), "Cinzel Decorative", Georgia, serif;
   font-size: 1.55rem;
   font-style: normal;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.2;
   letter-spacing: 0.01em;
   text-transform: none;
@@ -184,6 +184,7 @@
 .lp-book-card-actions {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
   margin-top: 8px;
 }
@@ -200,19 +201,27 @@
 }
 
 .lp-book-card-open {
-  width: fit-content;
+  box-sizing: border-box;
+  border: 1px solid #c4a056;
+  border-radius: 2px;
+  background: #0c1812;
   font-family: var(--font-heading), Georgia, serif;
   font-size: 15px;
-  font-style: italic;
-  font-weight: 500;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: none;
+  text-decoration: none;
   color: #d4b36a;
   -webkit-text-fill-color: #d4b36a;
-  text-decoration: none;
 }
 
 .lp-book-card-open:hover {
-  color: #d4b36a;
-  -webkit-text-fill-color: #d4b36a;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  background: #0c1812;
+  border-color: #d4b36a;
+  color: #e8cc86;
+  -webkit-text-fill-color: #e8cc86;
+  text-decoration: none;
+  filter: none;
 }

@@ -3,15 +3,13 @@ import { isGenreSearchMode } from "@/lib/genre-search";
 import { RateLimitError } from "@/lib/google-books";
 import { withTimeout } from "@/lib/provider-resilience";
 import { getBearerToken } from "@/lib/supabase/server";
-import { unstable_noStore as noStore } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-/** Never statically cache this GET — q must be read from the live request. */
+/** q is read from the live request; HTTP cache is keyed on the URL (q + page). */
 export const dynamic = "force-dynamic";
 /** Override per-fetch force-cache so provider results cannot leak across q. */
 export const fetchCache = "force-no-store";
-export const revalidate = 0;
 /** Netlify / serverless hard ceiling (seconds). Handler budget is tighter. */
 export const maxDuration = 10;
 
@@ -22,13 +20,17 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0, must-revalidate",
 } as const;
 
+/** Public GET cache — 5 minutes, keyed by q + page (and mode when present). */
+const PUBLIC_SEARCH_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
+  Vary: "Authorization",
+} as const;
+
 /**
  * Search books via Open Library, Google Books, Gutendex, and Big Book.
  * Provider outages soft-fail inside searchBooks (Promise.allSettled).
  */
 export async function GET(request: NextRequest) {
-  noStore();
-
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get("q")?.trim() ?? "";
   const modeParam = searchParams.get("mode");
@@ -81,7 +83,10 @@ export async function GET(request: NextRequest) {
         };
 
     return NextResponse.json(payload, {
-      headers: NO_STORE_HEADERS,
+      headers:
+        accessToken || isAdmin || wantsSourceDebug
+          ? NO_STORE_HEADERS
+          : PUBLIC_SEARCH_CACHE_HEADERS,
     });
   } catch (error) {
     console.error("[api/books/search] unexpected failure:", error);

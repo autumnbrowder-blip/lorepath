@@ -16,6 +16,8 @@ type BookCardProps = {
    * Never set for logged-out users.
    */
   hasUserRating?: boolean;
+  /** Eager-load the cover (first row). Later cards stay lazy. */
+  priority?: boolean;
 };
 
 /** Present ALL-CAPS catalog titles as title case; leave mixed-case titles alone. */
@@ -39,6 +41,7 @@ export function BookCard({
   book,
   searchQuery,
   hasUserRating = false,
+  priority = false,
 }: BookCardProps) {
   const encodedId = encodeURIComponent(book.id);
   const bookHref = searchQuery?.trim()
@@ -56,6 +59,7 @@ export function BookCard({
           variant="card"
           className="object-cover"
           sizes="72px"
+          priority={priority}
         />
         <span className="lp-book-card-plate-corners" aria-hidden="true" />
       </div>
@@ -98,7 +102,7 @@ export function BookCard({
           ) : null}
           <Link
             href={bookHref}
-            className="tome-link lp-book-card-open"
+            className="lp-book-card-open inline-flex h-9 w-auto items-center justify-center px-3"
             data-testid="open-the-tome"
           >
             Open the Tome
