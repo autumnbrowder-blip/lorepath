@@ -1,11 +1,9 @@
 "use client";
 
 import { AuthNav } from "@/components/AuthNav";
-import { Menu, X } from "lucide-react";
 import { Cinzel_Decorative } from "next/font/google";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useId, useState } from "react";
 import "./Navbar.css";
 
 const wordmark = Cinzel_Decorative({
@@ -24,12 +22,6 @@ const navLinkClass =
 
 export function Navbar() {
   const pathname = usePathname();
-  const menuId = useId();
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
 
   return (
     <header className="site-nav-header sticky top-0 z-50 border-b border-gold-600/30 bg-forest-950/95 shadow-[0_4px_24px_rgba(0,0,0,0.35)] backdrop-blur-md">
@@ -42,7 +34,7 @@ export function Navbar() {
           LorePath
         </Link>
 
-        <ul className="site-nav-links hidden items-center gap-1.5 sm:flex sm:gap-2.5">
+        <ul className="site-nav-links flex items-center gap-1.5 sm:gap-2.5">
           {navLinks.map((link, index) => (
             <li key={link.href} className="flex items-center gap-1.5 sm:gap-2.5">
               {index > 0 ? (
@@ -65,44 +57,10 @@ export function Navbar() {
           ))}
         </ul>
 
-        <div className="flex items-center justify-self-end gap-1 sm:contents">
-          <button
-            type="button"
-            className="site-nav-menu-btn sm:hidden"
-            aria-expanded={menuOpen}
-            aria-controls={menuId}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            {menuOpen ? (
-              <X className="h-5 w-5" aria-hidden="true" />
-            ) : (
-              <Menu className="h-5 w-5" aria-hidden="true" />
-            )}
-          </button>
-          <div className="justify-self-end">
-            <AuthNav />
-          </div>
+        <div className="justify-self-end">
+          <AuthNav />
         </div>
       </nav>
-
-      {menuOpen ? (
-        <ul id={menuId} className="site-nav-drawer sm:hidden">
-          {navLinks.map((link) => (
-            <li key={link.href}>
-              <Link
-                href={link.href}
-                className={`site-nav-drawer-link ${
-                  pathname === link.href ? "site-nav-gold--active" : ""
-                }`}
-                onClick={() => setMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </header>
   );
 }
