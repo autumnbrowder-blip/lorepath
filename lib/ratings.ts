@@ -583,41 +583,50 @@ export async function getUserRatedIdentities(
   }
 
   try {
-    const supabase = await getServiceRoleOrCookieClient();
-    if (!supabase) return [];
+    const { PAGE_FETCH_TIMEOUT_MS, withTimeout } = await import(
+      "@/lib/provider-resilience"
+    );
+    return await withTimeout(
+      (async () => {
+        const supabase = await getServiceRoleOrCookieClient();
+        if (!supabase) return [];
 
-    const { data, error } = await supabase
-      .from("ratings")
-      .select(
-        `
+        const { data, error } = await supabase
+          .from("ratings")
+          .select(
+            `
         books!inner (
           slug,
           title,
           author
         )
       `
-      )
-      .eq("rated_by", userId);
+          )
+          .eq("rated_by", userId);
 
-    if (error || !data || data.length === 0) {
-      return [];
-    }
+        if (error || !data || data.length === 0) {
+          return [];
+        }
 
-    const bySlug = new Map<
-      string,
-      import("@/lib/user-rated-identity").UserRatedIdentity
-    >();
-    for (const row of data) {
-      const book = Array.isArray(row.books) ? row.books[0] : row.books;
-      if (!book) continue;
-      const slug = typeof book.slug === "string" ? book.slug.trim() : "";
-      const title = typeof book.title === "string" ? book.title.trim() : "";
-      if (!slug || !title || bySlug.has(slug)) continue;
-      const author =
-        typeof book.author === "string" ? book.author.trim() || null : null;
-      bySlug.set(slug, { slug, title, author });
-    }
-    return Array.from(bySlug.values());
+        const bySlug = new Map<
+          string,
+          import("@/lib/user-rated-identity").UserRatedIdentity
+        >();
+        for (const row of data) {
+          const book = Array.isArray(row.books) ? row.books[0] : row.books;
+          if (!book) continue;
+          const slug = typeof book.slug === "string" ? book.slug.trim() : "";
+          const title = typeof book.title === "string" ? book.title.trim() : "";
+          if (!slug || !title || bySlug.has(slug)) continue;
+          const author =
+            typeof book.author === "string" ? book.author.trim() || null : null;
+          bySlug.set(slug, { slug, title, author });
+        }
+        return Array.from(bySlug.values());
+      })(),
+      PAGE_FETCH_TIMEOUT_MS,
+      `rated-identities:${userId}`
+    );
   } catch {
     return [];
   }

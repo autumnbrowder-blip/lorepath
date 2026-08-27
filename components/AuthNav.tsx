@@ -27,6 +27,8 @@ const menuItemClass =
   "flex items-center gap-2 px-3 py-2 font-storybook text-sm font-semibold tracking-wide text-[#e2c06a] transition-colors hover:bg-[#123229] hover:text-[#f0d78a]";
 const menuItemActiveClass = "bg-[#123229]/90 text-[#f0d78a]";
 const menuIconClass = "h-3.5 w-3.5 shrink-0 text-current";
+/** If GoTrue hangs, show the logged-out icon instead of an infinite spinner. */
+const AUTH_TIMEOUT_MS = 5000;
 
 type ProfileNavData = {
   display_name: string | null;
@@ -89,10 +91,15 @@ export function AuthNav() {
     try {
       const supabase = createClient();
 
+      const timeoutId = window.setTimeout(() => {
+        if (!cancelled) setLoading(false);
+      }, AUTH_TIMEOUT_MS);
+
       supabase.auth
         .getSession()
         .then(({ data: { session } }) => {
           if (cancelled) return;
+          window.clearTimeout(timeoutId);
           const currentUser = session?.user ?? null;
           setUser(currentUser);
           setLoading(false);
@@ -100,7 +107,9 @@ export function AuthNav() {
           else setProfile(null);
         })
         .catch(() => {
-          if (!cancelled) setLoading(false);
+          if (cancelled) return;
+          window.clearTimeout(timeoutId);
+          setLoading(false);
         });
 
       const {
@@ -108,6 +117,7 @@ export function AuthNav() {
       } = supabase.auth.onAuthStateChange((_event, session) => {
         const nextUser = session?.user ?? null;
         setUser(nextUser);
+        setLoading(false);
         if (nextUser) void loadProfile(nextUser.id);
         else {
           setProfile(null);
@@ -138,6 +148,7 @@ export function AuthNav() {
 
       return () => {
         cancelled = true;
+        window.clearTimeout(timeoutId);
         subscription.unsubscribe();
         window.removeEventListener(PROFILE_UPDATED_EVENT, onProfileUpdated);
       };

@@ -8,6 +8,26 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /** Refresh via getUser when the access token is this close to expiry. */
 const JWT_REFRESH_MARGIN_SEC = 120;
+/** Never let GoTrue block HTML — public pages skip this call entirely. */
+const GOTRUE_TIMEOUT_MS = 5000;
+
+async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`middleware auth timed out after ${ms}ms`);
+          error.name = "TimeoutError";
+          reject(error);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 const protectedRoutes: string[] = [
   "/profile",
@@ -68,13 +88,18 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
-  // Logged-in public pages with a still-fresh access token: skip getUser.
-  // Middleware only needs GoTrue when the JWT is near expiry (refresh) or
-  // when we must know the user for a redirect.
+  // Public pages (`/`, `/browse`, book pages, …): never await GoTrue.
+  // A hanging getUser() on mobile/Edge blocks first paint of the whole layout.
+  if (!isProtected && !isAuthRoute) {
+    return NextResponse.next({ request });
+  }
+
+  // Protected / auth routes still need a user check. Skip GoTrue when the
+  // access token is fresh enough that we already know the session is valid.
   const secondsLeft = accessTokenSecondsRemaining(cookieList);
   const tokenIsFresh =
     secondsLeft !== null && secondsLeft > JWT_REFRESH_MARGIN_SEC;
-  if (tokenIsFresh && !isProtected && !isAuthRoute) {
+  if (tokenIsFresh && isProtected) {
     return NextResponse.next({ request });
   }
 
@@ -86,6 +111,15 @@ export async function updateSession(request: NextRequest) {
   });
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), GOTRUE_TIMEOUT_MS);
+        return fetch(input, { ...init, signal: controller.signal }).finally(
+          () => clearTimeout(timer)
+        );
+      },
+    },
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -106,9 +140,16 @@ export async function updateSession(request: NextRequest) {
 
   // getUser() refreshes the session when needed. Always return supabaseResponse
   // (or a redirect that copies its cookies) so refreshed tokens are not dropped.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const result = await withDeadline(
+      supabase.auth.getUser(),
+      GOTRUE_TIMEOUT_MS
+    );
+    user = result.data.user;
+  } catch {
+    user = null;
+  }
 
   if (!user && isProtected) {
     return redirectPreservingCookies(

@@ -51,6 +51,9 @@ export function classifyProviderError(error: unknown): {
   return { status, message: message || "Unknown provider error", transient };
 }
 
+/** Short budget for page-level external fetches on `/` and `/browse`. */
+export const PAGE_FETCH_TIMEOUT_MS = 5000;
+
 /** Wall-clock budget so one request cannot exceed Netlify / serverless limits. */
 export type Deadline = {
   startedAt: number;
@@ -120,6 +123,20 @@ export async function withTimeout<T>(
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/** Like `withTimeout`, but resolves to `fallback` instead of throwing. */
+export async function withTimeoutFallback<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  fallback: T
+): Promise<T> {
+  try {
+    return await withTimeout(promise, ms, label);
+  } catch {
+    return fallback;
   }
 }
 

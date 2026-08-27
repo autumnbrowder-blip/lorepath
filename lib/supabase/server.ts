@@ -6,6 +6,10 @@ import {
 } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { cache } from "react";
+import {
+  PAGE_FETCH_TIMEOUT_MS,
+  withTimeout,
+} from "@/lib/provider-resilience";
 import { requestHasSupabaseAuthCookie } from "@/lib/supabase/auth-cookies";
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -136,7 +140,11 @@ export const getCachedUser = cache(async (): Promise<User | null> => {
     const supabase = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await withTimeout(
+      supabase.auth.getUser(),
+      PAGE_FETCH_TIMEOUT_MS,
+      "getCachedUser"
+    );
     return user ?? null;
   } catch {
     return null;

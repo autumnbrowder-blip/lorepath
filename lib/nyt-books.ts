@@ -5,10 +5,10 @@ import {
   parsePublishedYear,
 } from "@/lib/book-utils";
 import { finalizeBookTags } from "@/lib/book-tags";
+import { PAGE_FETCH_TIMEOUT_MS, withTimeout } from "@/lib/provider-resilience";
 import type { BookDetail, BookSummary } from "@/types/book";
 
 const NYT_ID_PREFIX = "nyt-";
-const FETCH_TIMEOUT_MS = 3000;
 const NYT_CACHE_TTL_MS = 60 * 60 * 1000;
 
 let nytBestsellersCache: {
@@ -75,7 +75,7 @@ export function isbnFromNytId(id: string): string | null {
 
 async function fetchNyt(url: string): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
 
   try {
     return await fetch(url, {
@@ -202,8 +202,12 @@ export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
   }
 
   try {
-    const results = await Promise.all(
-      NYT_BESTSELLER_LISTS.map((list) => fetchNytList(list.url, list.label))
+    const results = await withTimeout(
+      Promise.all(
+        NYT_BESTSELLER_LISTS.map((list) => fetchNytList(list.url, list.label))
+      ),
+      PAGE_FETCH_TIMEOUT_MS,
+      "nyt-bestsellers"
     );
 
     const seen = new Set<string>();
