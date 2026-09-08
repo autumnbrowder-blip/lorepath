@@ -207,23 +207,25 @@ export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
 
   const aOL = isOpenLibraryWorkRecord(a);
   const bOL = isOpenLibraryWorkRecord(b);
-  const aComCover = isCommercialEdition(a) && hasRealCover(a);
-  const bComCover = isCommercialEdition(b) && hasRealCover(b);
-  if (aOL && bComCover) return b;
-  if (bOL && aComCover) return a;
+  const aCom = isCommercialEdition(a);
+  const bCom = isCommercialEdition(b);
+  // ISBNdb / Google / Hardcover identity wins over an OL work id even when
+  // the commercial row has no cover yet — cover/description still merge in.
+  if (aOL && bCom) return b;
+  if (bOL && aCom) return a;
 
   const aCover = hasRealCover(a);
   const bCover = hasRealCover(b);
   if (aCover !== bCover) return bCover ? b : a;
 
-  // Only ignore an OL work-year when a commercial covered edition is the other
-  // option. Two OL works still compare by publishedYear (newest cover wins).
+  // Ignore an OL work-year when a commercial edition is the other option.
+  // Two OL works still compare by publishedYear (newest cover wins).
   const aYear =
-    aOL && bComCover
+    aOL && bCom
       ? -Infinity
       : (normalizePublishedYear(a.publishedYear) ?? -Infinity);
   const bYear =
-    bOL && aComCover
+    bOL && aCom
       ? -Infinity
       : (normalizePublishedYear(b.publishedYear) ?? -Infinity);
   if (aYear !== bYear) return bYear > aYear ? b : a;

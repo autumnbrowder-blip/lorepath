@@ -56,8 +56,9 @@ function mergeSearchResults(
   incoming: BookSummary[],
   query: string
 ): BookSummary[] {
-  // Same cleanup path as the server. Prefer identities already on screen so
-  // load-more cannot swap a rated/DB slug for a different provider edition.
+  // Same title+author key as the server (getBookDedupeKey). Prefer identities
+  // already on screen so load-more cannot add a second Frank Herbert Dune or
+  // swap a rated/DB slug for a different provider edition.
   const merged = finalizeSearchBooks([...existing, ...incoming], {
     ratedIds: new Set(existing.map((book) => book.id)),
     // Keep exact-title matches that are already on screen from disappearing

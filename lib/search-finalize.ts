@@ -1,15 +1,10 @@
 import { withFinalizedTags } from "@/lib/book-tags";
 import { mergePreferredBookFields } from "@/lib/book-merge";
+import { getLanguageEditionBucket } from "@/lib/book-language";
 import {
-  getLanguageEditionBucket,
-  shouldKeepAsSeparateLanguageEditions,
-} from "@/lib/book-language";
-import {
-  authorKeysCompatible,
-  getBookAuthorDedupeKey,
+  booksShareTitleAuthorWork,
   getBookDedupeKey,
   getBookIsbnKey,
-  getBookTitleDedupeKey,
   getBookWorkDedupeKey,
   isExactTitleMatch,
   isMerchandiseOrCompanion,
@@ -186,7 +181,7 @@ function dedupeCandidates(
   const afterIsbn = byIsbn.size + withoutIsbn.length;
   const removedByIsbn = candidates.length - afterIsbn;
 
-  // Pass 2: normalized title + primary author + language bucket
+  // Pass 2: normalized title + primary author (language is not part of the key)
   const byTitleAuthor = new Map<string, BookSummary>();
 
   for (const book of [...Array.from(byIsbn.values()), ...withoutIsbn]) {
@@ -202,28 +197,16 @@ function dedupeCandidates(
   }
 
   // Pass 3: soft work-level merge — same title + compatible author keys
-  // ("buehlman" ↔ "buehlman c") or unknown-author into a sole titled author.
-  // Never merge English with a non-English original edition.
+  // ("buehlman" ↔ "buehlman c", "herbert" ↔ "herbert f") or unknown-author
+  // into a sole titled author. Language editions of the same title+author
+  // collapse here; English commercial ids win via pickLatestEdition.
   const workMerged: BookSummary[] = [];
   for (const book of Array.from(byTitleAuthor.values())) {
-    const titleKey = getBookTitleDedupeKey(book);
-    const authorKey = getBookAuthorDedupeKey(book);
     let mergedIntoExisting = false;
 
     for (let i = 0; i < workMerged.length; i++) {
       const existing = workMerged[i]!;
-      if (getBookTitleDedupeKey(existing) !== titleKey) continue;
-      if (shouldKeepAsSeparateLanguageEditions(existing, book)) continue;
-
-      const existingAuthor = getBookAuthorDedupeKey(existing);
-      const authorsCompatible =
-        (authorKey &&
-          existingAuthor &&
-          authorKeysCompatible(authorKey, existingAuthor)) ||
-        (authorKey && !existingAuthor) ||
-        (!authorKey && existingAuthor);
-
-      if (!authorsCompatible) continue;
+      if (!booksShareTitleAuthorWork(existing, book)) continue;
 
       const preferred = pickPreferredDuplicate(existing, book, options);
       const other = preferred === existing ? book : existing;
@@ -283,10 +266,15 @@ function forceProtectedBooks(
 
   for (const protectedBook of protectedBooks) {
     const isbn = getBookIsbnKey(protectedBook);
+    const keyIdx = indexByKey.get(getBookDedupeKey(protectedBook));
+    const workIdx = next.findIndex((book) =>
+      booksShareTitleAuthorWork(book, protectedBook)
+    );
     const existingIdx =
       indexById.get(protectedBook.id) ??
       (isbn !== null ? indexByIsbn.get(isbn) : undefined) ??
-      indexByKey.get(getBookDedupeKey(protectedBook));
+      keyIdx ??
+      (workIdx >= 0 ? workIdx : undefined);
 
     if (existingIdx !== undefined) {
       const existing = next[existingIdx]!;
@@ -345,7 +333,8 @@ function dropNonEnglishWhenEnglishExists(books: BookSummary[]): BookSummary[] {
 /**
  * 1) Keep books with a description and/or cover (exclude empty stubs)
  * 2) Deduplicate by ISBN (strongest) then normalized title + first author
- *    (shared key from getBookDedupeKey — same on server and client)
+ *    (shared key from getBookDedupeKey — same on server and client; language
+ *    is not part of the key)
  * 3) Winner per pickPreferredDuplicate keeps its identity; merge the best
  *    fields from the losing edition (rated DB ids win when provided)
  * 4) Prefer fully complete records; fall back to cover/description if needed

@@ -462,6 +462,189 @@ check(
   "ol-OL893414W"
 );
 
+const isbndbDune2019 = book({
+  id: "isbndb-9780593099322",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description:
+    "Set on the desert planet Arrakis, Dune is the story of the boy Paul Atreides.",
+  coverUrl: "https://images.isbndb.com/covers/dune-2019.jpg",
+  publishedYear: 2019,
+  language: "en",
+  isbn: "9780593099322",
+  source: "isbndb",
+});
+const olDuneWorkEng = book({
+  id: "ol-OL893414W",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description:
+    "Set on the desert planet Arrakis, Dune is the story of the boy Paul Atreides.",
+  coverUrl: "https://covers.openlibrary.org/b/id/11481354-M.jpg",
+  publishedYear: 1965,
+  firstPublishYear: 1965,
+  language: "eng",
+  source: "openlibrary",
+});
+const olDuneProtectedUnknownLang = book({
+  id: "ol-OL893414W",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description:
+    "Set on the desert planet Arrakis, Dune is the story of the boy Paul Atreides.",
+  coverUrl: "https://covers.openlibrary.org/b/id/11481354-M.jpg",
+  publishedYear: 1965,
+  firstPublishYear: 1965,
+  source: "openlibrary",
+});
+const duneMessiahCard = book({
+  id: "ol-dune-messiah",
+  title: "Dune Messiah",
+  authors: ["Frank Herbert"],
+  description: "The second novel in the Dune Chronicles.",
+  coverUrl: "https://covers.example/messiah.jpg",
+  publishedYear: 1969,
+  language: "en",
+  source: "openlibrary",
+});
+const childrenOfDuneCard = book({
+  id: "google-children-of-dune",
+  title: "Children of Dune",
+  authors: ["Frank Herbert"],
+  description:
+    "The third novel in the Dune Chronicles continues Paul's story on Arrakis.",
+  coverUrl: "https://covers.example/children.jpg",
+  publishedYear: 1976,
+  language: "en",
+});
+const brianHerbertDune = book({
+  id: "google-brian-dune",
+  title: "Dune",
+  authors: ["Brian Herbert", "Kevin J. Anderson"],
+  description: "A later Dune universe novel by Frank Herbert's son.",
+  coverUrl: "https://covers.example/brian-dune.jpg",
+  publishedYear: 2007,
+  language: "en",
+});
+const isbndbLastFirstAuthors = book({
+  ...isbndbDune2019,
+  authors: ["Herbert", "Frank"],
+});
+
+check(
+  "ISBNdb + OL Dune share the title+author key (language ignored)",
+  getBookDedupeKey(isbndbDune2019),
+  getBookDedupeKey(olDuneWorkEng)
+);
+check(
+  "protected OL with no language still shares the Dune key",
+  getBookDedupeKey(isbndbDune2019),
+  getBookDedupeKey(olDuneProtectedUnknownLang)
+);
+
+const spanishDuneReprint = book({
+  id: "ol-OL50732450M",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "Spanish 2024 printing that must not win latest edition.",
+  coverUrl: "https://covers.openlibrary.org/b/id/spanish-dune.jpg",
+  publishedYear: 2024,
+  language: "es",
+  source: "openlibrary",
+});
+const liveDunePage = finalizeSearchBooks([
+  isbndbDune2019,
+  olDuneWorkEng,
+  spanishDuneReprint,
+  duneMessiahCard,
+  childrenOfDuneCard,
+  brianHerbertDune,
+]);
+const frankHerbertDuneCards = liveDunePage.filter(
+  (row) =>
+    row.title.trim().toLowerCase() === "dune" &&
+    /^frank herbert$/i.test(row.authors[0] ?? "")
+);
+check(
+  "exactly one Frank Herbert Dune card (not Messiah/Children/Brian)",
+  frankHerbertDuneCards.length,
+  1
+);
+check(
+  "visible Dune id is ISBNdb, not the OL work",
+  frankHerbertDuneCards[0]?.id,
+  "isbndb-9780593099322"
+);
+check(
+  "visible Dune is never Spanish OL50732450M",
+  liveDunePage.some((row) => row.id === "ol-OL50732450M"),
+  false
+);
+check(
+  "merged Dune keeps first published year 1965",
+  frankHerbertDuneCards[0]?.firstPublishYear,
+  1965
+);
+check(
+  "merged Dune keeps newest English year 2019",
+  frankHerbertDuneCards[0]?.publishedYear,
+  2019
+);
+check(
+  "Dune Messiah stays a separate card",
+  liveDunePage.some((row) => row.id === "ol-dune-messiah"),
+  true
+);
+check(
+  "Children of Dune stays a separate card",
+  liveDunePage.some((row) => row.id === "google-children-of-dune"),
+  true
+);
+check(
+  "Brian Herbert Dune stays a separate card",
+  liveDunePage.some((row) => row.id === "google-brian-dune"),
+  true
+);
+
+const lastFirstMerged = finalizeSearchBooks([
+  isbndbLastFirstAuthors,
+  olDuneWorkEng,
+]);
+check(
+  "Last, First author split still collapses to one Dune",
+  lastFirstMerged.filter((row) => row.title.trim().toLowerCase() === "dune")
+    .length,
+  1
+);
+
+const protectedOlReadd = finalizeSearchBooks([isbndbDune2019], {
+  ratedIds: new Set(["ol-OL893414W"]),
+  protectedBooks: [olDuneProtectedUnknownLang],
+});
+const protectedFrankDune = protectedOlReadd.filter(
+  (row) => row.title.trim().toLowerCase() === "dune"
+);
+check(
+  "protected OL Dune does not re-add a second card",
+  protectedFrankDune.length,
+  1
+);
+check(
+  "protected merge still prefers ISBNdb over OL work id",
+  protectedFrankDune[0]?.id,
+  "isbndb-9780593099322"
+);
+
+const loadMoreDune = finalizeSearchBooks(
+  [...finalizeSearchBooks([isbndbDune2019]), olDuneWorkEng]
+);
+check(
+  "client load-more cannot add a second Frank Herbert Dune",
+  loadMoreDune.filter((row) => row.title.trim().toLowerCase() === "dune")
+    .length,
+  1
+);
+
 const itKing = book({
   id: "google-it-king",
   title: "It",

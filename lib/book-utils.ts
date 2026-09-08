@@ -480,29 +480,18 @@ export function authorKeysCompatible(a: string, b: string): boolean {
 }
 
 /**
- * Stable dedupe key: normalized title + "::" + normalized author token.
+ * Stable work key: normalized title + "::" + primary-author token.
  *
  * Unknown-author fallback: two same-title records without an author could be
  * different works, so we only collapse them when a stronger signal (shared
  * ISBN, or literally the same record id) says they are the same edition.
  *
- * Language bucket is appended so English and original-language editions of the
- * same work stay as separate cards (ISBN still collapses identical editions).
+ * Language is intentionally omitted. English vs Spanish printings of "Dune"
+ * are the same work — pickLatestEdition chooses the English commercial id.
+ * Different titles (Dune Messiah) and different first authors (Brian Herbert)
+ * stay separate.
  */
 function bookDedupeKey(
-  book: Pick<BookSummary, "title" | "authors" | "isbn" | "id" | "language">
-): string {
-  const title = normalizeTitleForDedupe(book.title);
-  const author = authorKeyPart(book.authors);
-  const lang = getLanguageEditionBucket(book);
-  if (author) return `${title}::${author}::${lang}`;
-
-  const isbn = getBookIsbnKey(book);
-  return `${title}::unknown:${isbn ?? book.id}::${lang}`;
-}
-
-/** Work-level key without language — used to pair original + English editions. */
-export function getBookWorkDedupeKey(
   book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
 ): string {
   const title = normalizeTitleForDedupe(book.title);
@@ -513,10 +502,33 @@ export function getBookWorkDedupeKey(
   return `${title}::unknown:${isbn ?? book.id}`;
 }
 
+/** Work-level key (title + first author). Same as getBookDedupeKey. */
+export function getBookWorkDedupeKey(
+  book: Pick<BookSummary, "title" | "authors" | "isbn" | "id">
+): string {
+  return bookDedupeKey(book);
+}
+
 export function getBookDedupeKey(
   book: Pick<BookSummary, "title" | "authors" | "isbn" | "id" | "language">
 ): string {
   return bookDedupeKey(book);
+}
+
+/**
+ * True when two records are the same work at title + primary-author level.
+ * "herbert" (last only) matches "herbert f"; unknown-author may join a titled
+ * author. Two unknown-author same-title rows are not a work match.
+ */
+export function booksShareTitleAuthorWork(
+  a: Pick<BookSummary, "title" | "authors">,
+  b: Pick<BookSummary, "title" | "authors">
+): boolean {
+  if (getBookTitleDedupeKey(a) !== getBookTitleDedupeKey(b)) return false;
+  const authorA = getBookAuthorDedupeKey(a);
+  const authorB = getBookAuthorDedupeKey(b);
+  if (authorA && authorB) return authorKeysCompatible(authorA, authorB);
+  return Boolean(authorA || authorB);
 }
 
 /** Title-only portion of the work key (for soft author-compatible merges). */

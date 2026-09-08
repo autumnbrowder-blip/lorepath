@@ -140,9 +140,11 @@ function normalizeCoverUrl(url?: string | null): string | null {
 function normalizeAuthors(authors?: string[] | string): string[] {
   if (!authors) return ["Unknown author"];
   if (typeof authors === "string") {
+    // Do not split on comma — "Herbert, Frank" is one person. Splitting it
+    // into ["Herbert", "Frank"] forks the Dune work key away from OL/Google.
     return cleanAuthors(
       authors
-        .split(/\s+and\s+|,|;/i)
+        .split(/\s+and\s+|;/i)
         .map((part) => part.trim())
         .filter(Boolean)
     );
