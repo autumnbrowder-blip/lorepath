@@ -10,7 +10,7 @@ import {
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
 import type { CommunityRatingsSummary } from "@/lib/ratings";
-import { createClient } from "@/lib/supabase";
+import { getBrowserAccessToken } from "@/lib/supabase";
 import type { ContentRating } from "@/types";
 import {
   AlertCircle,
@@ -109,26 +109,13 @@ export function RatingForm({
     });
   }, [success]);
 
-  async function authHeaders(): Promise<Record<string, string>> {
-    const headers: Record<string, string> = {
+  async function authHeaders(): Promise<Record<string, string> | null> {
+    const token = await getBrowserAccessToken();
+    if (!token) return null;
+    return {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     };
-    try {
-      const supabase = createClient();
-      let {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        const refreshed = await supabase.auth.refreshSession();
-        session = refreshed.data.session;
-      }
-      if (session?.access_token) {
-        headers.Authorization = `Bearer ${session.access_token}`;
-      }
-    } catch {
-      // Fall back to cookie session on the API.
-    }
-    return headers;
   }
 
   function applyConfirmedRating(next: ContentRating) {
@@ -172,6 +159,11 @@ export function RatingForm({
 
     try {
       const headers = await authHeaders();
+      if (!headers) {
+        setError("You are not signed in. Please sign in and try again.");
+        setLoading(false);
+        return;
+      }
 
       const response = await fetch(`/api/books/${bookId}/ratings`, {
         method: "POST",
@@ -188,6 +180,11 @@ export function RatingForm({
       };
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(
+            data.error ?? "You are not signed in. Please sign in and try again."
+          );
+        }
         throw new Error(data.error ?? "Failed to submit rating.");
       }
 

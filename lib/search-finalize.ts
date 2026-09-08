@@ -25,6 +25,7 @@ import {
   firstPublishedYear,
   pickFirstEditionId,
   pickLatestEdition,
+  isBannedLatestEditionId,
 } from "@/lib/book-work";
 import type { BookSummary } from "@/types/book";
 
@@ -105,8 +106,10 @@ function mergeExactTitleSurvivors(
 }
 
 /**
- * Visible card is the newest edition with a real cover. Other fields fill in
- * from both records; firstPublishYear stays the earliest year in the pair.
+ * Visible card is the newest English covered edition. Title / description /
+ * cover / tags fill from the strongest record (Hardcover when it was in the
+ * search page). firstPublishYear stays the earliest year in the pair.
+ * Latest edition id is stored only when it differs from first published.
  */
 function mergePreferredFields(
   winner: BookSummary,
@@ -115,16 +118,18 @@ function mergePreferredFields(
   const identity = pickLatestEdition(winner, other);
   const merged = mergePreferredBookFields(identity, winner, other);
   const first = firstPublishedYear([winner, other]);
+  const firstEditionId = pickFirstEditionId([winner, other]) ?? identity.id;
+  const latestEditionId =
+    identity.id !== firstEditionId && !isBannedLatestEditionId(identity.id)
+      ? identity.id
+      : null;
   return {
     ...merged,
     id: identity.id,
     source: identity.source,
-    title: identity.title,
-    authors: identity.authors,
-    coverUrl: identity.coverUrl,
-    publishedYear: identity.publishedYear,
     firstPublishYear: first ?? merged.firstPublishYear ?? null,
-    firstEditionId: pickFirstEditionId([winner, other]) ?? identity.id,
+    firstEditionId,
+    latestEditionId,
     workEditions: collectWorkEditionRefs(winner, other),
   };
 }

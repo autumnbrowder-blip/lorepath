@@ -8,8 +8,13 @@ import {
   resolveAvatarKey,
   type AvatarKey,
 } from "@/lib/avatars";
-import { createClient } from "@/lib/supabase";
+import { createClient, getBrowserAccessToken } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import {
+  isColumnMarkedMissing,
+  isPermissionDeniedError,
+  noteMissingColumnFromError,
+} from "@/lib/supabase/schema-cache";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -66,7 +71,7 @@ function PickerPortrait({
 export function AvatarPicker({
   userId,
   initialAvatarKey,
-  avatarColumnUnavailable: _avatarColumnUnavailable = false,
+  avatarColumnUnavailable = false,
 }: AvatarPickerProps) {
   const router = useRouter();
   const resolvedInitial = resolveAvatarKey(initialAvatarKey);
@@ -98,6 +103,19 @@ export function AvatarPicker({
       return;
     }
 
+    if (avatarColumnUnavailable || isColumnMarkedMissing("profiles", "avatar_key")) {
+      setError(
+        "Could not save crest because profiles.avatar_key is missing. Run the avatar_key migration, then try again."
+      );
+      return;
+    }
+
+    const token = await getBrowserAccessToken();
+    if (!token) {
+      setError("You are not signed in. Please sign in and try again.");
+      return;
+    }
+
     const previous = savedKey;
     setSelected(key);
     setSaving(true);
@@ -115,6 +133,22 @@ export function AvatarPicker({
         .maybeSingle();
 
       if (updateError) {
+        if (
+          noteMissingColumnFromError(
+            "profiles",
+            "avatar_key",
+            updateError.message
+          )
+        ) {
+          throw new Error(
+            "Could not save crest because profiles.avatar_key is missing. Run the avatar_key migration, then try again."
+          );
+        }
+        if (isPermissionDeniedError(updateError.message, updateError.code)) {
+          throw new Error(
+            "Could not save crest (permission denied). Sign out and back in, then try again."
+          );
+        }
         throw new Error(updateError.message || "Failed to save avatar.");
       }
 
@@ -129,6 +163,22 @@ export function AvatarPicker({
           .maybeSingle();
 
         if (upsertError) {
+          if (
+            noteMissingColumnFromError(
+              "profiles",
+              "avatar_key",
+              upsertError.message
+            )
+          ) {
+            throw new Error(
+              "Could not save crest because profiles.avatar_key is missing. Run the avatar_key migration, then try again."
+            );
+          }
+          if (isPermissionDeniedError(upsertError.message, upsertError.code)) {
+            throw new Error(
+              "Could not save crest (permission denied). Sign out and back in, then try again."
+            );
+          }
           throw new Error(upsertError.message || "Failed to save avatar.");
         }
 

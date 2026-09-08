@@ -14,6 +14,9 @@ import type { BookDetail, BookSummary, WorkEditionRef } from "@/types/book";
 
 const MAX_WORK_EDITIONS = 24;
 
+/** Known non-English printings that must never win "latest edition". */
+const BANNED_LATEST_EDITION_IDS = new Set(["ol-OL50732450M"]);
+
 /**
  * Stable work identity so reprints / Google volume IDs collapse.
  *
@@ -174,16 +177,30 @@ function preferEnglishPool<T extends Pick<BookSummary, "language" | "title">>(
   return editions;
 }
 
+export function isBannedLatestEditionId(id: string): boolean {
+  return BANNED_LATEST_EDITION_IDS.has(id.trim());
+}
+
+function isDisallowedLatest(
+  book: Pick<BookSummary, "id" | "language" | "title">
+): boolean {
+  if (isBannedLatestEditionId(book.id)) return true;
+  return getLanguageEditionBucket(book) === "non-eng";
+}
+
 /**
  * Visible search-card / default tome identity.
  *
  * Prefer English when a copy exists; then a real cover; among those,
- * highest publishedYear; then description.
- * Open Library work-level rows use first_publish_year as publishedYear — they
- * must not beat a Google / Hardcover / ISBNdb edition that has a cover.
- * A commercial English edition with no year still beats a newer non-English OL.
+ * highest publishedYear. Google / ISBNdb / Hardcover beat an Open Library
+ * work id. A commercial English edition with no year still beats a newer
+ * non-English OL. Spanish / Ukrainian printings never win (e.g. OL50732450M).
  */
 export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
+  const aBad = isDisallowedLatest(a);
+  const bBad = isDisallowedLatest(b);
+  if (aBad !== bBad) return aBad ? b : a;
+
   const aLang = languageRank(a);
   const bLang = languageRank(b);
   if (aLang !== bLang) return bLang > aLang ? b : a;
@@ -220,15 +237,17 @@ export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
   return a.id.localeCompare(b.id) <= 0 ? a : b;
 }
 
-/** Earliest printing in the group; cover wins when several share that year. */
+/** Earliest printing in the group; English + cover win when several share that year. */
 export function pickFirstEdition<T extends BookSummary>(group: T[]): T | null {
   if (group.length === 0) return null;
   const year = firstPublishedYear(group);
   const atYear =
     year == null
       ? group
-      : group.filter((book) => normalizePublishedYear(book.publishedYear) === year);
-  const pool = atYear.length > 0 ? atYear : group;
+      : group.filter(
+          (book) => normalizePublishedYear(book.publishedYear) === year
+        );
+  const pool = preferEnglishPool(atYear.length > 0 ? atYear : group);
   const covered = pool.filter((book) => hasRealCover(book));
   const candidates = covered.length > 0 ? covered : pool;
   return candidates.reduce((best, book) => {
@@ -259,7 +278,7 @@ export function pickFirstEditionId(group: BookSummary[]): string | null {
     year == null
       ? refs
       : refs.filter((ref) => ref.publishedYear === year);
-  const pool = atYear.length > 0 ? atYear : refs;
+  const pool = preferEnglishPool(atYear.length > 0 ? atYear : refs);
   const covered = pool.filter((ref) => hasRealCover(ref));
   const candidates = covered.length > 0 ? covered : pool;
   if (candidates.length === 0) {
@@ -340,6 +359,11 @@ function collapseWorkGroup(group: BookSummary[]): BookSummary {
     latestYear != null && first != null && latestYear > first
       ? latestYear
       : latest.latestEditionYear ?? null;
+  const firstEditionId = pickFirstEditionId(group) ?? latest.id;
+  const latestEditionId =
+    latest.id !== firstEditionId && !isDisallowedLatest(latest)
+      ? latest.id
+      : null;
 
   return {
     ...latest,
@@ -352,7 +376,8 @@ function collapseWorkGroup(group: BookSummary[]): BookSummary {
     publishedYear: latest.publishedYear,
     firstPublishYear: first ?? latest.firstPublishYear ?? null,
     latestEditionYear,
-    firstEditionId: pickFirstEditionId(group) ?? latest.id,
+    firstEditionId,
+    latestEditionId,
     workKey: bookWorkKey(latest),
     workEditions,
   };
@@ -528,7 +553,9 @@ export function editionsOfWork(
 }
 
 function pickPreferredEdition(editions: WorkEditionRef[]): WorkEditionRef | null {
-  const withId = editions.filter((edition) => Boolean(edition.id));
+  const withId = editions.filter(
+    (edition) => Boolean(edition.id) && !isDisallowedLatest(edition)
+  );
   const covered = withId.filter((edition) => hasRealCover(edition));
   const base = covered.length > 0 ? covered : withId;
   const pool = preferEnglishPool(base);
@@ -562,33 +589,44 @@ function refAsSummary(
 
 /**
  * Newest English covered printing in the same work as `current`.
- * Always returns an id so the Latest edition year can stay a link.
- * Falls back to `current.id` when no better English covered edition exists.
+ * Prefers Google / ISBNdb / Hardcover over an Open Library work id.
+ * Never returns a non-English printing (e.g. Spanish Dune OL50732450M).
  */
 export function resolveLatestEditionTarget(
   current: BookSummary,
   siblings: BookSummary[] = []
 ): { id: string; year: number | null } {
   const matched = siblings.filter((book) => {
+    if (isDisallowedLatest(book)) return false;
     if (!booksShareWork(current, book)) return false;
     return !shouldKeepAsSeparateLanguageEditions(current, book);
   });
-  const summaries = [current, ...matched];
-  const fromSummaries = summaries.reduce((best, book) =>
-    pickLatestEdition(best, book)
+  const summaries = [current, ...matched].filter(
+    (book) => !isDisallowedLatest(book) || book.id === current.id
+  );
+  const pool = summaries.filter((book) => !isDisallowedLatest(book));
+  const fromSummaries = (pool.length > 0 ? pool : summaries).reduce(
+    (best, book) => pickLatestEdition(best, book)
   );
   const preferredRef = pickPreferredEdition(
-    collectWorkEditionRefs(...summaries)
+    collectWorkEditionRefs(...(pool.length > 0 ? pool : summaries)).filter(
+      (ref) => !isDisallowedLatest(ref)
+    )
   );
   const preferred = preferredRef
     ? pickLatestEdition(fromSummaries, refAsSummary(preferredRef, current))
     : fromSummaries;
 
+  const id = preferred.id || current.id;
+  if (isBannedLatestEditionId(id)) {
+    return { id: current.id, year: normalizePublishedYear(current.publishedYear) };
+  }
+
   return {
-    id: preferred.id || current.id,
+    id,
     year:
       normalizePublishedYear(preferred.publishedYear) ??
-      latestPublishedYear(summaries) ??
+      latestPublishedYear(pool.length > 0 ? pool : summaries) ??
       normalizePublishedYear(current.latestEditionYear) ??
       normalizePublishedYear(current.publishedYear),
   };
@@ -600,4 +638,45 @@ export function latestCoveredEditionId(
   siblings: BookSummary[]
 ): string {
   return resolveLatestEditionTarget(current, siblings).id;
+}
+
+/** First published YEAR → earliest edition, carrying `q` and `fy`. */
+export function firstPublishedHref(
+  firstEditionId: string,
+  query: string,
+  firstYear: number
+): string {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("q", query.trim());
+  params.set("fy", String(firstYear));
+  return `/books/${encodeURIComponent(firstEditionId)}?${params.toString()}`;
+}
+
+/** Latest edition YEAR → newest English covered id. Never includes `fy`. */
+export function latestEditionHref(latestEditionId: string, query: string): string {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("q", query.trim());
+  const qs = params.toString();
+  return `/books/${encodeURIComponent(latestEditionId)}${qs ? `?${qs}` : ""}`;
+}
+
+/**
+ * Latest edition link target when it is a different book than first published
+ * (and, on the detail page, different from the tome already open).
+ */
+export function distinctLatestEdition(input: {
+  latestId: string | null | undefined;
+  latestYear: number | null | undefined;
+  firstEditionId: string | null | undefined;
+  currentBookId?: string | null;
+}): { id: string; year: number } | null {
+  const latestId = input.latestId?.trim() ?? "";
+  const firstId = input.firstEditionId?.trim() ?? "";
+  const year = normalizePublishedYear(input.latestYear);
+  if (!latestId || year == null) return null;
+  if (isBannedLatestEditionId(latestId)) return null;
+  if (firstId && latestId === firstId) return null;
+  const current = input.currentBookId?.trim();
+  if (current && latestId === current) return null;
+  return { id: latestId, year };
 }

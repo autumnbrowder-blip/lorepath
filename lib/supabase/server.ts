@@ -219,6 +219,51 @@ export async function getServiceRoleOrCookieClient(): Promise<SupabaseClient | n
 }
 
 /**
+ * PostgREST client that ALWAYS sends the given user JWT.
+ * Call only after the token is verified — never with the anon key alone.
+ */
+export function createJwtPostgrestClient(
+  accessToken: string
+): { supabase: SupabaseClient } | { error: string } {
+  const env = getSupabaseEnv();
+  if (!env) {
+    return { error: "Supabase is not configured." };
+  }
+
+  const token = accessToken.trim();
+  if (!token) {
+    return { error: "You are not signed in. Please sign in and try again." };
+  }
+
+  const jwtFetch = createUserJwtFetch(token, env.anonKey);
+  const supabase = createSupabaseClient(env.url, env.anonKey, {
+    accessToken: async () => token,
+    global: {
+      headers: { Authorization: `Bearer ${token}` },
+      fetch: jwtFetch,
+    },
+  });
+
+  return { supabase };
+}
+
+/**
+ * Trusted reads for the signed-in user's own rows.
+ * Prefer service role; otherwise the user JWT. Never fall back to the anon
+ * key alone (auth.uid() would be null and RLS would hide/deny the row).
+ */
+export async function getTrustedUserDataClient(options?: {
+  accessToken?: string | null;
+}): Promise<SupabaseClient | null> {
+  if (!isSupabaseConfigured()) return null;
+  const admin = createServiceRoleClient();
+  if (!("error" in admin)) return admin.supabase;
+  const auth = await createAuthenticatedClient(options);
+  if ("error" in auth) return null;
+  return auth.supabase;
+}
+
+/**
  * Build a PostgREST client that ALWAYS sends the user JWT.
  *
  * Cookie-bridged createServerClient can validate via auth.getUser() while still
@@ -233,27 +278,18 @@ export async function getServiceRoleOrCookieClient(): Promise<SupabaseClient | n
 export async function createAuthenticatedClient(options?: {
   accessToken?: string | null;
 }): Promise<AuthenticatedClientResult> {
-  const env = getSupabaseEnv();
-  if (!env) {
-    return { error: "Supabase is not configured." };
-  }
-
   const verified = await getVerifiedUser(options);
   if ("error" in verified) {
     return verified;
   }
 
   const { user, accessToken } = verified;
-  const jwtFetch = createUserJwtFetch(accessToken, env.anonKey);
-  const supabase = createSupabaseClient(env.url, env.anonKey, {
-    accessToken: async () => accessToken,
-    global: {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      fetch: jwtFetch,
-    },
-  });
+  const jwtClient = createJwtPostgrestClient(accessToken);
+  if ("error" in jwtClient) {
+    return jwtClient;
+  }
 
-  return { supabase, user, accessToken };
+  return { supabase: jwtClient.supabase, user, accessToken };
 }
 
 /** Extract Bearer token from an incoming Request (Route Handlers). */

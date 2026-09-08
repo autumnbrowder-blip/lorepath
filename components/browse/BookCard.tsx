@@ -1,7 +1,12 @@
 import { AuthorLinks } from "@/components/books/AuthorLinks";
 import { BookCover } from "@/components/books/BookCover";
+import { FirstPublishedYearLink } from "@/components/books/FirstPublishedYearLink";
 import { getGenreBrowseUrl } from "@/lib/book-links";
 import { resolvePublicationYears } from "@/lib/book-utils";
+import {
+  distinctLatestEdition,
+  latestEditionHref,
+} from "@/lib/book-work";
 import type { BookSummary } from "@/types/book";
 import { Feather } from "lucide-react";
 import Link from "next/link";
@@ -43,17 +48,29 @@ export function BookCard({
   hasUserRating = false,
   priority = false,
 }: BookCardProps) {
-  const encodedId = encodeURIComponent(book.id);
-  const bookHref = searchQuery?.trim()
-    ? `/books/${encodedId}?q=${encodeURIComponent(searchQuery.trim())}`
-    : `/books/${encodedId}?hint=${encodeURIComponent(book.title)}`;
-
-  const { displayYear } = resolvePublicationYears(book);
+  const q = searchQuery?.trim() ?? "";
+  const { displayYear, firstPublishYear, latestEditionYear } =
+    resolvePublicationYears(book);
+  const firstYear = firstPublishYear ?? displayYear;
+  const firstEditionId = book.firstEditionId?.trim() || book.id;
+  const latestId = book.latestEditionId?.trim() || book.id;
+  const latest = distinctLatestEdition({
+    latestId,
+    latestYear: latestEditionYear,
+    firstEditionId,
+  });
+  // Cover / title / Open the Tome → latest English edition (this card's id).
+  const tomeHref = latestEditionHref(book.id, q);
   const showInscribed = hasUserRating;
+  const title = displayTitle(book.title);
 
   return (
     <article className="ornate-plaque lp-book-card">
-      <div className="lp-book-card-plate">
+      <Link
+        href={tomeHref}
+        className="lp-book-card-plate no-underline"
+        aria-label={`Open ${title}`}
+      >
         <BookCover
           book={book}
           variant="card"
@@ -62,14 +79,40 @@ export function BookCard({
           priority={priority}
         />
         <span className="lp-book-card-plate-corners" aria-hidden="true" />
-      </div>
+      </Link>
 
       <div className="lp-book-card-body">
-        <h2 className="tome-title lp-book-card-title">{displayTitle(book.title)}</h2>
+        <h2 className="tome-title lp-book-card-title">
+          <Link href={tomeHref} className="lp-book-card-title no-underline">
+            {title}
+          </Link>
+        </h2>
         <p className="tome-author lp-book-card-author">
           <AuthorLinks authors={book.authors} />
-          {displayYear ? (
-            <span className="lp-book-card-year"> · {displayYear}</span>
+          {firstYear ? (
+            <span className="lp-book-card-year">
+              {" · "}
+              <FirstPublishedYearLink
+                bookId={book.id}
+                year={firstYear}
+                firstEditionId={firstEditionId}
+                searchQuery={q}
+                label="First published"
+                className="lp-book-card-year-link"
+              />
+            </span>
+          ) : null}
+          {latest ? (
+            <span className="lp-book-card-year">
+              {" · "}
+              <Link
+                href={latestEditionHref(latest.id, q)}
+                className="lp-book-card-year-link"
+                title="Open the latest English edition"
+              >
+                {`Latest edition ${latest.year}`}
+              </Link>
+            </span>
           ) : null}
         </p>
 
@@ -101,7 +144,7 @@ export function BookCard({
             </div>
           ) : null}
           <Link
-            href={bookHref}
+            href={tomeHref}
             className="lp-book-card-open inline-flex h-9 w-auto items-center justify-center px-3"
             data-testid="open-the-tome"
           >

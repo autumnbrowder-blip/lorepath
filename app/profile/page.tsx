@@ -6,14 +6,13 @@ import { DisplayNameForm } from "@/components/profile/DisplayNameForm";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import {
-  DEFAULT_AVATAR_KEY,
   getAvatarOption,
   resolveAvatarKey,
 } from "@/lib/avatars";
-import { getUserPreferences } from "@/lib/preferences";
+import { getUserPreferences, readProfileDisplayFields } from "@/lib/preferences";
 import { getUserRatingCount } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedUser } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -25,70 +24,25 @@ export const metadata: Metadata = {
     "Edit your LorePath display name and choose a fantasy avatar crest.",
 };
 
-function isMissingAvatarColumn(message: string | undefined) {
-  if (!message) return false;
-  return (
-    /avatar_key/i.test(message) &&
-    (/schema cache/i.test(message) ||
-      /could not find/i.test(message) ||
-      /column/i.test(message) ||
-      /does not exist/i.test(message))
-  );
-}
-
 export default async function ProfilePage() {
   if (!isSupabaseConfigured()) {
     redirect("/login?redirect=/profile");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
 
   if (!user) {
     redirect("/login?redirect=/profile");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("display_name, avatar_key")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  let displayNameRaw = profile?.display_name as string | null | undefined;
-  let avatarKeyRaw = profile?.avatar_key as string | null | undefined;
-  let avatarColumnUnavailable = false;
-
-  if (profileError) {
-    // Soft-handle missing avatar_key column; page still loads with a migration hint
-    avatarColumnUnavailable = isMissingAvatarColumn(profileError.message);
-    const { data: basic } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle();
-    displayNameRaw = basic?.display_name;
-    avatarKeyRaw = null;
-  }
+  const supabase = await createClient();
+  const profile = await readProfileDisplayFields(supabase, user.id);
+  const displayNameRaw = profile.display_name;
+  const avatarKeyRaw = profile.avatar_key;
+  const avatarColumnUnavailable = profile.avatarColumnUnavailable;
 
   const avatarKey = resolveAvatarKey(avatarKeyRaw);
   const avatar = getAvatarOption(avatarKey);
-
-  // Ensure a profiles row + default crest without touching display_name.
-  // Prefer UPDATE when the row exists so a partial upsert can never race a
-  // display-name save on router.refresh().
-  if (!profile) {
-    await supabase.from("profiles").upsert(
-      { id: user.id, avatar_key: DEFAULT_AVATAR_KEY },
-      { onConflict: "id" }
-    );
-  } else if (!avatarKeyRaw && !avatarColumnUnavailable) {
-    await supabase
-      .from("profiles")
-      .update({ avatar_key: DEFAULT_AVATAR_KEY })
-      .eq("id", user.id);
-  }
 
   const email = user.email ?? "—";
   const [preferences, ratingCount] = await Promise.all([

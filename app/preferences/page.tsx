@@ -8,10 +8,10 @@ import {
   resolveAvatarKey,
   resolveDisplayName,
 } from "@/lib/avatars";
-import { loadPreferencesForPage } from "@/lib/preferences";
+import { loadPreferencesForPage, readProfileDisplayFields } from "@/lib/preferences";
 import { getUserRatingCount } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedUser } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -24,20 +24,14 @@ export default async function PreferencesPage() {
     redirect("/login?redirect=/preferences&message=preferences");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
 
   if (!user) {
     redirect("/login?redirect=/preferences&message=preferences");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, avatar_key")
-    .eq("id", user.id)
-    .maybeSingle();
+  const supabase = await createClient();
+  const profile = await readProfileDisplayFields(supabase, user.id);
 
   const displayName = resolveDisplayName(
     typeof profile?.display_name === "string" ? profile.display_name : null,

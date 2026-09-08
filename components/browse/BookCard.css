@@ -151,6 +151,17 @@
   color: #e8d7b0;
 }
 
+.lp-book-card-year-link,
+.lp-book-card-author a.lp-first-published-link {
+  color: #c9a227;
+  text-decoration: none;
+}
+
+.lp-book-card-year-link:hover,
+.lp-book-card-author a.lp-first-published-link:hover {
+  text-decoration: underline;
+}
+
 .lp-book-card-tags {
   display: flex;
   flex-wrap: wrap;

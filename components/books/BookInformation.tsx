@@ -5,14 +5,19 @@ import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { GenreTag } from "@/components/theme/GenreTag";
 import { getIsbnUrl } from "@/lib/book-links";
 import { resolvePublicationYears } from "@/lib/book-utils";
+import {
+  distinctLatestEdition,
+  firstPublishedHref,
+  latestEditionHref,
+} from "@/lib/book-work";
 import type { BookDetail } from "@/types/book";
 import {
   BookMarked,
   Building2,
   CalendarDays,
-  Languages,
   ScanBarcode,
 } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 type BookInformationProps = {
@@ -23,37 +28,66 @@ type BookInformationProps = {
   matchScore?: ReactNode;
   /** Rating form — under Community Ratings. */
   ratingForm?: ReactNode;
+  /** Browse `q` — appended on year hrefs when present. */
+  searchQuery?: string;
+  /** Newest covered printing in this work — Latest edition YEAR opens this. */
+  latestEditionId?: string | null;
+  /** Year of that newest printing when it differs from this record. */
+  latestEditionYear?: number | null;
 };
+
+const YEAR_LINK_CLASS =
+  "underline decoration-[#c9a227] underline-offset-4 transition-colors hover:decoration-[#ffe080] nav-dragon-gold";
 
 export function BookInformation({
   book,
   communityRatings,
   matchScore,
   ratingForm,
+  searchQuery,
+  latestEditionId,
+  latestEditionYear: latestEditionYearOverride,
 }: BookInformationProps) {
   const { displayYear, firstPublishYear, latestEditionYear } =
     resolvePublicationYears(book);
 
+  const q = searchQuery?.trim() ?? "";
+  const firstEditionId = book.firstEditionId?.trim() || book.id;
+  const firstYear = firstPublishYear ?? displayYear;
+  const firstYearHref = firstYear
+    ? firstPublishedHref(firstEditionId, q, firstYear)
+    : null;
+  const latest = distinctLatestEdition({
+    latestId: latestEditionId?.trim() || book.latestEditionId,
+    latestYear: latestEditionYearOverride ?? latestEditionYear,
+    firstEditionId,
+    currentBookId: book.id,
+  });
+  const latestYearHref = latest ? latestEditionHref(latest.id, q) : null;
+
   const metadataItems = [
-    firstPublishYear && latestEditionYear
+    firstYear && firstYearHref
       ? {
           icon: CalendarDays,
-          label: "First published",
-          value: String(firstPublishYear),
+          label: firstPublishYear ? "First published" : "Published",
+          value: (
+            <Link href={firstYearHref} className={YEAR_LINK_CLASS}>
+              {firstYear}
+            </Link>
+          ),
         }
-      : displayYear
-        ? {
-            icon: CalendarDays,
-            label: "Published",
-            value: String(displayYear),
-          }
-        : null,
-    firstPublishYear &&
-      latestEditionYear && {
-        icon: CalendarDays,
-        label: "Latest edition",
-        value: String(latestEditionYear),
-      },
+      : null,
+    latest && latestYearHref
+      ? {
+          icon: CalendarDays,
+          label: "Latest edition",
+          value: (
+            <Link href={latestYearHref} className={YEAR_LINK_CLASS}>
+              {latest.year}
+            </Link>
+          ),
+        }
+      : null,
     book.publisher && {
       icon: Building2,
       label: "Publisher",
@@ -63,11 +97,6 @@ export function BookInformation({
       icon: BookMarked,
       label: "Pages",
       value: `${book.pageCount} pages`,
-    },
-    book.language && {
-      icon: Languages,
-      label: "Language",
-      value: book.language.toUpperCase(),
     },
     book.isbn && {
       icon: ScanBarcode,

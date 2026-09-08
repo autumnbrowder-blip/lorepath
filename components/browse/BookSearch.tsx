@@ -5,7 +5,11 @@ import { BookCard } from "@/components/browse/BookCard";
 import { SignupPrompt } from "@/components/auth/SignupPrompt";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { queryHint, track } from "@/lib/analytics";
-import { bookMatchesSearchQuery, rankSearchResults } from "@/lib/book-utils";
+import {
+  bookMatchesSearchQuery,
+  dropBrowseJunk,
+  rankBrowseSearchResults,
+} from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -61,7 +65,10 @@ function mergeSearchResults(
     query: query.trim() || undefined,
     debug: false,
   });
-  return query.trim() ? rankSearchResults(merged, query) : merged;
+  const cleaned = dropBrowseJunk(merged);
+  return query.trim()
+    ? rankBrowseSearchResults(cleaned, query)
+    : cleaned;
 }
 
 function readJustRatedSlugs(): string[] {
@@ -122,6 +129,7 @@ export function BookSearch({
   /** Extra card ids from search payload (already work-matched server-side). */
   const [inscribedCardIds, setInscribedCardIds] = useState<string[]>([]);
   const initialSearchDone = useRef(false);
+  const lastUrlSearchRef = useRef("");
   const searchModeRef = useRef<"text" | "genre">(initialMode);
   const abortRef = useRef<AbortController | null>(null);
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
@@ -519,6 +527,7 @@ export function BookSearch({
     if (!trimmed) return;
 
     const requestId = ++searchRequestIdRef.current;
+    lastUrlSearchRef.current = `${mode}:${trimmed}`;
     setBooks([]);
     setPage(1);
     setHasMore(false);
@@ -624,10 +633,14 @@ export function BookSearch({
   }, []);
 
   useEffect(() => {
-    if (initialQuery && !initialSearchDone.current) {
-      initialSearchDone.current = true;
-      runSearch(initialQuery, false, initialMode);
-    }
+    const next = initialQuery.trim();
+    const key = `${initialMode}:${next}`;
+    if (!next) return;
+    if (initialSearchDone.current && lastUrlSearchRef.current === key) return;
+    lastUrlSearchRef.current = key;
+    initialSearchDone.current = true;
+    setQuery(next);
+    void runSearch(next, false, initialMode);
   }, [initialQuery, initialMode]);
 
   async function handleSearch(e: FormEvent<HTMLFormElement>) {
@@ -638,8 +651,8 @@ export function BookSearch({
 
   return (
     <FantasyPageShell variant="browse" priority>
-      <div className="relative flex min-h-full flex-col pb-[env(safe-area-inset-bottom,0px)]">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-8">
+      <div className="browse-page-wrap relative flex min-h-full flex-col pb-[env(safe-area-inset-bottom,0px)]">
+        <div className="browse-page-pad mx-auto flex w-full max-w-6xl flex-col items-center px-4 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-8">
           <form
             onSubmit={handleSearch}
             className="browse-search-row"
@@ -686,7 +699,7 @@ export function BookSearch({
           ) : null}
         </div>
 
-        <div className="mx-auto w-full max-w-6xl px-4 pb-[max(3rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-16">
+        <div className="browse-page-pad mx-auto w-full max-w-6xl px-4 pb-[max(3rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-16">
           {!hasSearched && !loading && (
             <BestsellersSection
               books={bestsellers}

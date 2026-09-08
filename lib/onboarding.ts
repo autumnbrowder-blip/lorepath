@@ -1,5 +1,12 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { getServiceRoleOrCookieClient } from "@/lib/supabase/server";
+import {
+  createServiceRoleClient,
+  createAuthenticatedClient,
+} from "@/lib/supabase/server";
+import {
+  isColumnMarkedMissing,
+  noteMissingColumnFromError,
+} from "@/lib/supabase/schema-cache";
 import type { ContentRating } from "@/types";
 
 export type OnboardingProgress = {
@@ -43,15 +50,36 @@ export async function getOnboardingMatchScoreSeen(
   if (!isSupabaseConfigured()) return false;
 
   try {
-    const supabase = await getServiceRoleOrCookieClient();
+    const admin = createServiceRoleClient();
+    const auth =
+      "error" in admin ? await createAuthenticatedClient() : null;
+    const supabase =
+      !("error" in admin)
+        ? admin.supabase
+        : auth && !("error" in auth)
+          ? auth.supabase
+          : null;
     if (!supabase) return false;
+
+    if (isColumnMarkedMissing("profiles", "onboarding_match_score_seen")) {
+      return false;
+    }
+
     const { data, error } = await supabase
       .from("profiles")
       .select("onboarding_match_score_seen")
       .eq("id", userId)
       .maybeSingle();
 
-    if (error || !data) return false;
+    if (error) {
+      noteMissingColumnFromError(
+        "profiles",
+        "onboarding_match_score_seen",
+        error.message
+      );
+      return false;
+    }
+    if (!data) return false;
     return Boolean(
       (data as { onboarding_match_score_seen?: boolean | null })
         .onboarding_match_score_seen
@@ -70,14 +98,35 @@ export async function markOnboardingMatchScoreSeen(
 ): Promise<void> {
   if (!isSupabaseConfigured()) return;
 
+  if (isColumnMarkedMissing("profiles", "onboarding_match_score_seen")) {
+    return;
+  }
+
   try {
-    const supabase = await getServiceRoleOrCookieClient();
+    const admin = createServiceRoleClient();
+    const auth =
+      "error" in admin ? await createAuthenticatedClient() : null;
+    const supabase =
+      !("error" in admin)
+        ? admin.supabase
+        : auth && !("error" in auth)
+          ? auth.supabase
+          : null;
+    // No session and no service role — do not write with the anon key.
     if (!supabase) return;
 
-    await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({ onboarding_match_score_seen: true })
       .eq("id", userId);
+
+    if (error) {
+      noteMissingColumnFromError(
+        "profiles",
+        "onboarding_match_score_seen",
+        error.message
+      );
+    }
   } catch {
     // Soft-fail — checklist still works from live matchScore on this visit.
   }

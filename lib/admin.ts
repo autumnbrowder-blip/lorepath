@@ -78,17 +78,6 @@ function dbClientForAdminReads(): SupabaseClient {
 export async function userIsAdmin(user: User): Promise<boolean> {
   // Fast path: env bootstrap (works even if the is_admin column is missing).
   if (emailIsBootstrapAdmin(user.email)) {
-    let db: SupabaseClient | null = null;
-    try {
-      db = dbClientForAdminReads();
-    } catch {
-      const auth = await createAuthenticatedClient();
-      db = "error" in auth ? await createClient() : auth.supabase;
-    }
-    // Best-effort: stamp the DB flag for next time.
-    void Promise.resolve(
-      db.from("profiles").update({ is_admin: true }).eq("id", user.id)
-    ).catch(() => undefined);
     return true;
   }
 

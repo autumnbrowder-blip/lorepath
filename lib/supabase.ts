@@ -36,3 +36,23 @@ export function createClient() {
     },
   });
 }
+
+/**
+ * Browser access token for authenticated API writes.
+ * Returns null when there is no session — callers must not hit PostgREST.
+ */
+export async function getBrowserAccessToken(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    let {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      const refreshed = await supabase.auth.refreshSession();
+      session = refreshed.data.session;
+    }
+    return session?.access_token?.trim() || null;
+  } catch {
+    return null;
+  }
+}

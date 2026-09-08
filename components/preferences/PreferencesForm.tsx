@@ -6,7 +6,7 @@ import {
   DEFAULT_USER_PREFERENCES,
   PREFERENCE_CATEGORIES,
 } from "@/lib/rating-categories";
-import { createClient } from "@/lib/supabase";
+import { getBrowserAccessToken } from "@/lib/supabase";
 import type { ContentRating } from "@/types";
 import { AlertCircle, CheckCircle2, Feather, Loader2, Scroll } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -95,33 +95,17 @@ export function PreferencesForm({
         return;
       }
 
-      // Pass the browser session JWT explicitly. Cookie-only SSR often validates
-      // getUser() but omits Authorization on PostgREST → auth.uid() null → RLS.
-      // Body never includes user_id — the API always writes session.user.id.
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      try {
-        const supabase = createClient();
-        let {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          const refreshed = await supabase.auth.refreshSession();
-          session = refreshed.data.session;
-        }
-        if (session?.access_token) {
-          headers.Authorization = `Bearer ${session.access_token}`;
-        }
-      } catch {
-        // Fall back to cookie session on the API if browser session read fails.
-      }
-
-      if (!headers.Authorization) {
+      const token = await getBrowserAccessToken();
+      if (!token) {
         throw new Error(
           "You are not signed in (no access token). Please sign out and back in, then try again."
         );
       }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
 
       const response = await fetch("/api/preferences", {
         method: "PUT",
@@ -149,6 +133,12 @@ export function PreferencesForm({
       }
 
       if (!response.ok) {
+        const status = response.status;
+        if (status === 401 || status === 403) {
+          throw new Error(
+            data.error ?? "You are not signed in. Please sign in and try again."
+          );
+        }
         const parts = [
           data.code,
           data.supabaseMessage,
@@ -164,7 +154,8 @@ export function PreferencesForm({
         );
       }
 
-      // Prefer confirmed values from the API so remount/refresh cannot blank to zeros.
+      // Keep confirmed values from THIS save. Do not GET again — a follow-up
+      // read without JWT can return 0 rows and blank the sliders.
       if (data.preferences) {
         confirmedRef.current = data.preferences;
         setPreferences(data.preferences);
@@ -173,8 +164,6 @@ export function PreferencesForm({
       }
 
       setSuccess(true);
-      // Bust the App Router cache so leaving and returning shows DB values.
-      router.refresh();
       router.push(afterSaveHref);
     } catch (submitError) {
       setError(

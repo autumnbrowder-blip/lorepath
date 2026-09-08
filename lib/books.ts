@@ -271,7 +271,12 @@ export async function searchBooks(
   const openLibraryBooks = openLibraryResult.books;
   const gutendexBooks = gutendexResult.books;
   const bigBookBooks = bigBookResult.books;
-  const hardcoverBooks = hardcoverResult.books;
+  // Use Hardcover only on a real non-empty page. Skip / circuit / 401 /
+  // timeout / empty → 0 books, no fake rows, no per-card Hardcover lookups.
+  const hardcoverBooks =
+    includeHardcover && hardcoverResult.books.length > 0
+      ? hardcoverResult.books
+      : [];
 
   if (googleResult.error) {
     console.error("[searchBooks] Google Books provider error:", {
@@ -358,7 +363,7 @@ export async function searchBooks(
     ...(bigBookConfigured || bigBookBooks.length > 0
       ? { bigbook: bigBookBooks.length }
       : {}),
-    ...(includeHardcover ? { hardcover: hardcoverBooks.length } : {}),
+    hardcover: hardcoverBooks.length,
   };
 
   const hasMore =
@@ -366,7 +371,7 @@ export async function searchBooks(
     openLibraryResult.hasMore ||
     gutendexResult.hasMore ||
     bigBookResult.hasMore ||
-    hardcoverResult.hasMore;
+    (hardcoverBooks.length > 0 && hardcoverResult.hasMore);
 
   // Do not cache a commercial miss — a Google 429 or OL timeout must not
   // pin Gutendex-only results for five minutes.

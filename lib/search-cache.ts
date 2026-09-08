@@ -31,7 +31,7 @@ export function searchCacheKey(input: {
   const q = input.query.trim().toLowerCase();
   const page = Math.max(1, input.page);
   const mode = input.mode ?? "text";
-  return `v=browse-en3|q=${q}|page=${page}|mode=${mode}`;
+  return `v=browse-en5|q=${q}|page=${page}|mode=${mode}`;
 }
 
 function pruneExpired(now: number) {

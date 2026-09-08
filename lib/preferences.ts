@@ -2,10 +2,15 @@ import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { DEFAULT_USER_PREFERENCES } from "@/lib/rating-categories";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
-  createServiceRoleClient,
-  getServiceRoleOrCookieClient,
+  createJwtPostgrestClient,
+  getTrustedUserDataClient,
   getVerifiedUser,
 } from "@/lib/supabase/server";
+import {
+  isColumnMarkedMissing,
+  markColumnMissing,
+  noteMissingColumnFromError,
+} from "@/lib/supabase/schema-cache";
 import type { ContentRating } from "@/types";
 import { unstable_noStore as noStore } from "next/cache";
 import type { PostgrestError, SupabaseClient, User } from "@supabase/supabase-js";
@@ -22,13 +27,13 @@ const ROMANCE_MIGRATION_HINT =
   `Your database is missing the romance column. ${PREFS_SQL_HINT}`;
 
 const RLS_WRITE_HINT =
-  `Could not save preferences (unexpected RLS block on server write). Confirm SUPABASE_SERVICE_ROLE_KEY is set in Netlify and .env.local, then redeploy. ${PREFS_SQL_HINT}`;
+  `Could not save preferences (permission denied). Sign out and back in so your session token is sent, then try again. ${PREFS_SQL_HINT}`;
 
 const RLS_READBACK_HINT =
-  `Preferences may have been written, but the row could not be read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then redeploy. ${PREFS_SQL_HINT}`;
+  `Preferences may have been written, but the row could not be read back. Sign out and back in, then try again. ${PREFS_SQL_HINT}`;
 
 const GRANT_HINT =
-  `Could not save preferences (permission denied on user_preferences). Confirm SUPABASE_SERVICE_ROLE_KEY is set. ${PREFS_SQL_HINT}`;
+  `Could not save preferences (permission denied on user_preferences). ${PREFS_SQL_HINT}`;
 
 const FK_HINT =
   "Could not save preferences because no profile exists for your account (foreign key). Sign out and back in, or open /profile once, then try again.";
@@ -153,6 +158,25 @@ async function fetchPreferenceRow(
   | { data: PreferenceRow; error: null }
   | { data: null; error: PostgrestError | { message: string; code?: string } | null }
 > {
+  if (isColumnMarkedMissing("user_preferences", "romance")) {
+    const legacy = await supabase
+      .from("user_preferences")
+      .select(LEGACY_PREFERENCE_SELECT)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (legacy.error) {
+      return { data: null, error: legacy.error };
+    }
+
+    return {
+      data: legacy.data
+        ? ({ ...legacy.data, romance: null } as PreferenceRow)
+        : null,
+      error: null,
+    };
+  }
+
   const primary = await supabase
     .from("user_preferences")
     .select(PREFERENCE_SELECT)
@@ -163,7 +187,13 @@ async function fetchPreferenceRow(
     return { data: (primary.data as PreferenceRow | null) ?? null, error: null };
   }
 
-  if (isMissingRomanceColumn(primary.error.message)) {
+  if (
+    noteMissingColumnFromError(
+      "user_preferences",
+      "romance",
+      primary.error.message
+    )
+  ) {
     const legacy = await supabase
       .from("user_preferences")
       .select(LEGACY_PREFERENCE_SELECT)
@@ -205,12 +235,35 @@ async function ensureProfileExists(
 
   if (profile) return { ok: true };
 
-  const { error: upsertError } = await supabase.from("profiles").upsert(
-    { id: userId, avatar_key: DEFAULT_AVATAR_KEY },
-    { onConflict: "id" }
-  );
+  if (isColumnMarkedMissing("profiles", "avatar_key")) {
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ id: userId }, { onConflict: "id" });
+    if (error) {
+      return { ok: false, error: formatPreferenceError(error) };
+    }
+    return { ok: true };
+  }
+
+  const { error: upsertError } = await supabase
+    .from("profiles")
+    .upsert(
+      { id: userId, avatar_key: DEFAULT_AVATAR_KEY },
+      { onConflict: "id" }
+    );
 
   if (upsertError) {
+    if (
+      noteMissingColumnFromError("profiles", "avatar_key", upsertError.message)
+    ) {
+      const retry = await supabase
+        .from("profiles")
+        .upsert({ id: userId }, { onConflict: "id" });
+      if (retry.error) {
+        return { ok: false, error: formatPreferenceError(retry.error) };
+      }
+      return { ok: true };
+    }
     return { ok: false, error: formatPreferenceError(upsertError) };
   }
 
@@ -251,7 +304,7 @@ export async function getUserPreferences(
   }
 
   try {
-    const supabase = await getServiceRoleOrCookieClient();
+    const supabase = await getTrustedUserDataClient();
     if (!supabase) return null;
 
     const result = await fetchPreferenceRow(supabase, userId);
@@ -265,9 +318,8 @@ export async function getUserPreferences(
 }
 
 /**
- * Preferences page load: require the same service-role path used for writes.
- * Surfaces a clear error when SUPABASE_SERVICE_ROLE_KEY is missing instead of
- * silently falling through to RLS (which returns no row → blank defaults).
+ * Preferences page load: read with service role or the user JWT.
+ * Never uses the anon key alone (that returns no row → blank defaults).
  */
 export async function loadPreferencesForPage(userId: string): Promise<
   | { preferences: ContentRating | null; error?: undefined }
@@ -279,13 +331,16 @@ export async function loadPreferencesForPage(userId: string): Promise<
     return { preferences: null, error: "Supabase is not configured." };
   }
 
-  const admin = createServiceRoleClient();
-  if ("error" in admin) {
-    return { preferences: null, error: admin.error };
+  const supabase = await getTrustedUserDataClient();
+  if (!supabase) {
+    return {
+      preferences: null,
+      error: "You are not signed in. Please sign in and try again.",
+    };
   }
 
   try {
-    const result = await fetchPreferenceRow(admin.supabase, userId);
+    const result = await fetchPreferenceRow(supabase, userId);
     if (result.error) {
       return {
         preferences: null,
@@ -337,8 +392,8 @@ type SaveFailure = {
 
 /**
  * Persist preferences for the currently authenticated user.
- * Verifies the JWT, then upserts with the service role client (bypasses RLS).
- * `user_id` is ALWAYS taken from the verified JWT user, never from the body.
+ * Verifies the JWT, then upserts with a PostgREST client that sends that JWT
+ * so auth.uid() matches user_id. Never writes with the anon key alone.
  */
 export async function saveUserPreferences(
   preferences: ContentRating,
@@ -376,8 +431,10 @@ export async function saveUserPreferences(
   // 1) Verify the user via access token / cookie session (skip if the route
   //    already verified the same JWT).
   let sessionUserId: string;
-  if (options?.verifiedUserId && options.accessToken) {
+  let accessToken: string;
+  if (options?.verifiedUserId && options.accessToken?.trim()) {
     sessionUserId = options.verifiedUserId;
+    accessToken = options.accessToken.trim();
   } else {
     const auth = await getVerifiedUser({
       accessToken: options?.accessToken,
@@ -391,6 +448,7 @@ export async function saveUserPreferences(
       };
     }
     sessionUserId = auth.user.id;
+    accessToken = auth.accessToken;
   }
 
   if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
@@ -411,16 +469,24 @@ export async function saveUserPreferences(
     };
   }
 
-  // 2) Trusted server write with service role (bypasses RLS).
-  const admin = createServiceRoleClient();
-  if ("error" in admin) {
+  // 2) User-JWT PostgREST write (auth.uid() must match user_id).
+  const jwtClient = createJwtPostgrestClient(accessToken);
+  if ("error" in jwtClient) {
     return {
       success: false,
-      error: admin.error,
+      error: jwtClient.error,
       debug: debugBase(sessionUserId, userIdMatched),
     };
   }
-  const supabase = admin.supabase;
+  const supabase = jwtClient.supabase;
+
+  if (isColumnMarkedMissing("user_preferences", "romance")) {
+    return {
+      success: false,
+      error: ROMANCE_MIGRATION_HINT,
+      debug: debugBase(sessionUserId, userIdMatched),
+    };
+  }
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
@@ -447,6 +513,16 @@ export async function saveUserPreferences(
   const writeError = (await upsertPreferenceRow(supabase, fullRow)).error;
 
   if (writeError) {
+    noteMissingColumnFromError(
+      "user_preferences",
+      "romance",
+      writeError.message
+    );
+    noteMissingColumnFromError(
+      "user_preferences",
+      "spice_level",
+      writeError.message
+    );
     return {
       success: false,
       error: formatPreferenceError(writeError),
@@ -456,7 +532,8 @@ export async function saveUserPreferences(
     };
   }
 
-  // Separate read-back via service role (confirms the row exists + romance stuck).
+  // Read back on the same JWT client — do not follow with an anon GET
+  // that RLS can hide (that would blank sliders to defaults).
   const verify = await fetchPreferenceRow(supabase, sessionUserId);
   if (verify.error) {
     return {
@@ -480,6 +557,7 @@ export async function saveUserPreferences(
   // If the romance column is missing, read-back cannot confirm the value we wrote.
   // Fail loudly instead of returning a defaulted Romance that looks "saved."
   if (confirmed.romance !== normalized.romance) {
+    markColumnMissing("user_preferences", "romance");
     return {
       success: false,
       error: ROMANCE_MIGRATION_HINT,
@@ -509,7 +587,7 @@ export async function getSessionUser(options?: {
 export async function getUserProfile(userId: string) {
   if (!isSupabaseConfigured()) return null;
 
-  const supabase = await getServiceRoleOrCookieClient();
+  const supabase = await getTrustedUserDataClient();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("profiles")
@@ -519,4 +597,72 @@ export async function getUserProfile(userId: string) {
 
   if (error || !data) return null;
   return data;
+}
+
+export type ProfileDisplayFields = {
+  display_name: string | null;
+  avatar_key: string | null;
+  avatarColumnUnavailable: boolean;
+};
+
+/**
+ * Read display_name + avatar_key. Caches a missing avatar_key column so
+ * later page loads do not repeat the failing SELECT.
+ */
+export async function readProfileDisplayFields(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<ProfileDisplayFields> {
+  const empty: ProfileDisplayFields = {
+    display_name: null,
+    avatar_key: null,
+    avatarColumnUnavailable: isColumnMarkedMissing("profiles", "avatar_key"),
+  };
+
+  if (empty.avatarColumnUnavailable) {
+    const { data: basic, error: basicError } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", userId)
+      .maybeSingle();
+    if (basicError) return empty;
+    return {
+      display_name:
+        typeof basic?.display_name === "string" ? basic.display_name : null,
+      avatar_key: null,
+      avatarColumnUnavailable: true,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("display_name, avatar_key")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!error) {
+    return {
+      display_name:
+        typeof data?.display_name === "string" ? data.display_name : null,
+      avatar_key:
+        typeof data?.avatar_key === "string" ? data.avatar_key : null,
+      avatarColumnUnavailable: empty.avatarColumnUnavailable,
+    };
+  }
+
+  if (noteMissingColumnFromError("profiles", "avatar_key", error.message)) {
+    const { data: basic } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", userId)
+      .maybeSingle();
+    return {
+      display_name:
+        typeof basic?.display_name === "string" ? basic.display_name : null,
+      avatar_key: null,
+      avatarColumnUnavailable: true,
+    };
+  }
+
+  return empty;
 }

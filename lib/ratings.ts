@@ -1,6 +1,7 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { ensureBookRow, findBookIdBySlugOrIsbn, sourceFromBookSlug } from "@/lib/book-cache";
 import { getBookById } from "@/lib/books";
+import { groupRatedBooksByWork } from "@/lib/book-work";
 import {
   normalizeAuthorForDedupe,
   normalizeTitleForDedupe,
@@ -12,10 +13,16 @@ import {
 } from "@/lib/rating-categories";
 import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 import {
+  createJwtPostgrestClient,
   createServiceRoleClient,
-  getServiceRoleOrCookieClient,
+  getTrustedUserDataClient,
   getVerifiedUser,
 } from "@/lib/supabase/server";
+import {
+  isColumnMarkedMissing,
+  markColumnMissing,
+  noteMissingColumnFromError,
+} from "@/lib/supabase/schema-cache";
 import type { ContentRating } from "@/types";
 import type { BookDetail, BookSource, BookSummary } from "@/types/book";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -41,10 +48,10 @@ const RATINGS_SQL_HINT =
   "Run supabase/migrations/20260716_fix_ratings_production.sql in the Supabase SQL Editor, then try again.";
 
 const RLS_HINT =
-  `Could not save rating (unexpected RLS block on server write). Confirm SUPABASE_SERVICE_ROLE_KEY is set in Netlify and .env.local, then redeploy. ${RATINGS_SQL_HINT}`;
+  `Could not save rating (permission denied). Sign out and back in so your session token is sent, then try again. ${RATINGS_SQL_HINT}`;
 
 const GRANT_HINT =
-  `Could not save rating (permission denied on ratings/books). Confirm SUPABASE_SERVICE_ROLE_KEY is set. ${RATINGS_SQL_HINT}`;
+  `Could not save rating (permission denied on ratings/books). ${RATINGS_SQL_HINT}`;
 
 const FK_HINT =
   "Could not save rating because no profile exists for your account (foreign key). Sign out and back in, or open /profile once, then try again.";
@@ -98,6 +105,29 @@ async function fetchUserRatingRow(
   bookDbId: string,
   userId: string
 ): Promise<{ data: ContentRating | null; error: string | null }> {
+  if (isColumnMarkedMissing("ratings", "romance")) {
+    const legacy = await supabase
+      .from("ratings")
+      .select(LEGACY_RATING_SELECT)
+      .eq("book_id", bookDbId)
+      .eq("rated_by", userId)
+      .maybeSingle();
+
+    if (legacy.error) {
+      return { data: null, error: legacy.error.message };
+    }
+    if (!legacy.data) {
+      return { data: null, error: null };
+    }
+    return {
+      data: normalizeUserRating({
+        ...legacy.data,
+        romance: DEFAULT_RATINGS.romance,
+      }),
+      error: null,
+    };
+  }
+
   const full = await supabase
     .from("ratings")
     .select(RATING_SELECT)
@@ -105,7 +135,10 @@ async function fetchUserRatingRow(
     .eq("rated_by", userId)
     .maybeSingle();
 
-  if (full.error && isMissingRomanceColumn(full.error.message)) {
+  if (
+    full.error &&
+    noteMissingColumnFromError("ratings", "romance", full.error.message)
+  ) {
     const legacy = await supabase
       .from("ratings")
       .select(LEGACY_RATING_SELECT)
@@ -141,12 +174,36 @@ async function fetchAllRatingsForBook(
   supabase: SupabaseClient,
   bookDbId: string
 ): Promise<{ data: ContentRating[]; error: string | null }> {
+  if (isColumnMarkedMissing("ratings", "romance")) {
+    const legacy = await supabase
+      .from("ratings")
+      .select(LEGACY_RATING_SELECT)
+      .eq("book_id", bookDbId);
+
+    if (legacy.error) {
+      return { data: [], error: legacy.error.message };
+    }
+
+    return {
+      data: (legacy.data ?? []).map((row) =>
+        normalizeUserRating({
+          ...row,
+          romance: DEFAULT_RATINGS.romance,
+        })
+      ),
+      error: null,
+    };
+  }
+
   const full = await supabase
     .from("ratings")
     .select(RATING_SELECT)
     .eq("book_id", bookDbId);
 
-  if (full.error && isMissingRomanceColumn(full.error.message)) {
+  if (
+    full.error &&
+    noteMissingColumnFromError("ratings", "romance", full.error.message)
+  ) {
     const legacy = await supabase
       .from("ratings")
       .select(LEGACY_RATING_SELECT)
@@ -259,12 +316,35 @@ async function ensureProfileExists(
 
   if (profile) return { ok: true };
 
-  const { error: upsertError } = await supabase.from("profiles").upsert(
-    { id: userId, avatar_key: DEFAULT_AVATAR_KEY },
-    { onConflict: "id" }
-  );
+  if (isColumnMarkedMissing("profiles", "avatar_key")) {
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ id: userId }, { onConflict: "id" });
+    if (error) {
+      return { ok: false, error: formatRatingError(error.message) };
+    }
+    return { ok: true };
+  }
+
+  const { error: upsertError } = await supabase
+    .from("profiles")
+    .upsert(
+      { id: userId, avatar_key: DEFAULT_AVATAR_KEY },
+      { onConflict: "id" }
+    );
 
   if (upsertError) {
+    if (
+      noteMissingColumnFromError("profiles", "avatar_key", upsertError.message)
+    ) {
+      const retry = await supabase
+        .from("profiles")
+        .upsert({ id: userId }, { onConflict: "id" });
+      if (retry.error) {
+        return { ok: false, error: formatRatingError(retry.error.message) };
+      }
+      return { ok: true };
+    }
     return { ok: false, error: formatRatingError(upsertError.message) };
   }
 
@@ -373,7 +453,7 @@ export async function getUserRatingForBook(
   }
 
   try {
-    const supabase = await getServiceRoleOrCookieClient();
+    const supabase = await getTrustedUserDataClient();
     if (!supabase) return null;
 
     const bookId = await findBookIdBySlugOrIsbn(supabase, {
@@ -399,6 +479,7 @@ export type UserRatedBook = {
   title: string;
   author: string | null;
   coverImageUrl: string | null;
+  publishedYear: number | null;
   genre: string | null;
   ratings: ContentRating;
   createdAt: string;
@@ -461,8 +542,10 @@ export function computeUserReadingStats(
     }
   }
 
+  const grouped = groupRatedBooksByWork(ratedBooks);
+
   const genreCounts = new Map<string, number>();
-  for (const book of ratedBooks) {
+  for (const { book } of grouped) {
     const genre = book.genre?.trim();
     if (!genre) continue;
     genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
@@ -478,7 +561,7 @@ export function computeUserReadingStats(
   }
 
   return {
-    totalBooksRated: ratedBooks.length,
+    totalBooksRated: grouped.length,
     overallAverage,
     byCategory,
     topContentCategory,
@@ -494,13 +577,50 @@ export async function getUserRatedBooks(
   }
 
   try {
-    const supabase = await getServiceRoleOrCookieClient();
+    const supabase = await getTrustedUserDataClient();
     if (!supabase) return [];
 
-    const { data, error } = await supabase
-      .from("ratings")
-      .select(
-        `
+    type RatedQueryRow = {
+      id: string;
+      created_at: string;
+      sexual_content: number;
+      romance?: number | null;
+      lgbt: number;
+      horror: number;
+      ideology: number;
+      pacing: number;
+      books: unknown;
+    };
+
+    const first = isColumnMarkedMissing("ratings", "romance")
+      ? await supabase
+          .from("ratings")
+          .select(
+            `
+        id,
+        created_at,
+        sexual_content,
+        lgbt,
+        horror,
+        ideology,
+        pacing,
+        books (
+          id,
+          slug,
+          title,
+          author,
+          cover_image_url,
+          published_year,
+          genre
+        )
+      `
+          )
+          .eq("rated_by", userId)
+          .order("created_at", { ascending: false })
+      : await supabase
+          .from("ratings")
+          .select(
+            `
         id,
         created_at,
         sexual_content,
@@ -515,39 +635,90 @@ export async function getUserRatedBooks(
           title,
           author,
           cover_image_url,
+          published_year,
           genre
         )
       `
-      )
-      .eq("rated_by", userId)
-      .order("created_at", { ascending: false });
+          )
+          .eq("rated_by", userId)
+          .order("created_at", { ascending: false });
 
-    if (error || !data) {
+    let rows: RatedQueryRow[] | null = null;
+
+    if (first.error) {
+      if (
+        noteMissingColumnFromError("ratings", "romance", first.error.message)
+      ) {
+        const legacy = await supabase
+          .from("ratings")
+          .select(
+            `
+            id,
+            created_at,
+            sexual_content,
+            lgbt,
+            horror,
+            ideology,
+            pacing,
+            books (
+              id,
+              slug,
+              title,
+              author,
+              cover_image_url,
+              published_year,
+              genre
+            )
+          `
+          )
+          .eq("rated_by", userId)
+          .order("created_at", { ascending: false });
+        if (legacy.error || !legacy.data) return [];
+        rows = legacy.data as unknown as RatedQueryRow[];
+      } else {
+        return [];
+      }
+    } else {
+      rows = (first.data as unknown as RatedQueryRow[] | null) ?? null;
+    }
+
+    if (!rows) {
       return [];
     }
 
-    return data.flatMap((row) => {
-      const book = Array.isArray(row.books) ? row.books[0] : row.books;
-      if (!book) return [];
+    return rows.flatMap((row) => {
+      const rawBook = Array.isArray(row.books) ? row.books[0] : row.books;
+      if (!rawBook || typeof rawBook !== "object") return [];
+      const book = rawBook as {
+        id: string;
+        slug: string;
+        title: string;
+        author: string | null;
+        cover_image_url: string | null;
+        published_year: string | number | null;
+        genre: string | null;
+      };
+      if (!book.slug || !book.title) return [];
 
       return [
         {
-          ratingId: row.id as string,
-          bookId: book.id as string,
-          slug: book.slug as string,
-          title: book.title as string,
-          author: (book.author as string | null) ?? null,
-          coverImageUrl: (book.cover_image_url as string | null) ?? null,
-          genre: (book.genre as string | null) ?? null,
+          ratingId: row.id,
+          bookId: book.id,
+          slug: book.slug,
+          title: book.title,
+          author: book.author ?? null,
+          coverImageUrl: book.cover_image_url ?? null,
+          publishedYear: parsePublishedYear(book.published_year) ?? null,
+          genre: book.genre ?? null,
           ratings: {
-            sexual_content: row.sexual_content as number,
-            romance: row.romance as number,
-            lgbt: row.lgbt as number,
-            horror: row.horror as number,
-            ideology: row.ideology as number,
-            pacing: row.pacing as number,
+            sexual_content: row.sexual_content,
+            romance: row.romance ?? DEFAULT_RATINGS.romance,
+            lgbt: row.lgbt,
+            horror: row.horror,
+            ideology: row.ideology,
+            pacing: row.pacing,
           },
-          createdAt: row.created_at as string,
+          createdAt: row.created_at,
         },
       ];
     });
@@ -588,7 +759,7 @@ export async function getUserRatedIdentities(
     );
     return await withTimeout(
       (async () => {
-        const supabase = await getServiceRoleOrCookieClient();
+        const supabase = await getTrustedUserDataClient();
         if (!supabase) return [];
 
         const { data, error } = await supabase
@@ -648,7 +819,7 @@ export async function getUserRatingCount(userId: string): Promise<number> {
   }
 
   try {
-    const supabase = await getServiceRoleOrCookieClient();
+    const supabase = await getTrustedUserDataClient();
     if (!supabase) return 0;
 
     const { count, error } = await supabase
@@ -879,8 +1050,8 @@ type SubmitRatingOptions = {
 
 /**
  * Persist a per-user rating. Column is `rated_by` (not `user_id`).
- * Verifies the JWT, then upserts with the service role client (bypasses RLS).
- * Identity comes from the verified JWT user, never from the request body.
+ * Verifies the JWT, then upserts with a PostgREST client that sends that JWT
+ * so auth.uid() matches rated_by. Never writes with the anon key alone.
  */
 export async function submitUserRating(
   bookExternalId: string,
@@ -901,8 +1072,10 @@ export async function submitUserRating(
   // 1) Verify the user via access token / cookie session (skip if the route
   //    already verified the same JWT).
   let sessionUserId: string;
-  if (options?.verifiedUserId && options.accessToken) {
+  let accessToken: string;
+  if (options?.verifiedUserId && options.accessToken?.trim()) {
     sessionUserId = options.verifiedUserId;
+    accessToken = options.accessToken.trim();
   } else {
     const auth = await getVerifiedUser({
       accessToken: options?.accessToken,
@@ -914,6 +1087,7 @@ export async function submitUserRating(
       };
     }
     sessionUserId = auth.user.id;
+    accessToken = auth.accessToken;
   }
 
   if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
@@ -923,12 +1097,16 @@ export async function submitUserRating(
     };
   }
 
-  // 2) Trusted server write with service role (bypasses RLS).
-  const admin = createServiceRoleClient();
-  if ("error" in admin) {
-    return { success: false, error: admin.error };
+  if (isColumnMarkedMissing("ratings", "romance")) {
+    return { success: false, error: ROMANCE_HINT };
   }
-  const supabase = admin.supabase;
+
+  // 2) User-JWT PostgREST write (auth.uid() must match rated_by).
+  const jwtClient = createJwtPostgrestClient(accessToken);
+  if ("error" in jwtClient) {
+    return { success: false, error: jwtClient.error };
+  }
+  const supabase = jwtClient.supabase;
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
@@ -959,10 +1137,12 @@ export async function submitUserRating(
     .upsert(row, { onConflict: "book_id,rated_by" });
 
   if (error) {
+    noteMissingColumnFromError("ratings", "romance", error.message);
+    noteMissingColumnFromError("ratings", "spice_level", error.message);
     return { success: false, error: formatRatingError(error.message) };
   }
 
-  // Confirm via the same service-role client used for the write.
+  // Confirm via the same JWT client used for the write.
   const readBack = await fetchUserRatingRow(
     supabase,
     bookResult.bookDbId,
@@ -973,7 +1153,7 @@ export async function submitUserRating(
     return {
       success: false,
       error:
-        "Rating write did not persist (row missing on read-back). Confirm SUPABASE_SERVICE_ROLE_KEY and ratings schema, then try again.",
+        "Rating write did not persist (row missing on read-back). Sign out and back in, then try again.",
     };
   }
 
@@ -983,6 +1163,7 @@ export async function submitUserRating(
   // If the romance column is missing, read-back defaults Romance to 0 and looks
   // "saved." Fail loudly instead of silently dropping the user's mark.
   if (userRating.romance !== expected.romance) {
+    markColumnMissing("ratings", "romance");
     return { success: false, error: ROMANCE_HINT };
   }
 

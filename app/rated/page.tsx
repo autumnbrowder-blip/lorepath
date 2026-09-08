@@ -1,8 +1,9 @@
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { BookCover } from "@/components/books/BookCover";
+import { groupRatedBooksByWork } from "@/lib/book-work";
 import { getUserRatedBooks } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/supabase/server";
 import { BookOpen, LogIn } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -13,14 +14,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RatedTomesPage() {
-  let user = null;
-  if (isSupabaseConfigured()) {
-    const supabase = await createClient();
-    const {
-      data: { user: currentUser },
-    } = await supabase.auth.getUser();
-    user = currentUser;
-  }
+  const user = isSupabaseConfigured() ? await getCachedUser() : null;
 
   if (!user) {
     return (
@@ -42,6 +36,7 @@ export default async function RatedTomesPage() {
   }
 
   const ratedBooks = await getUserRatedBooks(user.id);
+  const grouped = groupRatedBooksByWork(ratedBooks);
 
   return (
     <FantasyPageShell>
@@ -53,13 +48,13 @@ export default async function RatedTomesPage() {
           </p>
           <h1 className="page-title">Your Rated Tomes</h1>
           <p className="page-subtitle">
-            {ratedBooks.length === 0
+            {grouped.length === 0
               ? "No ratings yet — open a book and leave your mark."
-              : `${ratedBooks.length} tome${ratedBooks.length === 1 ? "" : "s"} you have marked.`}
+              : `${grouped.length} tome${grouped.length === 1 ? "" : "s"} you have marked.`}
           </p>
         </div>
 
-        {ratedBooks.length === 0 ? (
+        {grouped.length === 0 ? (
           <div className="parchment-panel px-6 py-12 text-center">
             <p className="font-heading text-lg text-forest-900/80 dark:text-cream-200/80">
               Your shelves are waiting for their first inscription.
@@ -70,8 +65,8 @@ export default async function RatedTomesPage() {
           </div>
         ) : (
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {ratedBooks.map((item) => (
-              <li key={item.ratingId}>
+            {grouped.map(({ workKey, book: item, extraEditionCount }) => (
+              <li key={workKey}>
                 <Link
                   href={`/books/${encodeURIComponent(item.slug)}`}
                   className="tome-card flex h-full gap-4 p-4 pl-5"
@@ -105,6 +100,12 @@ export default async function RatedTomesPage() {
                         day: "numeric",
                       })}
                     </p>
+                    {extraEditionCount > 0 ? (
+                      <p className="mt-2 font-heading text-xs leading-snug text-accent/80">
+                        Also marked on {extraEditionCount} other edition
+                        {extraEditionCount === 1 ? "" : "s"}
+                      </p>
+                    ) : null}
                   </div>
                 </Link>
               </li>

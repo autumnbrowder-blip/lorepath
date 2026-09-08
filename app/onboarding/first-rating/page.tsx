@@ -11,7 +11,7 @@ import { getFirstRatingSuggestions } from "@/lib/onboarding-suggestions";
 import { getUserPreferences } from "@/lib/preferences";
 import { getCommunityRatings, getUserRatedBooks } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedUser } from "@/lib/supabase/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
@@ -34,10 +34,7 @@ export default async function FirstRatingPage({
     redirect("/login?redirect=/onboarding/first-rating");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
 
   if (!user) {
     redirect("/login?redirect=/onboarding/first-rating");

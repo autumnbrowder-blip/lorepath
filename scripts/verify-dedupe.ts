@@ -2,13 +2,22 @@
  * Temporary verification for the shared dedupe helper.
  * Run: npx tsx scripts/verify-dedupe.ts
  */
+import { pickPreferredLanguageCode } from "../lib/book-language";
 import { finalizeSearchBooks } from "../lib/search-finalize";
+import {
+  distinctLatestEdition,
+  firstPublishedHref,
+  latestCoveredEditionId,
+  latestEditionHref,
+  resolveLatestEditionTarget,
+} from "../lib/book-work";
 import {
   dedupeBooks,
   getBookDedupeKey,
   normalizeAuthorForDedupe,
   normalizeTitleForDedupe,
   pickPreferredDuplicate,
+  rankBrowseSearchResults,
 } from "../lib/book-utils";
 import type { BookSummary } from "../types/book";
 
@@ -113,6 +122,7 @@ const wrenRich = book({
   title: "The Wren in the Holly Library",
   authors: ["K.A. Linde"],
   description: "A monster-filled Manhattan fantasy.",
+  coverUrl: "https://covers.example/wren-google.jpg",
   publishedYear: 2024,
   isbn: "9781637895757",
 });
@@ -128,8 +138,12 @@ const wrenCoverOnly = book({
 });
 const finalized = finalizeSearchBooks([wrenRich, wrenCoverOnly]);
 check("Wren editions collapse to one record", finalized.length, 1);
-check("winner identity kept (description wins)", finalized[0]?.id, "google-wren");
-check("cover filled from losing edition", finalized[0]?.coverUrl, "https://covers.example/wren.jpg");
+check("winner is the latest covered edition", finalized[0]?.id, "google-wren");
+check(
+  "winner keeps its own cover",
+  finalized[0]?.coverUrl,
+  "https://covers.example/wren-google.jpg"
+);
 check("page count filled from losing edition", finalized[0]?.pageCount, 384);
 check("newest year kept", finalized[0]?.publishedYear, 2024);
 check("winner ISBN kept", finalized[0]?.isbn, "9781637895757");
@@ -335,9 +349,18 @@ const protectedFinalize = finalizeSearchBooks([richerUnrated], {
 });
 check("protected rated book forced into results", protectedFinalize.length, 1);
 check(
-  "protected rated book keeps DB identity",
+  "protected merge shows the latest edition identity",
   protectedFinalize[0]?.id,
-  "google-rated-slug"
+  "isbndb-other"
+);
+check(
+  "rated edition is kept on workEditions",
+  Boolean(
+    protectedFinalize[0]?.workEditions?.some(
+      (edition) => edition.id === "google-rated-slug"
+    )
+  ),
+  true
 );
 check(
   "protected rated book still merges richer cover",
@@ -370,6 +393,347 @@ check(
   forcedObscure.some((b) => b.id === "user-rated-cover-only"),
   true
 );
+
+console.log("9. Work-key collapse (Google volume reprints)");
+const dune1965 = book({
+  id: "google-dune-1965",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description:
+    "The original desert-planet epic of politics, prophecy, and spice.",
+  publishedYear: 1965,
+});
+const dune2019 = book({
+  id: "google-dune-2019",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description:
+    "A later reprint of the desert-planet epic, issued with a new cover.",
+  coverUrl: "https://covers.example/dune.jpg",
+  publishedYear: 2019,
+});
+const duneOnly = finalizeSearchBooks([dune1965, dune2019]);
+const duneCard = duneOnly[0];
+check("Dune reprints collapse to one card", duneOnly.length, 1);
+check("latest Dune edition is the visible card", duneCard?.id, "google-dune-2019");
+check("first published year is the earliest Dune year", duneCard?.firstPublishYear, 1965);
+check(
+  "older Dune edition is retained",
+  Boolean(duneCard?.workEditions?.some((edition) => edition.id === "google-dune-1965")),
+  true
+);
+check("first-edition link targets the 1965 record", duneCard?.firstEditionId, "google-dune-1965");
+check(
+  "latestEditionId differs from first published",
+  duneCard?.latestEditionId,
+  "google-dune-2019"
+);
+
+const olDuneWork = book({
+  id: "ol-OL893414W",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "Open Library work-level record using first_publish_year as the year.",
+  coverUrl: "https://covers.openlibrary.org/b/id/11481354-M.jpg",
+  publishedYear: 1965,
+  firstPublishYear: 1965,
+  source: "openlibrary",
+});
+const googleDuneReprint = book({
+  id: "google-dune-reprint",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "A later commercial reprint with the current cover art.",
+  coverUrl: "https://books.google.com/books/content?id=dune-cover",
+  publishedYear: 2019,
+});
+const olVsGoogle = finalizeSearchBooks([olDuneWork, googleDuneReprint]);
+check("OL work + Google reprint collapse to one", olVsGoogle.length, 1);
+check("Google reprint is the visible Dune card", olVsGoogle[0]?.id, "google-dune-reprint");
+check(
+  "visible cover is the Google reprint cover",
+  olVsGoogle[0]?.coverUrl,
+  "https://books.google.com/books/content?id=dune-cover"
+);
+check("first published year stays 1965", olVsGoogle[0]?.firstPublishYear, 1965);
+check(
+  "First published YEAR opens the OL 1965 record",
+  olVsGoogle[0]?.firstEditionId,
+  "ol-OL893414W"
+);
+
+const itKing = book({
+  id: "google-it-king",
+  title: "It",
+  authors: ["Stephen King"],
+  description:
+    "A different work that shares a short title with nothing else here.",
+  publishedYear: 1986,
+  coverUrl: "https://covers.example/it.jpg",
+});
+const itOther = book({
+  id: "google-it-other",
+  title: "It",
+  authors: ["Someone Else"],
+  description: "An unrelated short-title book by a different author entirely.",
+  publishedYear: 2010,
+  coverUrl: "https://covers.example/it-other.jpg",
+});
+const shortTitles = finalizeSearchBooks([itKing, itOther]);
+check(
+  "short titles with different authors stay separate",
+  shortTitles.length,
+  2
+);
+
+console.log("10. English latest-edition picking (never Spanish Dune)");
+check(
+  "OL work language list prefers eng over ukr/es",
+  pickPreferredLanguageCode(["ukr", "spa", "eng", "pol"]),
+  "eng"
+);
+const spanishDune2024 = book({
+  id: "ol-OL50732450M",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "Spanish 2024 printing that must not win latest edition.",
+  coverUrl: "https://covers.openlibrary.org/b/id/spanish-dune.jpg",
+  publishedYear: 2024,
+  language: "es",
+  source: "openlibrary",
+});
+const englishDune2019 = book({
+  id: "google-dune-english-2019",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "English Ace reprint with a real cover.",
+  coverUrl: "https://books.google.com/books/content?id=dune-en-2019",
+  publishedYear: 2019,
+  language: "en",
+});
+const englishGoogleNoYear = book({
+  id: "google-dune-english-noyear",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "English Google edition that omitted a year.",
+  coverUrl: "https://books.google.com/books/content?id=dune-en-noyear",
+  language: "eng",
+});
+const mixedLangDune = finalizeSearchBooks([
+  olDuneWork,
+  spanishDune2024,
+  englishDune2019,
+]);
+check("English + Spanish Dune collapse to one visible card", mixedLangDune.length, 1);
+check(
+  "visible Dune card is the English edition, not Spanish 2024",
+  mixedLangDune[0]?.id,
+  "google-dune-english-2019"
+);
+check(
+  "visible Dune card language stays English",
+  mixedLangDune[0]?.language === "en" || mixedLangDune[0]?.language === "eng",
+  true
+);
+check(
+  "First published YEAR still opens the 1965 work",
+  mixedLangDune[0]?.firstEditionId,
+  "ol-OL893414W"
+);
+check(
+  "latestCoveredEditionId never returns Spanish OL50732450M",
+  latestCoveredEditionId(olDuneWork, [
+    spanishDune2024,
+    englishDune2019,
+  ]),
+  "google-dune-english-2019"
+);
+check(
+  "commercial English with no year beats newer Spanish OL",
+  latestCoveredEditionId(olDuneWork, [
+    spanishDune2024,
+    englishGoogleNoYear,
+  ]),
+  "google-dune-english-noyear"
+);
+const latestTarget = resolveLatestEditionTarget(olDuneWork, [
+  spanishDune2024,
+  englishDune2019,
+]);
+check("latest edition href id is English 2019", latestTarget.id, "google-dune-english-2019");
+check("latest edition year is the English year, not 2024", latestTarget.year, 2019);
+
+const hcDune = book({
+  id: "hardcover-dune-work",
+  title: "Dune",
+  authors: ["Frank Herbert"],
+  description: "Hardcover English synopsis of Arrakis and the spice.",
+  coverUrl: "https://assets.hardcover.app/covers/dune.jpg",
+  publishedYear: 2019,
+  language: "en",
+  source: "hardcover",
+  genres: ["Science Fiction", "Epic Fantasy"],
+});
+const hcVsSpanish = finalizeSearchBooks([
+  olDuneWork,
+  spanishDune2024,
+  hcDune,
+]);
+check(
+  "Hardcover English + Spanish OL collapse to one card",
+  hcVsSpanish.length,
+  1
+);
+check(
+  "Hardcover English identity beats Spanish OL50732450M",
+  hcVsSpanish[0]?.id,
+  "hardcover-dune-work"
+);
+check("visible Dune source is hardcover", hcVsSpanish[0]?.source, "hardcover");
+check(
+  "Hardcover description wins over OL",
+  hcVsSpanish[0]?.description,
+  "Hardcover English synopsis of Arrakis and the spice."
+);
+check(
+  "Hardcover cover wins over OL",
+  hcVsSpanish[0]?.coverUrl,
+  "https://assets.hardcover.app/covers/dune.jpg"
+);
+check(
+  "Hardcover tags are present on the merged card",
+  (hcVsSpanish[0]?.genres ?? []).some((tag) =>
+    /science fiction|epic fantasy/i.test(tag)
+  ),
+  true
+);
+check(
+  "First published YEAR still opens the 1965 work when Hardcover wins",
+  hcVsSpanish[0]?.firstEditionId,
+  "ol-OL893414W"
+);
+check(
+  "latestCoveredEditionId may be Hardcover English when it differs from first published",
+  latestCoveredEditionId(olDuneWork, [spanishDune2024, hcDune]),
+  "hardcover-dune-work"
+);
+const hcLatest = resolveLatestEditionTarget(olDuneWork, [
+  spanishDune2024,
+  hcDune,
+]);
+check("latest edition href may be the Hardcover English id", hcLatest.id, "hardcover-dune-work");
+check("latest edition href is not Spanish OL50732450M", hcLatest.id !== "ol-OL50732450M", true);
+
+const googleDuneForHc = book({
+  id: "google-dune-english-2019",
+  title: "DUNE",
+  authors: ["Frank Herbert"],
+  description: "Google Books blurb that must not replace Hardcover copy.",
+  coverUrl: "https://books.google.com/books/content?id=dune-en-2019",
+  publishedYear: 2019,
+  language: "en",
+  genres: ["Fiction"],
+});
+const hcVsGoogle = finalizeSearchBooks([googleDuneForHc, hcDune]);
+check("Hardcover + Google Dune stay one title+author card", hcVsGoogle.length, 1);
+check(
+  "visible Dune is a commercial English edition, not Spanish OL",
+  hcVsGoogle[0]?.id !== "ol-OL50732450M" &&
+    (hcVsGoogle[0]?.source === "hardcover" || hcVsGoogle[0]?.source === "google"),
+  true
+);
+check("Hardcover title wins over Google", hcVsGoogle[0]?.title, "Dune");
+check(
+  "Hardcover description wins over Google",
+  hcVsGoogle[0]?.description,
+  "Hardcover English synopsis of Arrakis and the spice."
+);
+
+const noHardcoverPath = finalizeSearchBooks([
+  olDuneWork,
+  googleDuneReprint,
+  spanishDune2024,
+]);
+check(
+  "skip/0 Hardcover path still prefers English Google over Spanish OL",
+  noHardcoverPath[0]?.id,
+  "google-dune-reprint"
+);
+check("skip/0 path source is not hardcover", noHardcoverPath[0]?.source !== "hardcover", true);
+
+check(
+  "first published href uses firstEditionId + fy",
+  firstPublishedHref("ol-OL893414W", "dune", 1965),
+  "/books/ol-OL893414W?q=dune&fy=1965"
+);
+check(
+  "latest edition href uses a different id and no fy",
+  latestEditionHref("google-dune-reprint", "dune"),
+  "/books/google-dune-reprint?q=dune"
+);
+check(
+  "latest hidden when it would be the same id as first published",
+  distinctLatestEdition({
+    latestId: "ol-OL893414W",
+    latestYear: 1965,
+    firstEditionId: "ol-OL893414W",
+  }),
+  null
+);
+check(
+  "latest hidden on the detail page when it is the current book",
+  distinctLatestEdition({
+    latestId: "google-dune-reprint",
+    latestYear: 2019,
+    firstEditionId: "ol-OL893414W",
+    currentBookId: "google-dune-reprint",
+  }),
+  null
+);
+check(
+  "latest shown on a card when it differs from first published",
+  distinctLatestEdition({
+    latestId: "google-dune-reprint",
+    latestYear: 2019,
+    firstEditionId: "ol-OL893414W",
+  }),
+  { id: "google-dune-reprint", year: 2019 }
+);
+
+const rankedDune = rankBrowseSearchResults(
+  [
+    book({
+      id: "ol-messiah",
+      title: "Dune Messiah",
+      authors: ["Frank Herbert"],
+      publishedYear: 1969,
+      coverUrl: "https://covers.example/messiah.jpg",
+      description: "The second book.",
+    }),
+    book({
+      id: "google-dune-main",
+      title: "Dune",
+      authors: ["Frank Herbert"],
+      publishedYear: 2019,
+      coverUrl: "https://covers.example/dune.jpg",
+      description: "The original novel.",
+      language: "en",
+    }),
+    book({
+      id: "google-brian-dune",
+      title: "Dune",
+      authors: ["Brian Herbert"],
+      publishedYear: 2007,
+      coverUrl: "https://covers.example/brian.jpg",
+      description: "A later family novel.",
+      language: "en",
+    }),
+  ],
+  "dune"
+);
+check("exact title Dune ranks before Dune Messiah", rankedDune[0]?.title, "Dune");
+check("Frank Herbert Dune ranks before Brian Herbert", rankedDune[0]?.id, "google-dune-main");
+check("Dune Messiah stays in related results", rankedDune.some((b) => b.id === "ol-messiah"), true);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

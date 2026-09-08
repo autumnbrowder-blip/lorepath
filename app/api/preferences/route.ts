@@ -71,7 +71,7 @@ export async function PUT(request: Request) {
 
   const hadAuthorizationHeader = Boolean(getBearerToken(request));
 
-  // Auth check first (Bearer preferred). Writes use the service role client
+  // Auth check first (Bearer preferred). Writes use a user-JWT PostgREST client
   // after JWT verification — see saveUserPreferences.
   const session = await getSessionUser({
     accessToken: getBearerToken(request),
@@ -137,6 +137,11 @@ export async function PUT(request: Request) {
   });
 
   if (!saveResult.success) {
+    const denied =
+      saveResult.supabaseCode === "42501" ||
+      /not signed in/i.test(saveResult.error) ||
+      /unauthorized/i.test(saveResult.error);
+    const status = /not signed in/i.test(saveResult.error) ? 401 : denied ? 403 : 500;
     return NextResponse.json(
       {
         error: saveResult.error,
@@ -148,7 +153,7 @@ export async function PUT(request: Request) {
         hadAuthorizationHeader: saveResult.debug.hadAuthorizationHeader,
         userIdMatched: saveResult.debug.userIdMatched,
       },
-      { status: 500 }
+      { status }
     );
   }
 

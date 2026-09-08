@@ -105,7 +105,7 @@ export async function POST(
     );
   }
 
-  // Verify JWT first. Writes use the service role client after auth —
+  // Verify JWT first. Writes use a PostgREST client that sends that JWT —
   // see submitUserRating (rated_by is always the verified user.id).
   const session = await createAuthenticatedClient({
     accessToken: getBearerToken(request),
@@ -141,7 +141,8 @@ export async function POST(
   });
 
   if (!result.success) {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    const status = /not signed in/i.test(result.error) ? 401 : /permission denied|row-level security|42501/i.test(result.error) ? 403 : 500;
+    return NextResponse.json({ error: result.error }, { status });
   }
 
   // Prefer community averages computed on the same service-role client as the

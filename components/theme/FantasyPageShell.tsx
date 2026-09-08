@@ -17,9 +17,15 @@ type FantasyPageShellProps = {
 export function FantasyPageShell({
   children,
   className = "",
+  variant,
 }: FantasyPageShellProps) {
+  const variantClass =
+    variant === "browse" ? "fantasy-page-shell--browse" : "";
+
   return (
-    <div className={`fantasy-page-shell relative overflow-x-clip ${className}`}>
+    <div
+      className={`fantasy-page-shell relative overflow-x-clip ${variantClass} ${className}`.trim()}
+    >
       <LibraryClassicalScene />
       <div className="fantasy-page-shell-scroll relative z-10 h-full overflow-y-auto overscroll-contain">
         {children}

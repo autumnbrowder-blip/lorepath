@@ -56,6 +56,11 @@ export type BookSummary = {
    * when several share the first year). Used by the First published YEAR link.
    */
   firstEditionId?: string | null;
+  /**
+   * Newest English covered printing when it differs from firstEditionId.
+   * Used by the Latest edition YEAR link. Null when there is no other id.
+   */
+  latestEditionId?: string | null;
   source: BookSource;
   downloadCount?: number | null;
   /** ISBN-10 or ISBN-13 when known (used for search dedupe). */

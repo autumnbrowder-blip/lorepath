@@ -6,8 +6,9 @@ import {
   resolveAvatarKey,
   resolveDisplayName,
 } from "@/lib/avatars";
+import { readProfileDisplayFields } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedUser } from "@/lib/supabase/server";
 import { ArrowLeft, Settings } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -26,10 +27,7 @@ export default async function SettingsPage() {
     redirect("/login?redirect=/settings");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
 
   if (!user) {
     redirect("/login?redirect=/settings");
@@ -40,11 +38,8 @@ export default async function SettingsPage() {
     redirect("/login?redirect=/settings");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, avatar_key")
-    .eq("id", user.id)
-    .maybeSingle();
+  const supabase = await createClient();
+  const profile = await readProfileDisplayFields(supabase, user.id);
 
   const displayName = resolveDisplayName(
     typeof profile?.display_name === "string" ? profile.display_name : null,

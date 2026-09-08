@@ -2,7 +2,12 @@
 
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { createAuthenticatedClient } from "@/lib/supabase/server";
+import {
+  isColumnMarkedMissing,
+  isPermissionDeniedError,
+  noteMissingColumnFromError,
+} from "@/lib/supabase/schema-cache";
 import { revalidatePath } from "next/cache";
 
 const MAX_DISPLAY_NAME_LENGTH = 60;
@@ -30,7 +35,7 @@ const RLS_HINT =
 
 /**
  * Persist profiles.display_name for the signed-in user.
- * Uses the cookie session on the server so auth.uid() matches the row id.
+ * Uses a PostgREST client that sends the user JWT so auth.uid() matches.
  */
 export async function updateDisplayNameAction(
   rawName: string
@@ -53,14 +58,12 @@ export async function updateDisplayNameAction(
   const nextName = normalizeDisplayName(rawName);
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const auth = await createAuthenticatedClient();
+    if ("error" in auth) {
       return { ok: false, error: "You must be signed in to update your name." };
     }
+
+    const { supabase, user } = auth;
 
     // Prefer update (existing row). verify with select + eq user id.
     const { data: updated, error: updateError } = await supabase
@@ -72,10 +75,10 @@ export async function updateDisplayNameAction(
 
     if (updateError) {
       const msg = updateError.message || "Failed to save display name.";
-      return {
-        ok: false,
-        error: isRlsError(msg) ? RLS_HINT : msg,
-      };
+      if (isPermissionDeniedError(msg, updateError.code)) {
+        return { ok: false, error: RLS_HINT };
+      }
+      return { ok: false, error: isRlsError(msg) ? RLS_HINT : msg };
     }
 
     if (updated) {
@@ -87,7 +90,40 @@ export async function updateDisplayNameAction(
       return { ok: true, displayName: confirmed ?? nextName };
     }
 
-    // No row returned — missing profile or RLS hid the update. Upsert own row.
+    if (isColumnMarkedMissing("profiles", "avatar_key")) {
+      const { data: upserted, error: upsertError } = await supabase
+        .from("profiles")
+        .upsert(
+          { id: user.id, display_name: nextName },
+          { onConflict: "id" }
+        )
+        .select("display_name")
+        .maybeSingle();
+
+      if (upsertError) {
+        const msg = upsertError.message || "Failed to save display name.";
+        if (isPermissionDeniedError(msg, upsertError.code)) {
+          return { ok: false, error: RLS_HINT };
+        }
+        return { ok: false, error: isRlsError(msg) ? RLS_HINT : msg };
+      }
+
+      if (!upserted) {
+        return {
+          ok: false,
+          error: "No profile row could be created for your account.",
+        };
+      }
+
+      const confirmed =
+        typeof upserted.display_name === "string"
+          ? upserted.display_name.trim() || null
+          : upserted.display_name ?? null;
+
+      revalidatePath("/profile");
+      return { ok: true, displayName: confirmed ?? nextName };
+    }
+
     const { data: upserted, error: upsertError } = await supabase
       .from("profiles")
       .upsert(
@@ -103,24 +139,20 @@ export async function updateDisplayNameAction(
 
     if (upsertError) {
       const msg = upsertError.message || "Failed to save display name.";
-      return {
-        ok: false,
-        error: isRlsError(msg) ? RLS_HINT : msg,
-      };
+      if (noteMissingColumnFromError("profiles", "avatar_key", msg)) {
+        return {
+          ok: false,
+          error:
+            "Could not save because profiles.avatar_key is missing. Run the avatar_key migration, then try again.",
+        };
+      }
+      if (isPermissionDeniedError(msg, upsertError.code)) {
+        return { ok: false, error: RLS_HINT };
+      }
+      return { ok: false, error: isRlsError(msg) ? RLS_HINT : msg };
     }
 
     if (!upserted) {
-      // Last check: can we read a row at all?
-      const { data: existing } = await supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (existing) {
-        return { ok: false, error: RLS_HINT };
-      }
-
       return {
         ok: false,
         error: "No profile row could be created for your account.",

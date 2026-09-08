@@ -6,8 +6,22 @@ import { LiveMatchScore } from "@/components/books/LiveMatchScore";
 import { RatingForm } from "@/components/books/RatingForm";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
-import { loadBookDetail } from "@/lib/books";
-import { summarizeFailures, withTimeout } from "@/lib/provider-resilience";
+import { loadBookDetail, searchBooks } from "@/lib/books";
+import {
+  applyFirstPublishYearHint,
+  booksShareWork,
+  distinctLatestEdition,
+  resolveLatestEditionTarget,
+} from "@/lib/book-work";
+import {
+  getCachedSearchPage,
+  searchCacheKey,
+} from "@/lib/search-cache";
+import {
+  summarizeFailures,
+  withTimeout,
+  withTimeoutFallback,
+} from "@/lib/provider-resilience";
 import { getCommunityRatings, getUserRatingForBook } from "@/lib/ratings";
 import { getUserPreferences } from "@/lib/preferences";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -21,7 +35,7 @@ import type { ContentRating } from "@/types";
 type BookDetailPageProps = {
   params: Promise<{ id: string }>;
   /** `hint` is a provider-recovery title from cards opened without a search. */
-  searchParams: Promise<{ q?: string; from?: string; hint?: string }>;
+  searchParams: Promise<{ q?: string; from?: string; hint?: string; fy?: string }>;
 };
 
 function browseBackHref(searchQuery: string): string {
@@ -182,7 +196,7 @@ export default async function BookDetailPage({
   searchParams,
 }: BookDetailPageProps) {
   const { id } = await params;
-  const { q, from, hint } = await searchParams;
+  const { q, from, hint, fy } = await searchParams;
   const searchQuery = q?.trim() ?? "";
   const fromFirstRating = from === "first-rating";
 
@@ -206,7 +220,41 @@ export default async function BookDetailPage({
     );
   }
 
-  const [ratingsResult, viewer] = await Promise.all([
+  const cachedSiblings =
+    searchQuery.length > 0
+      ? getCachedSearchPage(
+          searchCacheKey({ query: searchQuery, page: 1 })
+        )?.books ?? []
+      : [];
+  const sibling =
+    cachedSiblings.find((entry) => entry.id === book.id) ??
+    cachedSiblings.find((entry) => booksShareWork(entry, book)) ??
+    null;
+  const hydrated = applyFirstPublishYearHint(
+    {
+      ...book,
+      firstEditionId: book.firstEditionId || sibling?.firstEditionId || null,
+      firstPublishYear:
+        book.firstPublishYear ?? sibling?.firstPublishYear ?? null,
+      latestEditionYear:
+        book.latestEditionYear ?? sibling?.latestEditionYear ?? null,
+      latestEditionId: book.latestEditionId || sibling?.latestEditionId || null,
+      workEditions: book.workEditions?.length
+        ? book.workEditions
+        : sibling?.workEditions,
+    },
+    fy
+  );
+  const firstEditionId = hydrated.firstEditionId?.trim() || hydrated.id;
+  const cachedLatest = resolveLatestEditionTarget(hydrated, cachedSiblings);
+  const cachedDistinct = distinctLatestEdition({
+    latestId: cachedLatest.id,
+    latestYear: cachedLatest.year ?? hydrated.latestEditionYear,
+    firstEditionId,
+    currentBookId: id,
+  });
+
+  const [ratingsResult, viewer, latestEdition] = await Promise.all([
     withTimeout(getCommunityRatings(id, book.isbn), 1500, "page-community-ratings")
       .catch((error) => {
         console.error("[books/[id]] community ratings failed:", {
@@ -224,6 +272,22 @@ export default async function BookDetailPage({
         return ANONYMOUS_VIEWER;
       }
     ),
+    cachedDistinct
+      ? Promise.resolve(cachedDistinct)
+      : withTimeoutFallback(
+          searchBooks(searchQuery || book.title, 1).then((result) => {
+            const target = resolveLatestEditionTarget(hydrated, result.books);
+            return distinctLatestEdition({
+              latestId: target.id,
+              latestYear: target.year ?? hydrated.latestEditionYear,
+              firstEditionId,
+              currentBookId: id,
+            });
+          }),
+          3500,
+          "latest-edition-id",
+          null
+        ),
   ]);
 
   const communityRatings = ratingsResult;
@@ -256,7 +320,10 @@ export default async function BookDetailPage({
               initialCommunityRatings={communityRatings}
             >
               <BookInformation
-                book={book}
+                book={hydrated}
+                searchQuery={searchQuery}
+                latestEditionId={latestEdition?.id ?? null}
+                latestEditionYear={latestEdition?.year ?? null}
                 communityRatings={<LiveCommunityRatings />}
                 matchScore={
                   <LiveMatchScore

@@ -2685,17 +2685,66 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
     box-sizing: border-box;
   }
 
+  /* ============================================================
+   * Browse mobile only — search stays in padded width; library
+   * layer is viewport-fixed so it does not recrop on scroll.
+   * Desktop (≥768px) search/background rules are unchanged.
+   * ============================================================ */
+  .fantasy-page-shell--browse,
+  .fantasy-page-shell--browse .fantasy-page-shell-scroll,
+  .browse-page-wrap {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  .fantasy-page-shell--browse .library-classical-scene {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    bottom: auto;
+    z-index: 0;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+    background-attachment: scroll, scroll;
+  }
+
+  .browse-page-pad {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+
+  .browse-search-row,
+  .browse-search-scroll,
+  .browse-search-row .browse-search-submit,
+  .browse-search-scroll .browse-search-ink,
+  .browse-search-scroll input[type="search"],
+  .browse-search-scroll input.browse-search-ink {
+    box-sizing: border-box;
+  }
+
   .browse-search-row {
     flex-direction: column;
     align-items: stretch;
+    align-self: stretch;
     width: 100%;
     max-width: 100%;
+    min-width: 0;
     height: auto;
     gap: 8px;
   }
 
   .browse-search-scroll {
     width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
     flex: 1 1 auto !important;
     border-right: 1px solid #c4a056 !important;
     border-radius: 2px !important;
@@ -2703,11 +2752,20 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
 
   .browse-search-row .browse-search-submit {
     width: max-content;
+    max-width: 100%;
     min-width: 0;
     height: 44px;
     min-height: 44px;
     align-self: center;
     border-radius: 2px;
+  }
+
+  .browse-search-scroll .browse-search-ink,
+  .browse-search-scroll input[type="search"],
+  .browse-search-scroll input.browse-search-ink {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
   }
 
   .browse-search-scroll .browse-search-ink,
