@@ -40,7 +40,7 @@ export function searchCacheKey(input: {
   const q = input.query.trim().toLowerCase();
   const page = Math.max(1, input.page);
   const mode = input.mode ?? "text";
-  return `v=browse-q7|q=${q}|page=${page}|mode=${mode}`;
+  return `v=browse-q8|q=${q}|page=${page}|mode=${mode}`;
 }
 
 function cloneBooks(books: BookSummary[]): BookSummary[] {

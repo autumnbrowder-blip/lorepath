@@ -2,10 +2,6 @@ import { BookCard } from "@/components/browse/BookCard";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { searchBooks } from "@/lib/books";
 import { decodeAuthorName } from "@/lib/book-links";
-import { getUserRatedIdentities } from "@/lib/ratings";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { getCachedUser } from "@/lib/supabase/server";
-import { isBookInscribedByUser } from "@/lib/user-rated-identity";
 import { ArrowLeft, User } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -30,18 +26,6 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
   const { name } = await params;
   const authorName = decodeAuthorName(name);
   const { books } = await searchBooks(authorName);
-
-  let ratedIdentities: Awaited<ReturnType<typeof getUserRatedIdentities>> = [];
-  if (isSupabaseConfigured()) {
-    try {
-      const user = await getCachedUser();
-      if (user) {
-        ratedIdentities = await getUserRatedIdentities(user.id);
-      }
-    } catch {
-      ratedIdentities = [];
-    }
-  }
 
   return (
     <FantasyPageShell>
@@ -70,7 +54,6 @@ export default async function AuthorPage({ params }: AuthorPageProps) {
               <BookCard
                 key={book.id}
                 book={book}
-                hasUserRating={isBookInscribedByUser(book, ratedIdentities)}
               />
             ))}
           </div>

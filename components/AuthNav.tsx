@@ -65,6 +65,19 @@ export function AuthNav() {
         if (cancelled) return;
 
         if (error || !data) {
+          const nonRetryable =
+            error &&
+            (/42501/.test(error.message) ||
+              /timeout|57014|statement timeout/i.test(error.message) ||
+              error.code === "42501" ||
+              error.code === "PGRST301" ||
+              error.code === "401" ||
+              error.code === "403" ||
+              error.code === "500");
+          if (nonRetryable) {
+            setProfile(null);
+            return;
+          }
           // Fallback if avatar_key column isn't migrated yet
           const { data: basic } = await supabase
             .from("profiles")

@@ -60,3 +60,23 @@ export function isPermissionDeniedError(
     /invalid jwt/i.test(message)
   );
 }
+
+/** Never retry these Data API failures — they will not succeed on a second hit. */
+export function isNonRetryableDataApiError(
+  message: string,
+  code?: string | number | null
+): boolean {
+  const status =
+    typeof code === "number"
+      ? code
+      : typeof code === "string" && /^\d+$/.test(code)
+        ? Number(code)
+        : null;
+  if (status === 401 || status === 403 || status === 500) return true;
+  if (isPermissionDeniedError(message, typeof code === "string" ? code : undefined)) {
+    return true;
+  }
+  return /timeout|timed out|57014|canceling statement|statement timeout/i.test(
+    message
+  );
+}

@@ -11,24 +11,9 @@ import {
   rankBrowseSearchResults,
 } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
-import { createClient } from "@/lib/supabase";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
-import {
-  alignBooksToRatedSlugs,
-  createRatedBookLookup,
-  ratedBookKey,
-  type UserRatedIdentity,
-} from "@/lib/user-rated-identity";
 import type { BookSummary } from "@/types/book";
 import { AlertCircle, Loader2, Search } from "lucide-react";
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type SearchPagePayload = {
@@ -37,19 +22,7 @@ type SearchPagePayload = {
   page?: number;
   /** Echo of the q that produced this payload — reject stale cache hits. */
   query?: string;
-  /** Card ids on this page that match the user's rated works. */
-  userRatedSlugs?: string[];
 };
-
-/** Where the rated set came from — surfaced in the temporary debug log. */
-type RatedSource =
-  | "ssr"
-  | "browser-query"
-  | "api"
-  | "session-storage"
-  | "none";
-
-const JUST_RATED_STORAGE_KEY = "lorepath-just-rated-slugs";
 
 function mergeSearchResults(
   existing: BookSummary[],
@@ -57,8 +30,7 @@ function mergeSearchResults(
   query: string
 ): BookSummary[] {
   // Same title+author key as the server (getBookDedupeKey). Prefer identities
-  // already on screen so load-more cannot add a second Frank Herbert Dune or
-  // swap a rated/DB slug for a different provider edition.
+  // already on screen so load-more cannot add a second Frank Herbert Dune.
   const merged = finalizeSearchBooks([...existing, ...incoming], {
     ratedIds: new Set(existing.map((book) => book.id)),
     // Keep exact-title matches that are already on screen from disappearing
@@ -67,22 +39,7 @@ function mergeSearchResults(
     debug: false,
   });
   const cleaned = dropBrowseJunk(merged);
-  return query.trim()
-    ? rankBrowseSearchResults(cleaned, query)
-    : cleaned;
-}
-
-function readJustRatedSlugs(): string[] {
-  try {
-    const raw = sessionStorage.getItem(JUST_RATED_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === "string")
-      : [];
-  } catch {
-    return [];
-  }
+  return query.trim() ? rankBrowseSearchResults(cleaned, query) : cleaned;
 }
 
 type BookSearchProps = {
@@ -92,14 +49,8 @@ type BookSearchProps = {
   /** Prefetched NYT lists — display-only; does not affect search. */
   bestsellers?: BookSummary[];
   bestsellersError?: string | null;
-  /** SSR hint — may be false even when the browser session is logged in. */
+  /** SSR auth hint for the signup prompt only — never loads ratings. */
   isLoggedIn?: boolean;
-  /**
-   * Works the logged-in user has already rated (slug + title/author).
-   * Empty for logged-out users. Slug is the rating identity; title/author
-   * match search cards that use a different provider id for the same work.
-   */
-  initialRatedIdentities?: UserRatedIdentity[];
 };
 
 export function BookSearch({
@@ -108,11 +59,9 @@ export function BookSearch({
   bestsellers = [],
   bestsellersError = null,
   isLoggedIn = false,
-  initialRatedIdentities = [],
 }: BookSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
-  const [searchMode, setSearchMode] = useState<"text" | "genre">(initialMode);
   const [books, setBooks] = useState<BookSummary[]>([]);
   /** Query that produced `books` — heading/empty state must not use live input. */
   const [resultsQuery, setResultsQuery] = useState(initialQuery);
@@ -122,298 +71,12 @@ export function BookSearch({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
-  /** Client auth — Navbar uses the browser session; SSR isLoggedIn can miss it. */
-  const [clientLoggedIn, setClientLoggedIn] = useState(isLoggedIn);
-  const [ratedIdentities, setRatedIdentities] = useState<UserRatedIdentity[]>(
-    initialRatedIdentities
-  );
-  /** Extra card ids from search payload (already work-matched server-side). */
-  const [inscribedCardIds, setInscribedCardIds] = useState<string[]>([]);
   const initialSearchDone = useRef(false);
   const lastUrlSearchRef = useRef("");
   const searchModeRef = useRef<"text" | "genre">(initialMode);
   const abortRef = useRef<AbortController | null>(null);
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
   const searchRequestIdRef = useRef(0);
-  const ratedDebugLoggedRef = useRef(false);
-  /** One Data API fill per mount — never retry 401/403/500/57014. */
-  const ratedApiOnceRef = useRef(false);
-  /** True after the first client rated-identity load attempt finishes. */
-  const [ratedLoadAttempted, setRatedLoadAttempted] = useState(
-    initialRatedIdentities.length > 0
-  );
-  const [ratedSource, setRatedSource] = useState<RatedSource>(
-    initialRatedIdentities.length > 0 ? "ssr" : "none"
-  );
-
-  const effectivelyLoggedIn = isLoggedIn || clientLoggedIn;
-
-  /**
-   * One lookup for every Inscribed decision. Rated identities carry the saved
-   * `books.slug`; server-matched card ids are slug-only entries.
-   */
-  const ratedLookup = useMemo(
-    () =>
-      createRatedBookLookup([
-        ...ratedIdentities,
-        ...inscribedCardIds
-          .filter(
-            (id) => id && !ratedIdentities.some((row) => row.slug === id)
-          )
-          .map((id) => ({ slug: id, title: "", author: null })),
-      ]),
-    [ratedIdentities, inscribedCardIds]
-  );
-
-  function hasUserRating(book: BookSummary): boolean {
-    if (!effectivelyLoggedIn) return false;
-    return ratedLookup.has(book);
-  }
-
-  function mergeInscribedCardIds(extra: string[] | undefined) {
-    if (!extra?.length) return;
-    setInscribedCardIds((current) => {
-      const next = new Set(current);
-      let changed = false;
-      for (const id of extra) {
-        if (!id || next.has(id)) continue;
-        next.add(id);
-        changed = true;
-      }
-      return changed ? Array.from(next) : current;
-    });
-  }
-
-  function applyRatedAlignment(list: BookSummary[]): BookSummary[] {
-    if (ratedIdentities.length === 0) return list;
-    return alignBooksToRatedSlugs(list, ratedIdentities);
-  }
-
-  /**
-   * Inscribed badges only. Search results never hit Supabase.
-   * Prefer SSR identities; if the browser session exists and SSR missed it,
-   * one /api/me/rated-slugs call (rated_by = user). Never retry 401/403/500.
-   */
-  const refreshRatedIdentities = useCallback(async () => {
-    if (!isSupabaseConfigured()) return;
-
-    try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user ?? null;
-
-      if (!user) {
-        setClientLoggedIn(false);
-        // Keep SSR identities if present; only clear when we know logged out
-        // and SSR also had none. Do not query ratings or preferences.
-        if (initialRatedIdentities.length === 0) {
-          setRatedIdentities([]);
-          setInscribedCardIds([]);
-        }
-        return;
-      }
-
-      setClientLoggedIn(true);
-
-      let next: UserRatedIdentity[] = initialRatedIdentities.map((row) => ({
-        ...row,
-      }));
-      let source: RatedSource =
-        next.length > 0 ? "ssr" : "none";
-
-      // One shot when SSR had no session. Do not query ratings from the browser.
-      if (next.length === 0 && !ratedApiOnceRef.current) {
-        ratedApiOnceRef.current = true;
-        const headers: Record<string, string> = {};
-        const accessToken = session?.access_token;
-        if (accessToken) {
-          headers.Authorization = `Bearer ${accessToken}`;
-        }
-        const response = await fetch("/api/me/rated-slugs", {
-          credentials: "same-origin",
-          cache: "no-store",
-          headers,
-        });
-        if (response.ok) {
-          const data = (await response.json()) as {
-            identities?: UserRatedIdentity[];
-            slugs?: string[];
-          };
-          if (Array.isArray(data.identities) && data.identities.length > 0) {
-            next = data.identities;
-            source = "api";
-          } else if (Array.isArray(data.slugs) && data.slugs.length > 0) {
-            next = data.slugs.map((slug) => ({
-              slug,
-              title: "",
-              author: null,
-            }));
-            source = "api";
-          }
-        }
-        // 401 / 403 / 42501 / 500 / 57014: do not retry.
-      }
-
-      for (const slug of readJustRatedSlugs()) {
-        if (!next.some((row) => row.slug === slug)) {
-          next.push({ slug, title: "", author: null });
-          if (source === "none") source = "session-storage";
-        }
-      }
-
-      if (next.length > 0) {
-        setRatedIdentities(next);
-        setRatedSource(source);
-        setInscribedCardIds((ids) =>
-          Array.from(new Set([...ids, ...next.map((row) => row.slug)]))
-        );
-      } else {
-        setRatedSource("none");
-      }
-    } catch {
-      // Keep SSR / last-known identities. Do not retry.
-    } finally {
-      setRatedLoadAttempted(true);
-    }
-  }, [initialRatedIdentities]);
-
-  // Detect browser session + load rated works (do not gate on SSR isLoggedIn).
-  useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      setRatedLoadAttempted(true);
-      return;
-    }
-
-    let cancelled = false;
-    const supabase = createClient();
-
-    void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (cancelled) return;
-      const user = session?.user ?? null;
-      setClientLoggedIn(Boolean(user));
-      if (user && initialRatedIdentities.length === 0) {
-        await refreshRatedIdentities();
-      } else {
-        if (user) mergeJustRatedFromStorage();
-        setRatedLoadAttempted(true);
-      }
-    })();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (cancelled) return;
-      const signedIn = Boolean(session?.user);
-      setClientLoggedIn(signedIn);
-      if (signedIn && event === "SIGNED_IN") {
-        void refreshRatedIdentities();
-      }
-    });
-
-    function mergeJustRatedFromStorage() {
-      const slugs = readJustRatedSlugs();
-      if (slugs.length === 0) return;
-      setRatedIdentities((current) => {
-        let changed = false;
-        const next = [...current];
-        for (const slug of slugs) {
-          if (!next.some((row) => row.slug === slug)) {
-            next.push({ slug, title: "", author: null });
-            changed = true;
-          }
-        }
-        return changed ? next : current;
-      });
-      setInscribedCardIds((ids) =>
-        Array.from(new Set([...ids, ...slugs]))
-      );
-    }
-
-    function onVisible() {
-      if (document.visibilityState === "visible") {
-        mergeJustRatedFromStorage();
-      }
-    }
-    function onPageShow() {
-      mergeJustRatedFromStorage();
-    }
-
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("pageshow", onPageShow);
-
-    return () => {
-      cancelled = true;
-      subscription.unsubscribe();
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("pageshow", onPageShow);
-    };
-  }, [refreshRatedIdentities, initialRatedIdentities.length]);
-
-  // Keep in sync if the server re-renders with a newer identity list.
-  useEffect(() => {
-    if (initialRatedIdentities.length > 0) {
-      setRatedIdentities((current) =>
-        current.length >= initialRatedIdentities.length
-          ? current
-          : initialRatedIdentities
-      );
-    }
-  }, [initialRatedIdentities]);
-
-  // Re-align visible cards when identities arrive/update.
-  useEffect(() => {
-    if (ratedIdentities.length === 0) return;
-    setBooks((current) => {
-      if (current.length === 0) return current;
-      const next = alignBooksToRatedSlugs(current, ratedIdentities);
-      const changed = next.some(
-        (book, index) => book.id !== current[index]?.id
-      );
-      return changed ? next : current;
-    });
-    setInscribedCardIds((ids) =>
-      Array.from(
-        new Set([...ids, ...ratedIdentities.map((row) => row.slug)])
-      )
-    );
-  }, [ratedIdentities]);
-
-  // Temporary verification: first 5 search cards + rated-set membership.
-  useEffect(() => {
-    if (ratedDebugLoggedRef.current) return;
-    if (books.length === 0) return;
-    if (!ratedLoadAttempted && ratedIdentities.length === 0) return;
-    if (!effectivelyLoggedIn && ratedIdentities.length === 0) return;
-
-    const allowLog =
-      process.env.NODE_ENV !== "production" ||
-      (typeof window !== "undefined" &&
-        new URLSearchParams(window.location.search).get("debugInscribed") ===
-          "1");
-    if (!allowLog) return;
-
-    ratedDebugLoggedRef.current = true;
-    const sample = books.slice(0, 5).map((book) => ({
-      cardKey: book.id,
-      cardWorkKey: ratedBookKey(book),
-      hasUserRating: hasUserRating(book),
-      matchedRatedKey: ratedLookup.keyFor(book),
-    }));
-    console.info("[InscribedDebug] first cards", {
-      effectivelyLoggedIn,
-      ratedSource,
-      ratedSetSize: ratedLookup.size,
-      ratedKeys: Array.from(ratedLookup.slugs).slice(0, 8),
-      ratedWorkKeys: Array.from(ratedLookup.workKeys).slice(0, 8),
-      cards: sample,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot debug when books+ratings ready
-  }, [books, ratedIdentities, effectivelyLoggedIn, ratedLoadAttempted]);
 
   async function fetchSearchPage(
     searchQuery: string,
@@ -432,13 +95,10 @@ export function BookSearch({
       params.set("mode", "genre");
     }
 
-    const headers: Record<string, string> = {};
-
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
       credentials: "same-origin",
       cache: "no-store",
-      headers,
     });
     const data = await response.json();
     const books = Array.isArray(data.books)
@@ -494,7 +154,6 @@ export function BookSearch({
     setLoadingMore(false);
     setError(null);
     setHasSearched(true);
-    setSearchMode(mode);
     searchModeRef.current = mode;
 
     if (syncUrl) {
@@ -509,7 +168,7 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = applyRatedAlignment(data.books ?? []).filter((book) =>
+      const incoming = (data.books ?? []).filter((book: BookSummary) =>
         bookMatchesSearchQuery(book, trimmed)
       );
 
@@ -517,7 +176,6 @@ export function BookSearch({
       setResultsQuery(trimmed);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
-      mergeInscribedCardIds(data.userRatedSlugs);
       track("search_performed", {
         ...queryHint(trimmed),
         mode,
@@ -560,14 +218,13 @@ export function BookSearch({
       );
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = applyRatedAlignment(data.books ?? []).filter((book) =>
+      const incoming = (data.books ?? []).filter((book: BookSummary) =>
         bookMatchesSearchQuery(book, trimmed)
       );
 
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
-      mergeInscribedCardIds(data.userRatedSlugs);
     } catch (err) {
       const aborted =
         (err instanceof DOMException && err.name === "AbortError") ||
@@ -646,7 +303,7 @@ export function BookSearch({
             </button>
           </form>
 
-          {!effectivelyLoggedIn ? (
+          {!isLoggedIn ? (
             <SignupPrompt
               variant="inline"
               redirectTo="/browse"
@@ -662,9 +319,6 @@ export function BookSearch({
             <BestsellersSection
               books={bestsellers}
               error={bestsellersError}
-              isBookInscribed={
-                effectivelyLoggedIn ? hasUserRating : undefined
-              }
             />
           )}
 
@@ -723,7 +377,6 @@ export function BookSearch({
                     key={book.id}
                     book={book}
                     searchQuery={resultsQuery}
-                    hasUserRating={hasUserRating(book)}
                     priority={index < 3}
                   />
                 ))}

@@ -5,10 +5,8 @@ import {
   PAGE_FETCH_TIMEOUT_MS,
   withTimeoutFallback,
 } from "@/lib/provider-resilience";
-import { getUserRatedIdentities } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getCachedUser } from "@/lib/supabase/server";
-import type { UserRatedIdentity } from "@/lib/user-rated-identity";
 
 type BrowsePageProps = {
   searchParams: Promise<{ q?: string; mode?: string }>;
@@ -20,20 +18,13 @@ const NYT_UNAVAILABLE = {
     "The bestsellers archive is resting for now. Try searching below for any tome.",
 };
 
-async function loadBrowseAuth(): Promise<{
-  isLoggedIn: boolean;
-  initialRatedIdentities: UserRatedIdentity[];
-}> {
-  if (!isSupabaseConfigured()) {
-    return { isLoggedIn: false, initialRatedIdentities: [] };
-  }
+async function loadBrowseLoggedIn(): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
   try {
     const user = await getCachedUser();
-    if (!user) return { isLoggedIn: false, initialRatedIdentities: [] };
-    const initialRatedIdentities = await getUserRatedIdentities(user.id);
-    return { isLoggedIn: true, initialRatedIdentities };
+    return Boolean(user);
   } catch {
-    return { isLoggedIn: false, initialRatedIdentities: [] };
+    return false;
   }
 }
 
@@ -46,13 +37,13 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
     books: [],
   };
 
-  // Auth + NYT in parallel, each with a hard deadline. Never block first paint.
-  const [auth, bestsellers] = await Promise.all([
+  // Auth cookie check + NYT in parallel. Never load ratings or preferences.
+  const [isLoggedIn, bestsellers] = await Promise.all([
     withTimeoutFallback(
-      loadBrowseAuth(),
+      loadBrowseLoggedIn(),
       PAGE_FETCH_TIMEOUT_MS,
       "browse-auth",
-      { isLoggedIn: false, initialRatedIdentities: [] }
+      false
     ),
     hasQuery
       ? Promise.resolve(emptyBestsellers)
@@ -70,10 +61,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
       initialMode={initialMode}
       bestsellers={bestsellers.books}
       bestsellersError={bestsellers.error ?? null}
-      isLoggedIn={auth.isLoggedIn}
-      initialRatedIdentities={
-        auth.isLoggedIn ? auth.initialRatedIdentities : []
-      }
+      isLoggedIn={isLoggedIn}
     />
   );
 }

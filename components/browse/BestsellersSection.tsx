@@ -5,14 +5,11 @@ import { ScrollText } from "lucide-react";
 type BestsellersSectionProps = {
   books: BookSummary[];
   error?: string | null;
-  /** When set (logged-in), marks cards the user has already rated. */
-  isBookInscribed?: (book: BookSummary) => boolean;
 };
 
 export function BestsellersSection({
   books,
   error = null,
-  isBookInscribed,
 }: BestsellersSectionProps) {
   if (!books.length && !error) return null;
 
@@ -46,7 +43,6 @@ export function BestsellersSection({
             <BookCard
               key={book.id}
               book={book}
-              hasUserRating={Boolean(isBookInscribed?.(book))}
               priority={index < 3}
             />
           ))}

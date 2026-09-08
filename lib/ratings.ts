@@ -20,6 +20,7 @@ import {
 } from "@/lib/supabase/server";
 import {
   isColumnMarkedMissing,
+  isNonRetryableDataApiError,
   markColumnMissing,
   noteMissingColumnFromError,
 } from "@/lib/supabase/schema-cache";
@@ -136,33 +137,32 @@ async function fetchUserRatingRow(
     .eq("rated_by", userId)
     .maybeSingle();
 
-  if (
-    full.error &&
-    noteMissingColumnFromError("ratings", "romance", full.error.message)
-  ) {
-    const legacy = await supabase
-      .from("ratings")
-      .select(LEGACY_RATING_SELECT)
-      .eq("book_id", bookDbId)
-      .eq("rated_by", userId)
-      .maybeSingle();
-
-    if (legacy.error) {
-      return { data: null, error: legacy.error.message };
-    }
-    if (!legacy.data) {
-      return { data: null, error: null };
-    }
-    return {
-      data: normalizeUserRating({
-        ...legacy.data,
-        romance: DEFAULT_RATINGS.romance,
-      }),
-      error: null,
-    };
-  }
-
   if (full.error) {
+    if (isNonRetryableDataApiError(full.error.message, full.error.code)) {
+      return { data: null, error: full.error.message };
+    }
+    if (noteMissingColumnFromError("ratings", "romance", full.error.message)) {
+      const legacy = await supabase
+        .from("ratings")
+        .select(LEGACY_RATING_SELECT)
+        .eq("book_id", bookDbId)
+        .eq("rated_by", userId)
+        .maybeSingle();
+
+      if (legacy.error) {
+        return { data: null, error: legacy.error.message };
+      }
+      if (!legacy.data) {
+        return { data: null, error: null };
+      }
+      return {
+        data: normalizeUserRating({
+          ...legacy.data,
+          romance: DEFAULT_RATINGS.romance,
+        }),
+        error: null,
+      };
+    }
     return { data: null, error: full.error.message };
   }
   if (!full.data) {
@@ -208,33 +208,32 @@ async function fetchAllRatingsForBook(
   if (signal) fullQuery = fullQuery.abortSignal(signal);
   const full = await fullQuery;
 
-  if (
-    full.error &&
-    noteMissingColumnFromError("ratings", "romance", full.error.message)
-  ) {
-    let legacyQuery = supabase
-      .from("ratings")
-      .select(LEGACY_RATING_SELECT)
-      .eq("book_id", bookDbId);
-    if (signal) legacyQuery = legacyQuery.abortSignal(signal);
-    const legacy = await legacyQuery;
-
-    if (legacy.error) {
-      return { data: [], error: legacy.error.message };
-    }
-
-    return {
-      data: (legacy.data ?? []).map((row) =>
-        normalizeUserRating({
-          ...row,
-          romance: DEFAULT_RATINGS.romance,
-        })
-      ),
-      error: null,
-    };
-  }
-
   if (full.error) {
+    if (isNonRetryableDataApiError(full.error.message, full.error.code)) {
+      return { data: [], error: full.error.message };
+    }
+    if (noteMissingColumnFromError("ratings", "romance", full.error.message)) {
+      let legacyQuery = supabase
+        .from("ratings")
+        .select(LEGACY_RATING_SELECT)
+        .eq("book_id", bookDbId);
+      if (signal) legacyQuery = legacyQuery.abortSignal(signal);
+      const legacy = await legacyQuery;
+
+      if (legacy.error) {
+        return { data: [], error: legacy.error.message };
+      }
+
+      return {
+        data: (legacy.data ?? []).map((row) =>
+          normalizeUserRating({
+            ...row,
+            romance: DEFAULT_RATINGS.romance,
+          })
+        ),
+        error: null,
+      };
+    }
     return { data: [], error: full.error.message };
   }
 
@@ -664,6 +663,9 @@ export async function getUserRatedBooks(
     let rows: RatedQueryRow[] | null = null;
 
     if (first.error) {
+      if (isNonRetryableDataApiError(first.error.message, first.error.code)) {
+        return [];
+      }
       if (
         noteMissingColumnFromError("ratings", "romance", first.error.message)
       ) {

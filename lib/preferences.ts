@@ -8,6 +8,7 @@ import {
 } from "@/lib/supabase/server";
 import {
   isColumnMarkedMissing,
+  isNonRetryableDataApiError,
   markColumnMissing,
   noteMissingColumnFromError,
 } from "@/lib/supabase/schema-cache";
@@ -186,6 +187,10 @@ async function fetchPreferenceRow(
 
   if (!primary.error) {
     return { data: (primary.data as PreferenceRow | null) ?? null, error: null };
+  }
+
+  if (isNonRetryableDataApiError(primary.error.message, primary.error.code)) {
+    return { data: null, error: primary.error };
   }
 
   if (

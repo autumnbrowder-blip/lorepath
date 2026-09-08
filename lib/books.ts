@@ -189,8 +189,9 @@ function toSearchResult(page: CachedSearchPage): BookSearchResult {
 
 /**
  * Fetch one browse page from catalog APIs only.
- * Open Library is required; Google / Gutendex / ISBNdb are optional.
- * Each source is capped at 2s. Hardcover and Supabase are never called.
+ * Open Library is required (longer budget); Google / Gutendex / ISBNdb are
+ * optional at 2s. Promise.allSettled so a 2s optional timeout cannot reject
+ * unhandled while OL is still in flight. Hardcover and Supabase are never called.
  */
 async function fetchSearchPageUncached(
   searchQuery: string,
@@ -199,48 +200,37 @@ async function fetchSearchPageUncached(
   searchOptions: SearchBooksOptions | undefined
 ): Promise<CachedSearchPage> {
   const includeIsbndb = hasIsbndbApiKey();
+  const includeGutendex = genreMode || pageNumber === 1;
 
-  const googlePromise = withTimeout(
-    searchGoogleBooks(searchQuery, pageNumber, searchOptions),
-    OPTIONAL_SEARCH_TIMEOUT_MS,
-    "google search"
-  );
-  const gutendexPromise =
-    genreMode || pageNumber === 1
-      ? withTimeout(
-          searchGutendex(searchQuery, pageNumber, searchOptions),
-          OPTIONAL_SEARCH_TIMEOUT_MS,
-          "gutendex search"
-        )
-      : Promise.resolve(emptyPage());
-  const isbndbPromise = includeIsbndb
-    ? withTimeout(
-        searchIsbndb(searchQuery, pageNumber, searchOptions),
+  // Attach allSettled immediately so optional 2s timeouts are never unhandled
+  // while Open Library (required) is still running.
+  const [openLibrarySettled, googleSettled, gutendexSettled, isbndbSettled] =
+    await Promise.allSettled([
+      withTimeout(
+        searchOpenLibrary(searchQuery, pageNumber, searchOptions),
+        OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
+        "openlibrary search"
+      ),
+      withTimeout(
+        searchGoogleBooks(searchQuery, pageNumber, searchOptions),
         OPTIONAL_SEARCH_TIMEOUT_MS,
-        "isbndb search"
-      )
-    : Promise.resolve(emptyPage());
-  const openLibraryPromise = withTimeout(
-    searchOpenLibrary(searchQuery, pageNumber, searchOptions),
-    OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
-    "openlibrary search"
-  );
-
-  let openLibrarySettled: PromiseSettledResult<{
-    books: BookSummary[];
-    hasMore: boolean;
-  }>;
-  try {
-    openLibrarySettled = {
-      status: "fulfilled",
-      value: await openLibraryPromise,
-    };
-  } catch (reason) {
-    openLibrarySettled = { status: "rejected", reason };
-  }
-
-  const [googleSettled, gutendexSettled, isbndbSettled] =
-    await Promise.allSettled([googlePromise, gutendexPromise, isbndbPromise]);
+        "google search"
+      ),
+      includeGutendex
+        ? withTimeout(
+            searchGutendex(searchQuery, pageNumber, searchOptions),
+            OPTIONAL_SEARCH_TIMEOUT_MS,
+            "gutendex search"
+          )
+        : Promise.resolve(emptyPage()),
+      includeIsbndb
+        ? withTimeout(
+            searchIsbndb(searchQuery, pageNumber, searchOptions),
+            OPTIONAL_SEARCH_TIMEOUT_MS,
+            "isbndb search"
+          )
+        : Promise.resolve(emptyPage()),
+    ]);
 
   const openLibraryResult = readSettledPage(
     "Open Library",
@@ -322,15 +312,14 @@ async function fetchSearchPageUncached(
     books = genreMode
       ? matching
       : rankBrowseSearchResults(matching, searchQuery);
-    if (books.length === 0) {
-      books = matching;
-    }
+    // Do not fall back to substring hits ("Aescendune" for q=dune). Empty is
+    // better than the wrong catalog when OL/Google timed out.
   }
 
   const attempted = [
     openLibrarySettled,
     googleSettled,
-    ...(genreMode || pageNumber === 1 ? [gutendexSettled] : []),
+    ...(includeGutendex ? [gutendexSettled] : []),
     ...(includeIsbndb ? [isbndbSettled] : []),
   ];
   const allSourcesTimedOut =
