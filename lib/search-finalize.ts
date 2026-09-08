@@ -103,8 +103,8 @@ function mergeExactTitleSurvivors(
 
 /**
  * Visible card is the newest English covered edition. Title / description /
- * cover / tags fill from the strongest record (Hardcover when it was in the
- * search page). firstPublishYear stays the earliest year in the pair.
+ * cover / tags fill from the strongest record. firstPublishYear stays the
+ * earliest year in the pair.
  * Latest edition id is stored only when it differs from first published.
  */
 function mergePreferredFields(

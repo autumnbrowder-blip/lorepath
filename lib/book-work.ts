@@ -21,7 +21,7 @@ const BANNED_LATEST_EDITION_IDS = new Set(["ol-OL50732450M"]);
 /**
  * Stable work identity so reprints / Google volume IDs collapse.
  *
- * Prefer Hardcover or Open Library work ids when the route id carries them.
+ * Prefer Open Library work ids (or leftover hardcover-* ids) when the route id carries them.
  * Otherwise: normalized title + first author last name (and first initial
  * when present, so different authors who share a last name stay separate).
  * Never uses a Google volume id as the work identity.
@@ -34,7 +34,7 @@ export function bookWorkKey(book: {
   return workKeysFor(book)[0] ?? `id:${(book.id ?? "").trim() || "unknown"}`;
 }
 
-/** Every grouping key this record can join on (Hardcover, OL, then title+author). */
+/** Every grouping key this record can join on (leftover Hardcover id, OL, then title+author). */
 export function workKeysFor(book: {
   id: string;
   title: string;
@@ -193,8 +193,8 @@ function isDisallowedLatest(
  * Visible search-card / default tome identity.
  *
  * Prefer English when a copy exists; then a real cover; among those,
- * highest publishedYear. Google / ISBNdb / Hardcover beat an Open Library
- * work id. A commercial English edition with no year still beats a newer
+ * highest publishedYear. Google / ISBNdb beat an Open Library work id.
+ * A commercial English edition with no year still beats a newer
  * non-English OL. Spanish / Ukrainian printings never win (e.g. OL50732450M).
  */
 export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
@@ -210,7 +210,7 @@ export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
   const bOL = isOpenLibraryWorkRecord(b);
   const aCom = isCommercialEdition(a);
   const bCom = isCommercialEdition(b);
-  // ISBNdb / Google / Hardcover identity wins over an OL work id even when
+  // ISBNdb / Google identity wins over an OL work id even when
   // the commercial row has no cover yet — cover/description still merge in.
   if (aOL && bCom) return b;
   if (bOL && aCom) return a;
@@ -600,7 +600,7 @@ function refAsSummary(
 
 /**
  * Newest English covered printing in the same work as `current`.
- * Prefers Google / ISBNdb / Hardcover over an Open Library work id.
+ * Prefers Google / ISBNdb over an Open Library work id.
  * Never returns a non-English printing (e.g. Spanish Dune OL50732450M).
  */
 export function resolveLatestEditionTarget(

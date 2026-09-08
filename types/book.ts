@@ -45,7 +45,7 @@ export type BookSummary = {
    */
   latestEditionYear?: number | null;
   /**
-   * Stable work identity (Hardcover/OL work id, else title + author last name).
+   * Stable work identity (OL work id, leftover hardcover-* id, else title + author last name).
    * Different Google volume IDs that share this key are the same book-work.
    */
   workKey?: string;

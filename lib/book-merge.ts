@@ -11,12 +11,13 @@ import type { BookSource, BookSummary } from "@/types/book";
 
 /**
  * Identity preference for modern commercial catalogs.
- * Open Library is deliberately below Google / ISBNdb / Hardcover.
+ * Open Library is deliberately below Google / ISBNdb.
+ * `hardcover` is ranked only for leftover records — it is never fetched.
  */
 const SOURCE_PRIORITY: Record<BookSource, number> = {
-  hardcover: 7,
   isbndb: 6,
   google: 5,
+  hardcover: 5,
   bigbook: 3,
   nyt: 2,
   openlibrary: 1,
@@ -61,7 +62,6 @@ function pickBestDescription(
       text: entry.description?.trim() ?? "",
       score:
         descriptionScore(entry.description) +
-        (entry.source === "hardcover" ? 400 : 0) +
         (isCommercialSource(entry.source) ? 200 : 0),
     }))
     .filter((entry) => entry.text.length > 0)
@@ -78,8 +78,7 @@ function pickBestCover(
       if (!url) return null;
       // Prefer https commercial CDN covers over bare OL placeholders when both exist.
       let score = isCommercialSource(entry.source) ? 10 : 1;
-      if (entry.source === "hardcover") score += 12;
-      if (/books\.google|googleapis|isbndb|hardcover|cloudfront/i.test(url)) {
+      if (/books\.google|googleapis|isbndb|cloudfront/i.test(url)) {
         score += 5;
       }
       if (/openlibrary\.org\/b\/id\/-1|cover_unavailable/i.test(url)) {
@@ -95,50 +94,33 @@ function pickBestCover(
 /**
  * When merging provider rows, keep the identity (id/source) of the preferred
  * duplicate and fill each metadata field from the strongest record — never keep
- * a weak OL blurb/cover when Google / ISBNdb / Hardcover supplied better data.
+ * a weak OL blurb/cover when Google / ISBNdb supplied better data.
  */
-function hardcoverRecord(
-  identity: BookSummary,
-  a: BookSummary,
-  b: BookSummary
-): BookSummary | null {
-  return [identity, a, b].find((book) => book.source === "hardcover") ?? null;
-}
-
 export function mergePreferredBookFields(
   identity: BookSummary,
   a: BookSummary,
   b: BookSummary
 ): BookSummary {
-  const hc = hardcoverRecord(identity, a, b);
-
   const titleCandidates = [identity.title, a.title, b.title].filter(isGoodTitle);
   const title =
-    (hc && isGoodTitle(hc.title) ? hc.title : null) ??
-    titleCandidates.sort((x, y) => x!.length - y!.length)[0] ??
-    "Untitled";
+    titleCandidates.sort((x, y) => x!.length - y!.length)[0] ?? "Untitled";
 
   const authors =
-    (hc && isGoodAuthors(hc.authors) ? hc.authors : null) ||
     (isGoodAuthors(identity.authors) ? identity.authors : null) ||
     (isGoodAuthors(a.authors) ? a.authors : null) ||
     (isGoodAuthors(b.authors) ? b.authors : null) || ["Unknown author"];
 
-  const description =
-    (hc && hasRealDescription(hc) ? hc.description : null) ??
-    pickBestDescription([
-      { source: identity.source, description: identity.description },
-      { source: a.source, description: a.description },
-      { source: b.source, description: b.description },
-    ]);
+  const description = pickBestDescription([
+    { source: identity.source, description: identity.description },
+    { source: a.source, description: a.description },
+    { source: b.source, description: b.description },
+  ]);
 
-  const coverUrl =
-    (hc?.coverUrl?.trim() || null) ??
-    pickBestCover([
-      { source: identity.source, coverUrl: identity.coverUrl },
-      { source: a.source, coverUrl: a.coverUrl },
-      { source: b.source, coverUrl: b.coverUrl },
-    ]);
+  const coverUrl = pickBestCover([
+    { source: identity.source, coverUrl: identity.coverUrl },
+    { source: a.source, coverUrl: a.coverUrl },
+    { source: b.source, coverUrl: b.coverUrl },
+  ]);
 
   const yearSources =
     getLanguageEditionBucket(identity) === "non-eng"
@@ -173,13 +155,9 @@ export function mergePreferredBookFields(
           b.latestEditionYear
         );
 
-  const pageCount =
-    hc?.pageCount ?? identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;
+  const pageCount = identity.pageCount ?? a.pageCount ?? b.pageCount ?? null;
 
   const genreEvidence = [
-    ...(hc?.genres.length
-      ? [{ source: "hardcover" as const, categories: hc.genres }]
-      : []),
     { source: identity.source, categories: identity.genres },
     { source: a.source, categories: a.genres },
     { source: b.source, categories: b.genres },

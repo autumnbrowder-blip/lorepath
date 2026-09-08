@@ -187,7 +187,7 @@ const BACKFILL_RESULT_THRESHOLD = 5;
 /**
  * Metered backup providers, queried only when the free flood came back thin.
  * ISBNdb ids resolve on the detail page, so its rows are safe to surface as
- * cards; Hardcover stays an enrichment-only source for that reason.
+ * cards.
  */
 export async function fetchBackupSearchResults(
   query: string,

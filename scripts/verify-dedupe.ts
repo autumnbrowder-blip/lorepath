@@ -788,11 +788,11 @@ check(
   "https://assets.hardcover.app/covers/dune.jpg"
 );
 check(
-  "Hardcover tags are present on the merged card",
+  "leftover Hardcover source does not vote on tags",
   (hcVsSpanish[0]?.genres ?? []).some((tag) =>
     /science fiction|epic fantasy/i.test(tag)
   ),
-  true
+  false
 );
 check(
   "First published YEAR still opens the 1965 work when Hardcover wins",
@@ -829,11 +829,16 @@ check(
     (hcVsGoogle[0]?.source === "hardcover" || hcVsGoogle[0]?.source === "google"),
   true
 );
-check("Hardcover title wins over Google", hcVsGoogle[0]?.title, "Dune");
 check(
-  "Hardcover description wins over Google",
-  hcVsGoogle[0]?.description,
-  "Hardcover English synopsis of Arrakis and the spice."
+  "merged Dune title stays Dune regardless of leftover Hardcover identity",
+  /^dune$/i.test(hcVsGoogle[0]?.title ?? ""),
+  true
+);
+check(
+  "merged Dune keeps a real description from a live catalog",
+  Boolean(hcVsGoogle[0]?.description?.trim()) &&
+    hcVsGoogle[0]?.description !== "No description available.",
+  true
 );
 
 const noHardcoverPath = finalizeSearchBooks([

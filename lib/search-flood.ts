@@ -2,7 +2,6 @@ import { searchBigBook } from "@/lib/big-book";
 import type { SearchBooksOptions } from "@/lib/genre-search";
 import { searchGoogleBooks, type GoogleBooksPageResult } from "@/lib/google-books";
 import { searchGutendex } from "@/lib/gutendex";
-import type { HardcoverSearchError } from "@/lib/hardcover";
 import { hasIsbndbApiKey, searchIsbndb } from "@/lib/isbndb";
 import { searchOpenLibrary } from "@/lib/open-library";
 import {
@@ -31,7 +30,6 @@ export type ProviderFloodResult = {
   hasMore: boolean;
   googleError: GoogleBooksPageResult["error"];
   googleRawCount: number;
-  hardcoverError: HardcoverSearchError | null;
   normalized: NormalizedSearchQuery;
   primaryQuery: string;
   timedOutProviders: string[];
@@ -151,7 +149,6 @@ export async function fetchSearchProviderFlood(input: {
   const books: BookSummary[] = [];
   const sourceCounts: Partial<Record<BookSource, number>> = {};
   const timedOutProviders: string[] = [];
-  const hardcoverError: HardcoverSearchError | null = null;
   let hasMore = false;
   let googleError: GoogleBooksPageResult["error"] = null;
   let googleRawCount = 0;
@@ -338,7 +335,6 @@ export async function fetchSearchProviderFlood(input: {
     hasMore,
     googleError,
     googleRawCount,
-    hardcoverError,
     normalized,
     primaryQuery: primary,
     timedOutProviders: Array.from(new Set(timedOutProviders)),
