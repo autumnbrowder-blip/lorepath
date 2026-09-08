@@ -9,6 +9,7 @@ import {
   normalizeAuthorForDedupe,
   normalizePublishedYear,
   normalizeTitleForDedupe,
+  pickEarliestYear,
 } from "@/lib/book-utils";
 import type { BookDetail, BookSummary, WorkEditionRef } from "@/types/book";
 
@@ -253,6 +254,9 @@ export function pickFirstEdition<T extends BookSummary>(group: T[]): T | null {
   const covered = pool.filter((book) => hasRealCover(book));
   const candidates = covered.length > 0 ? covered : pool;
   return candidates.reduce((best, book) => {
+    const bestOL = isOpenLibraryWorkRecord(best);
+    const nextOL = isOpenLibraryWorkRecord(book);
+    if (bestOL !== nextOL) return nextOL ? book : best;
     if (hasRealCover(best) !== hasRealCover(book)) {
       return hasRealCover(book) ? book : best;
     }
@@ -287,6 +291,9 @@ export function pickFirstEditionId(group: BookSummary[]): string | null {
     return group[0]?.firstEditionId ?? group[0]?.id ?? null;
   }
   return candidates.reduce((best, ref) => {
+    const bestOL = isOpenLibraryWorkRecord(best);
+    const nextOL = isOpenLibraryWorkRecord(ref);
+    if (bestOL !== nextOL) return nextOL ? ref : best;
     if (hasRealCover(best) !== hasRealCover(ref)) {
       return hasRealCover(ref) ? ref : best;
     }
@@ -531,14 +538,16 @@ export function applyFirstPublishYearHint<T extends BookDetail>(
   raw?: string | null
 ): T {
   const hinted = Number(raw);
-  if (!Number.isFinite(hinted)) return book;
-  const year = Math.round(hinted);
-  if (year < 1000 || year > 2100) return book;
-  const current =
-    normalizePublishedYear(book.firstPublishYear) ??
-    normalizePublishedYear(book.publishedYear);
-  if (current != null && current <= year) return book;
-  return { ...book, firstPublishYear: year };
+  const hintedYear =
+    Number.isFinite(hinted) && hinted >= 1000 && hinted <= 2100
+      ? Math.round(hinted)
+      : null;
+  // Work first-publish year always wins over a later reprint or fy= reprint.
+  const first = pickEarliestYear(book.firstPublishYear, hintedYear);
+  if (first == null || first === normalizePublishedYear(book.firstPublishYear)) {
+    return book;
+  }
+  return { ...book, firstPublishYear: first };
 }
 
 /** Filter a search page down to editions of the same work as `seed`. */
@@ -681,4 +690,21 @@ export function distinctLatestEdition(input: {
   const current = input.currentBookId?.trim();
   if (current && latestId === current) return null;
   return { id: latestId, year };
+}
+
+/** Prefer a resolved latest id, then a catalog latest, never the first/work id. */
+export function preferDistinctLatestId(
+  resolvedId: string | null | undefined,
+  knownLatestId: string | null | undefined,
+  firstEditionId: string
+): string | null {
+  const first = firstEditionId.trim();
+  for (const candidate of [resolvedId, knownLatestId]) {
+    const id = candidate?.trim() ?? "";
+    if (!id) continue;
+    if (first && id === first) continue;
+    if (isBannedLatestEditionId(id)) continue;
+    return id;
+  }
+  return null;
 }

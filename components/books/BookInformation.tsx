@@ -10,6 +10,7 @@ import {
   firstPublishedHref,
   latestEditionHref,
 } from "@/lib/book-work";
+import { applyKnownWorkFields } from "@/lib/known-editions";
 import type { BookDetail } from "@/types/book";
 import {
   BookMarked,
@@ -48,17 +49,18 @@ export function BookInformation({
   latestEditionId,
   latestEditionYear: latestEditionYearOverride,
 }: BookInformationProps) {
+  const stamped = applyKnownWorkFields(book);
   const { displayYear, firstPublishYear, latestEditionYear } =
-    resolvePublicationYears(book);
+    resolvePublicationYears(stamped);
 
   const q = searchQuery?.trim() ?? "";
-  const firstEditionId = book.firstEditionId?.trim() || book.id;
+  const firstEditionId = stamped.firstEditionId?.trim() || stamped.id;
   const firstYear = firstPublishYear ?? displayYear;
   const firstYearHref = firstYear
     ? firstPublishedHref(firstEditionId, q, firstYear)
     : null;
   const latest = distinctLatestEdition({
-    latestId: latestEditionId?.trim() || book.latestEditionId,
+    latestId: latestEditionId?.trim() || stamped.latestEditionId,
     latestYear: latestEditionYearOverride ?? latestEditionYear,
     firstEditionId,
     currentBookId: book.id,
@@ -69,7 +71,7 @@ export function BookInformation({
     firstYear && firstYearHref
       ? {
           icon: CalendarDays,
-          label: firstPublishYear ? "First published" : "Published",
+          label: "First published",
           value: (
             <Link href={firstYearHref} className={YEAR_LINK_CLASS}>
               {firstYear}

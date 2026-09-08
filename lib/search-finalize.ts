@@ -22,6 +22,7 @@ import {
   pickLatestEdition,
   isBannedLatestEditionId,
 } from "@/lib/book-work";
+import { applyKnownWorkFields } from "@/lib/known-editions";
 import type { BookSummary } from "@/types/book";
 
 const MISSING_DESCRIPTION_FALLBACK = PLACEHOLDER_DESCRIPTION;
@@ -390,7 +391,7 @@ export function finalizeSearchBooks(
 
   const result = sortByPublishedYearDesc(
     dropNonEnglishWhenEnglishExists(withProtected)
-  );
+  ).map(applyKnownWorkFields);
   const removedByDedupe = removedByIsbn + removedByTitleAuthor;
 
   if (debug) {

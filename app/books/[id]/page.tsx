@@ -7,12 +7,15 @@ import { RatingForm } from "@/components/books/RatingForm";
 import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { loadBookDetail, searchBooks } from "@/lib/books";
+import { pickEarliestYear, pickPublishedYear } from "@/lib/book-utils";
 import {
   applyFirstPublishYearHint,
   booksShareWork,
   distinctLatestEdition,
+  preferDistinctLatestId,
   resolveLatestEditionTarget,
 } from "@/lib/book-work";
+import { applyKnownWorkFields } from "@/lib/known-editions";
 import {
   getCachedSearchPage,
   searchCacheKey,
@@ -232,25 +235,34 @@ export default async function BookDetailPage({
     cachedSiblings.find((entry) => booksShareWork(entry, book)) ??
     null;
   const hydrated = applyFirstPublishYearHint(
-    {
+    applyKnownWorkFields({
       ...book,
       firstEditionId: book.firstEditionId || sibling?.firstEditionId || null,
-      firstPublishYear:
-        book.firstPublishYear ?? sibling?.firstPublishYear ?? null,
+      firstPublishYear: pickEarliestYear(
+        book.firstPublishYear,
+        sibling?.firstPublishYear
+      ),
       latestEditionYear:
         book.latestEditionYear ?? sibling?.latestEditionYear ?? null,
       latestEditionId: book.latestEditionId || sibling?.latestEditionId || null,
       workEditions: book.workEditions?.length
         ? book.workEditions
         : sibling?.workEditions,
-    },
+    }),
     fy
   );
   const firstEditionId = hydrated.firstEditionId?.trim() || hydrated.id;
   const cachedLatest = resolveLatestEditionTarget(hydrated, cachedSiblings);
   const cachedDistinct = distinctLatestEdition({
-    latestId: cachedLatest.id,
-    latestYear: cachedLatest.year ?? hydrated.latestEditionYear,
+    latestId: preferDistinctLatestId(
+      cachedLatest.id,
+      hydrated.latestEditionId,
+      firstEditionId
+    ),
+    latestYear: pickPublishedYear(
+      cachedLatest.year,
+      hydrated.latestEditionYear
+    ),
     firstEditionId,
     currentBookId: id,
   });
@@ -280,8 +292,15 @@ export default async function BookDetailPage({
           searchBooks(searchQuery || book.title, 1).then((result) => {
             const target = resolveLatestEditionTarget(hydrated, result.books);
             return distinctLatestEdition({
-              latestId: target.id,
-              latestYear: target.year ?? hydrated.latestEditionYear,
+              latestId: preferDistinctLatestId(
+                target.id,
+                hydrated.latestEditionId,
+                firstEditionId
+              ),
+              latestYear: pickPublishedYear(
+                target.year,
+                hydrated.latestEditionYear
+              ),
               firstEditionId,
               currentBookId: id,
             });

@@ -1047,10 +1047,11 @@ export function rankBrowseSearchResults(
   return [...exact, ...related];
 }
 
-/** Page-1 junk: no cover and no synopsis, merch, or empty stubs. */
+/** Page-1 junk: no cover and no synopsis, merch, empty stubs, or fake authors. */
 export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
-  return books.filter((book) => {
+  const filtered = books.filter((book) => {
     if (isMerchandiseOrCompanion(book) || isLowQualityBook(book)) return false;
+    if (isJunkCatalogAuthor(book.authors)) return false;
     const cover = Boolean(book.coverUrl?.trim());
     const description = Boolean(book.description?.trim()) &&
       !isPlaceholderDescription(book.description);
@@ -1060,6 +1061,77 @@ export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
       book.publishedYear != null || book.firstPublishYear != null;
     if (!cover && !description && !hasYear) return false;
     return true;
+  });
+  return dropNonCanonicalKnownTitles(filtered);
+}
+
+/**
+ * Publisher/imprint credits and celebrity-as-author rows that pollute browse.
+ * Scholastic is only junk as the sole author (it is a real publisher name).
+ */
+export function isJunkCatalogAuthor(authors: readonly string[]): boolean {
+  const names = authors.map((author) => author.trim()).filter(Boolean);
+  if (names.length === 0) return false;
+  if (names.some(isCelebrityCreditAuthor)) return true;
+  if (names.some(isAlwaysJunkImprintAuthor)) return true;
+  if (names.length === 1 && isScholasticSoleAuthor(names[0]!)) return true;
+  return false;
+}
+
+function isCelebrityCreditAuthor(name: string): boolean {
+  return /jennifer\s+lawrence/i.test(name);
+}
+
+function isAlwaysJunkImprintAuthor(name: string): boolean {
+  const text = name.trim();
+  if (/^out of print\b/i.test(text)) return true;
+  if (/\bentangled\b/i.test(text)) return true;
+  return false;
+}
+
+function isScholasticSoleAuthor(name: string): boolean {
+  return /^scholastic(\s+(inc\.?|press|publishing|ltd\.?))?$/i.test(name.trim());
+}
+
+/**
+ * When a canonical novelist row is already on the page, drop same-title hits
+ * whose authors are not that novelist (or the same family last name, so
+ * Brian Herbert's Dune stays next to Frank Herbert's).
+ */
+function dropNonCanonicalKnownTitles(books: BookSummary[]): BookSummary[] {
+  return books.filter((book) => {
+    const title = normalizeTitleForDedupe(book.title);
+    const entry = CANONICAL_TITLE_AUTHORS.find((row) => row.title === title);
+    if (!entry) return true;
+    const hasCanonical = books.some(
+      (other) =>
+        normalizeTitleForDedupe(other.title) === title &&
+        authorLooksCanonical(other, entry.authors)
+    );
+    if (!hasCanonical) return true;
+    if (authorLooksCanonical(book, entry.authors)) return true;
+    return authorsShareCanonicalLastName(book, entry.authors);
+  });
+}
+
+function authorsShareCanonicalLastName(
+  book: BookSummary,
+  canonicalAuthors: string[]
+): boolean {
+  const lastNames = new Set(
+    canonicalAuthors
+      .map((author) => {
+        const parts = author.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return parts[parts.length - 1] ?? "";
+      })
+      .filter(Boolean)
+  );
+  return book.authors.some((author) => {
+    const normalized = normalizeAuthorForDedupe(author);
+    if (!normalized) return false;
+    const parts = normalized.split(" ").filter(Boolean);
+    const last = parts[parts.length - 1] ?? "";
+    return lastNames.has(last);
   });
 }
 

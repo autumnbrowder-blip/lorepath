@@ -1,9 +1,15 @@
 import {
   isExactTitleMatch,
+  normalizeAuthorForDedupe,
   normalizeIsbn,
   normalizeTitleForDedupe,
+  pickEarliestYear,
+  pickPublishedYear,
 } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
+
+/** Spanish Dune printing — never a latest-edition target. */
+const BANNED_LATEST_EDITION_IDS = new Set(["ol-ol50732450m"]);
 
 export type KnownWorkEditions = {
   matchTitle: string;
@@ -23,6 +29,11 @@ export type KnownWorkEditions = {
    */
   latestEditionYear: number;
   /**
+   * Route id of a recent English printing with a cover, when it differs from
+   * the work / first-published id. Used for Latest edition YEAR.
+   */
+  latestEditionId?: string;
+  /**
    * Known edition ISBNs — prefer recent popular English reprints first so
    * search recovery and enrichment find a usable English edition quickly.
    */
@@ -40,6 +51,16 @@ export type KnownWorkEditions = {
  * Keep focused on high-traffic titles; recovery uses these ISBNs/phrases.
  */
 export const KNOWN_WORK_EDITIONS: KnownWorkEditions[] = [
+  {
+    matchTitle: "Dune",
+    authorHint: "Frank Herbert",
+    workIds: ["ol-OL893414W", "OL893414W"],
+    firstPublishYear: 1965,
+    latestEditionYear: 2019,
+    latestEditionId: "isbndb-9780593099322",
+    isbns: ["9780593099322", "9780441172719", "9780441013593"],
+    googlePhrase: 'intitle:"Dune" inauthor:"Frank Herbert"',
+  },
   {
     matchTitle: "Between Two Fires",
     authorHint: "Christopher Buehlman",
@@ -135,7 +156,6 @@ export function findKnownWorkEditions(
 ): KnownWorkEditions | null {
   const workId = normalizeWorkId(options?.id);
   const bookIsbn = normalizeIsbn(options?.isbn ?? null);
-  const authorBlob = authors.join(" ").toLowerCase();
 
   for (const entry of KNOWN_WORK_EDITIONS) {
     if (
@@ -157,10 +177,7 @@ export function findKnownWorkEditions(
       isExactTitleMatch(candidate, title)
     );
     if (!titleHit) continue;
-    const lastName =
-      entry.authorHint.toLowerCase().split(/\s+/).pop() ??
-      entry.authorHint.toLowerCase();
-    if (!authorBlob.includes(lastName)) continue;
+    if (!authorMatchesHint(authors, entry.authorHint)) continue;
     return entry;
   }
 
@@ -194,10 +211,103 @@ export function getPopularReprintIsbns(entry: KnownWorkEditions): string[] {
 }
 
 function authorMatchesHint(authors: string[], authorHint: string): boolean {
-  const blob = authors.join(" ").toLowerCase();
-  const last =
-    authorHint.toLowerCase().split(/\s+/).pop() ?? authorHint.toLowerCase();
-  return blob.includes(last);
+  const hint = normalizeAuthorForDedupe(authorHint);
+  if (!hint) return false;
+  const hintParts = hint.split(" ").filter(Boolean);
+  const hintLast = hintParts[hintParts.length - 1] ?? hint;
+  const hintFirst = hintParts.length > 1 ? hintParts[0] : "";
+
+  return authors.some((author) => {
+    const normalized = normalizeAuthorForDedupe(author);
+    if (!normalized) return false;
+    if (normalized === hint) return true;
+    const parts = normalized.split(" ").filter(Boolean);
+    const last = parts[parts.length - 1] ?? "";
+    if (last !== hintLast) return false;
+    if (!hintFirst) return true;
+    const first = parts[0] ?? "";
+    return first === hintFirst || first[0] === hintFirst[0];
+  });
+}
+
+function toOpenLibraryRouteId(id: string): string {
+  const trimmed = id.trim();
+  if (!trimmed) return "";
+  if (/^ol-/i.test(trimmed)) return `ol-${trimmed.replace(/^ol-/i, "")}`;
+  if (/^OL\d+[WM]$/i.test(trimmed)) return `ol-${trimmed}`;
+  return trimmed;
+}
+
+function isBannedLatestId(id: string): boolean {
+  return BANNED_LATEST_EDITION_IDS.has(id.trim().toLowerCase());
+}
+
+/**
+ * Stamp catalog first-publish / latest-edition years and ids onto a search
+ * card or tome record. Never lets a reprint year replace the work first year.
+ * Brian Herbert Dune does not match Frank Herbert's catalog entry.
+ */
+export function applyKnownWorkFields<T extends BookSummary>(book: T): T {
+  const known = findKnownWorkEditions(book.title, book.authors, {
+    id: book.id,
+    isbn: book.isbn,
+  });
+  if (!known) return book;
+
+  const firstPublishYear = pickEarliestYear(
+    book.firstPublishYear,
+    known.firstPublishYear
+  );
+  const latestCandidate = pickPublishedYear(
+    book.latestEditionYear,
+    known.latestEditionYear
+  );
+  const latestEditionYear =
+    latestCandidate != null &&
+    firstPublishYear != null &&
+    latestCandidate > firstPublishYear
+      ? latestCandidate
+      : null;
+
+  const knownFirstId = known.workIds?.[0]
+    ? toOpenLibraryRouteId(known.workIds[0])
+    : "";
+  const firstEditionId =
+    book.firstEditionId?.trim() || knownFirstId || book.id;
+
+  const existingLatest = book.latestEditionId?.trim() || "";
+  let latestEditionId: string | null = null;
+  if (
+    existingLatest &&
+    existingLatest !== firstEditionId &&
+    !isBannedLatestId(existingLatest)
+  ) {
+    latestEditionId = existingLatest;
+  } else if (book.id !== firstEditionId && !isBannedLatestId(book.id)) {
+    latestEditionId = book.id;
+  } else if (
+    known.latestEditionId?.trim() &&
+    known.latestEditionId.trim() !== firstEditionId &&
+    !isBannedLatestId(known.latestEditionId)
+  ) {
+    latestEditionId = known.latestEditionId.trim();
+  }
+
+  if (latestEditionId === firstEditionId) latestEditionId = null;
+
+  return {
+    ...book,
+    firstPublishYear,
+    latestEditionYear,
+    firstEditionId,
+    latestEditionId,
+    publishedYear: pickPublishedYear(
+      book.publishedYear,
+      latestEditionYear,
+      firstPublishYear
+    ),
+    id: book.id,
+  };
 }
 
 /** Catalog card for a known work's English or original-language edition. */

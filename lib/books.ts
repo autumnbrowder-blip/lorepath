@@ -601,8 +601,11 @@ export const loadBookDetail = cache(async function loadBookDetail(
   // the URL id and save/load id must match or marks vanish on refresh.
   book = { ...book, id: bookId };
 
-  // Sync cover fill (provider → OL ISBN → OL OLID) before slower enrichment.
-  book = fillMissingCoverUrl(book);
+  // Catalog first-publish / latest-edition years before slow enrichment.
+  // OL work records often have an empty first_publish_date; a later edition
+  // year (1989) must not become First published while ISBN APIs hang.
+  const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
+  book = applyKnownEditionYears(fillMissingCoverUrl(book));
 
   // 3) Enrichment — skip network enrichment when cache already has a usable
   // core record. Under Netlify budgets, OL editions / ISBNdb must not block SSR.

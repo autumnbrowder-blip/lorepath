@@ -7,6 +7,7 @@ import {
   distinctLatestEdition,
   latestEditionHref,
 } from "@/lib/book-work";
+import { applyKnownWorkFields } from "@/lib/known-editions";
 import type { BookSummary } from "@/types/book";
 import { Feather } from "lucide-react";
 import Link from "next/link";
@@ -49,18 +50,18 @@ export function BookCard({
   priority = false,
 }: BookCardProps) {
   const q = searchQuery?.trim() ?? "";
+  const stamped = applyKnownWorkFields(book);
   const { displayYear, firstPublishYear, latestEditionYear } =
-    resolvePublicationYears(book);
+    resolvePublicationYears(stamped);
   const firstYear = firstPublishYear ?? displayYear;
-  const firstEditionId = book.firstEditionId?.trim() || book.id;
-  const latestId = book.latestEditionId?.trim() || book.id;
+  const firstEditionId = stamped.firstEditionId?.trim() || stamped.id;
   const latest = distinctLatestEdition({
-    latestId,
+    latestId: stamped.latestEditionId,
     latestYear: latestEditionYear,
     firstEditionId,
   });
   // Cover / title / Open the Tome → latest English edition (this card's id).
-  const tomeHref = latestEditionHref(book.id, q);
+  const tomeHref = latestEditionHref(stamped.id, q);
   const showInscribed = hasUserRating;
   const title = displayTitle(book.title);
 
@@ -93,7 +94,7 @@ export function BookCard({
             <span className="lp-book-card-year">
               {" · "}
               <FirstPublishedYearLink
-                bookId={book.id}
+                bookId={stamped.id}
                 year={firstYear}
                 firstEditionId={firstEditionId}
                 searchQuery={q}

@@ -5,6 +5,7 @@
 import { pickPreferredLanguageCode } from "../lib/book-language";
 import { finalizeSearchBooks } from "../lib/search-finalize";
 import {
+  applyFirstPublishYearHint,
   distinctLatestEdition,
   firstPublishedHref,
   latestCoveredEditionId,
@@ -13,12 +14,15 @@ import {
 } from "../lib/book-work";
 import {
   dedupeBooks,
+  dropBrowseJunk,
   getBookDedupeKey,
+  isJunkCatalogAuthor,
   normalizeAuthorForDedupe,
   normalizeTitleForDedupe,
   pickPreferredDuplicate,
   rankBrowseSearchResults,
 } from "../lib/book-utils";
+import { applyKnownWorkFields } from "../lib/known-editions";
 import type { BookSummary } from "../types/book";
 
 let failures = 0;
@@ -917,6 +921,162 @@ const rankedDune = rankBrowseSearchResults(
 check("exact title Dune ranks before Dune Messiah", rankedDune[0]?.title, "Dune");
 check("Frank Herbert Dune ranks before Brian Herbert", rankedDune[0]?.id, "google-dune-main");
 check("Dune Messiah stays in related results", rankedDune.some((b) => b.id === "ol-messiah"), true);
+
+console.log("11. First published year, latest edition, junk authors");
+const olDune1989 = applyKnownWorkFields(
+  book({
+    id: "ol-OL893414W",
+    title: "Dune",
+    authors: ["Frank Herbert"],
+    publishedYear: 1989,
+    firstPublishYear: 1989,
+    source: "openlibrary",
+    coverUrl: "https://covers.openlibrary.org/b/id/11481354-M.jpg",
+    description: "Arrakis.",
+    language: "eng",
+  })
+);
+check("known Dune first published is 1965, not 1989", olDune1989.firstPublishYear, 1965);
+check("known Dune latest edition year is 2019", olDune1989.latestEditionYear, 2019);
+check("known Dune first edition id is the work", olDune1989.firstEditionId, "ol-OL893414W");
+check(
+  "known Dune latest id differs from the work",
+  olDune1989.latestEditionId,
+  "isbndb-9780593099322"
+);
+check(
+  "latest hidden when ids match",
+  distinctLatestEdition({
+    latestId: "ol-OL893414W",
+    latestYear: 2019,
+    firstEditionId: "ol-OL893414W",
+  }),
+  null
+);
+
+const hintedKeep = applyFirstPublishYearHint(
+  {
+    ...olDune1989,
+    publisher: null,
+    pageCount: null,
+    language: "eng",
+    isbn: null,
+    firstPublishYear: 1965,
+    publishedYear: 1989,
+  },
+  "1989"
+);
+check("fy=1989 cannot replace first published 1965", hintedKeep.firstPublishYear, 1965);
+const hintedFix = applyFirstPublishYearHint(
+  {
+    ...olDune1989,
+    publisher: null,
+    pageCount: null,
+    language: "eng",
+    isbn: null,
+    firstPublishYear: 1989,
+    publishedYear: 1989,
+  },
+  "1965"
+);
+check("fy=1965 wins over reprint 1989", hintedFix.firstPublishYear, 1965);
+
+const brianDuneKnown = applyKnownWorkFields(
+  book({
+    id: "ol-OL19618275W",
+    title: "Dune",
+    authors: ["Brian Herbert", "Kevin J. Anderson"],
+    publishedYear: 2001,
+    firstPublishYear: 2001,
+    source: "openlibrary",
+    language: "eng",
+  })
+);
+check(
+  "Brian Herbert Dune is not stamped with 1965",
+  brianDuneKnown.firstPublishYear,
+  2001
+);
+
+check("Out of Print is a junk author", isJunkCatalogAuthor(["Out of Print"]), true);
+check(
+  "Entangled and Lydia Fenwick is junk",
+  isJunkCatalogAuthor(["Entangled", "Lydia Fenwick"]),
+  true
+);
+check("Jennifer Lawrence is a junk author", isJunkCatalogAuthor(["Jennifer Lawrence"]), true);
+check("Scholastic sole author is junk", isJunkCatalogAuthor(["Scholastic"]), true);
+check("Rebecca Yarros is not junk", isJunkCatalogAuthor(["Rebecca Yarros"]), false);
+
+const fourthWingShelf = dropBrowseJunk([
+  book({
+    id: "ol-fourth-wing",
+    title: "Fourth Wing",
+    authors: ["Rebecca Yarros"],
+    publishedYear: 2023,
+    coverUrl: "https://covers.example/fw.jpg",
+    description: "A dragon war college.",
+  }),
+  book({
+    id: "google-fw-oop",
+    title: "Fourth Wing",
+    authors: ["Out of Print"],
+    publishedYear: 2023,
+    coverUrl: "https://covers.example/oop.jpg",
+    description: "Wrong catalog row.",
+  }),
+  book({
+    id: "google-fw-entangled",
+    title: "Fourth Wing",
+    authors: ["Entangled", "Lydia Fenwick"],
+    publishedYear: 2023,
+    coverUrl: "https://covers.example/ent.jpg",
+    description: "Publisher credit row.",
+  }),
+]);
+check("Fourth Wing keeps Yarros", fourthWingShelf.map((b) => b.authors[0]), ["Rebecca Yarros"]);
+
+const hungerShelf = dropBrowseJunk([
+  book({
+    id: "ol-hg",
+    title: "The Hunger Games",
+    authors: ["Suzanne Collins"],
+    publishedYear: 2008,
+    coverUrl: "https://covers.example/hg.jpg",
+    description: "District 12.",
+  }),
+  book({
+    id: "google-hg-jl",
+    title: "The Hunger Games",
+    authors: ["Jennifer Lawrence"],
+    publishedYear: 2012,
+    coverUrl: "https://covers.example/jl.jpg",
+    description: "Movie stills.",
+  }),
+]);
+check("Hunger Games drops Jennifer Lawrence", hungerShelf.map((b) => b.authors[0]), [
+  "Suzanne Collins",
+]);
+
+const duneFamilyShelf = dropBrowseJunk([
+  book({
+    id: "ol-OL893414W",
+    title: "Dune",
+    authors: ["Frank Herbert"],
+    publishedYear: 1965,
+    coverUrl: "https://covers.example/dune.jpg",
+    description: "Arrakis.",
+  }),
+  book({
+    id: "ol-OL19618275W",
+    title: "Dune",
+    authors: ["Brian Herbert", "Kevin J. Anderson"],
+    publishedYear: 2001,
+    coverUrl: "https://covers.example/brian.jpg",
+    description: "House Atreides.",
+  }),
+]);
+check("Frank and Brian Herbert Dune both survive junk filter", duneFamilyShelf.length, 2);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);
