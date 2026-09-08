@@ -2,10 +2,7 @@ import { searchBigBook } from "@/lib/big-book";
 import type { SearchBooksOptions } from "@/lib/genre-search";
 import { searchGoogleBooks, type GoogleBooksPageResult } from "@/lib/google-books";
 import { searchGutendex } from "@/lib/gutendex";
-import {
-  searchHardcover,
-  type HardcoverSearchError,
-} from "@/lib/hardcover";
+import type { HardcoverSearchError } from "@/lib/hardcover";
 import { hasIsbndbApiKey, searchIsbndb } from "@/lib/isbndb";
 import { searchOpenLibrary } from "@/lib/open-library";
 import {
@@ -46,7 +43,6 @@ type ProviderPage = {
   hasMore: boolean;
   rawCount?: number;
   error?: GoogleBooksPageResult["error"];
-  hardcoverError?: HardcoverSearchError | null;
   timedOut?: boolean;
 };
 
@@ -114,24 +110,12 @@ async function timedProviderPage(
   try {
     const page = await withTimeout(run(), timeoutMs, label);
     return { source, ...page, timedOut: false };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (source === "hardcover") {
-      console.error("[hardcover] search failed:", {
-        reason: "timeout",
-        message,
-        label,
-      });
-    }
+  } catch {
     return {
       source,
       books: [],
       hasMore: false,
       timedOut: true,
-      hardcoverError:
-        source === "hardcover"
-          ? { reason: "timeout", message }
-          : undefined,
     };
   }
 }
@@ -165,11 +149,9 @@ export async function fetchSearchProviderFlood(input: {
 
   // Fresh arrays every call — never reuse a previous flood's leftover books.
   const books: BookSummary[] = [];
-  const sourceCounts: Partial<Record<BookSource, number>> = {
-    hardcover: 0,
-  };
+  const sourceCounts: Partial<Record<BookSource, number>> = {};
   const timedOutProviders: string[] = [];
-  let hardcoverError: HardcoverSearchError | null = null;
+  const hardcoverError: HardcoverSearchError | null = null;
   let hasMore = false;
   let googleError: GoogleBooksPageResult["error"] = null;
   let googleRawCount = 0;
@@ -185,9 +167,6 @@ export async function fetchSearchProviderFlood(input: {
     if (page.source === "google") {
       if (page.error) googleError = page.error;
       if (typeof page.rawCount === "number") googleRawCount += page.rawCount;
-    }
-    if (page.source === "hardcover" && page.hardcoverError) {
-      hardcoverError = page.hardcoverError;
     }
     for (const book of page.books) {
       if (seenIds.has(book.id)) continue;
@@ -237,24 +216,6 @@ export async function fetchSearchProviderFlood(input: {
       })
     );
   }
-
-  // Always in the same Promise.allSettled wave as Google / OL / Gutendex.
-  // Missing HARDCOVER_API_TOKEN → searchHardcover returns [] and others still run.
-  wave.push(
-    timedProviderPage(
-      "hardcover",
-      `hardcover search:${catalogQuery}`,
-      stepTimeout(),
-      async () => {
-        const result = await searchHardcover(catalogQuery, input.page);
-        return {
-          books: result.books,
-          hasMore: result.hasMore,
-          hardcoverError: result.error,
-        };
-      }
-    )
-  );
 
   // Open Library in the SAME wave — do not wait for commercial to finish first.
   if (!input.genreMode) {
@@ -388,7 +349,6 @@ export async function fetchSearchProviderFlood(input: {
 export const SEARCH_FLOOD_SOURCES: BookSource[] = [
   "google",
   "isbndb",
-  "hardcover",
   "openlibrary",
   "gutendex",
   "bigbook",

@@ -21,11 +21,7 @@ import {
   searchGoogleBooks,
   type GoogleBooksPageResult,
 } from "@/lib/google-books";
-import {
-  fetchHardcoverBook,
-  isHardcoverConfigured,
-  isHardcoverId,
-} from "@/lib/hardcover";
+import { isHardcoverId } from "@/lib/hardcover";
 import {
   enrichBookDetailWithIsbndb,
   fetchIsbndbByIsbn,
@@ -480,29 +476,8 @@ async function loadCoreBook(
   } else if (isNytId(bookId)) {
     const primary = await attempt("nyt", () => resolveNytBook(bookId));
     if (isUsableCoreBook(primary)) return primary;
-  } else if (isHardcoverId(bookId) && isHardcoverConfigured()) {
-    const primary = await attempt("hardcover", async () => {
-      const hintTitle =
-        searchHint?.trim() ||
-        bookId.replace(/^hardcover-/i, "").replace(/-/g, " ");
-      const hit = await fetchHardcoverBook(hintTitle);
-      if (!hit) return null;
-      return {
-        id: bookId,
-        title: hit.title,
-        authors: hit.authors.length > 0 ? hit.authors : ["Unknown author"],
-        coverUrl: hit.coverUrl,
-        description: hit.description,
-        genres: hit.genres,
-        publishedYear: hit.publishedYear,
-        source: "hardcover" as const,
-        publisher: null,
-        pageCount: hit.pageCount,
-        language: "en",
-        isbn: hit.isbns[0] ?? null,
-      };
-    });
-    if (isUsableCoreBook(primary)) return primary;
+  } else if (isHardcoverId(bookId)) {
+    // Hardcover API is disabled — never fetch. Fall through to other catalogs.
   } else {
     // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
     const primary = await attempt("google", () =>
