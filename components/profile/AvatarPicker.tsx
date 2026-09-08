@@ -124,11 +124,20 @@ export function AvatarPicker({
 
     try {
       const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user?.id || session.user.id !== userId) {
+        setSelected(previous);
+        setError("You are not signed in. Please sign in and try again.");
+        return;
+      }
+
       // Persist the filename (e.g. "dragon.jpg") into profiles.avatar_key
       const { data: updated, error: updateError } = await supabase
         .from("profiles")
         .update({ avatar_key: key })
-        .eq("id", userId)
+        .eq("id", session.user.id)
         .select("avatar_key")
         .maybeSingle();
 
@@ -158,7 +167,7 @@ export function AvatarPicker({
       if (!updated) {
         const { data: upserted, error: upsertError } = await supabase
           .from("profiles")
-          .upsert({ id: userId, avatar_key: key }, { onConflict: "id" })
+          .upsert({ id: session.user.id, avatar_key: key }, { onConflict: "id" })
           .select("avatar_key")
           .maybeSingle();
 

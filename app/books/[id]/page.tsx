@@ -145,17 +145,23 @@ type ViewerState = {
   user: User | null;
   userPreferences: ContentRating | null;
   userRating: ContentRating | null;
+  communityRatings: { averages: ContentRating | null; count: number };
 };
 
 const ANONYMOUS_VIEWER: ViewerState = {
   user: null,
   userPreferences: null,
   userRating: null,
+  communityRatings: { averages: null, count: 0 },
 };
 
 /**
  * Viewer extras are optional: a Supabase hiccup must degrade to the
  * logged-out view rather than replace the whole tome with an error page.
+ *
+ * Signed-out: auth cookie check only — never ratings / preferences / profiles.
+ * Signed-in: one ratings .eq('book_id') (community) + one .eq('rated_by')
+ * (this reader) + one preferences .eq('user_id').
  */
 async function loadViewerState(
   bookExternalId: string,
@@ -169,15 +175,13 @@ async function loadViewerState(
     const user = await getCachedUser();
 
     if (!user) {
-      // No session → do not query user_preferences or this user's ratings.
       return ANONYMOUS_VIEWER;
     }
 
-    // During Beta, signed-in readers can use preferences + Match Score
-    // (Match Score still needs community marks on the book).
-    const [preferences, rating] = await Promise.allSettled([
+    const [preferences, rating, community] = await Promise.allSettled([
       getUserPreferences(user.id),
       getUserRatingForBook(bookExternalId, user.id, isbn),
+      getCommunityRatings(bookExternalId, isbn),
     ]);
 
     return {
@@ -185,6 +189,10 @@ async function loadViewerState(
       userPreferences:
         preferences.status === "fulfilled" ? preferences.value : null,
       userRating: rating.status === "fulfilled" ? rating.value : null,
+      communityRatings:
+        community.status === "fulfilled"
+          ? community.value
+          : { averages: null, count: 0 },
     };
   } catch (error) {
     console.error("[books/[id]] viewer state failed:", {
@@ -267,16 +275,7 @@ export default async function BookDetailPage({
     currentBookId: id,
   });
 
-  const [ratingsResult, viewer, latestEdition] = await Promise.all([
-    // Match Score / community averages: one query for this book_id only.
-    withTimeout(getCommunityRatings(id, book.isbn), 1500, "page-community-ratings")
-      .catch((error) => {
-        console.error("[books/[id]] community ratings failed:", {
-          id,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return { averages: null, count: 0 };
-      }),
+  const [viewer, latestEdition] = await Promise.all([
     withTimeout(loadViewerState(id, book.isbn), 2000, "page-viewer-state").catch(
       (error) => {
         console.error("[books/[id]] viewer state timed out:", {
@@ -311,7 +310,7 @@ export default async function BookDetailPage({
         ),
   ]);
 
-  const communityRatings = ratingsResult;
+  const communityRatings = viewer.communityRatings;
   const { user, userPreferences, userRating } = viewer;
   const back = detailBackHref(searchQuery, from);
 

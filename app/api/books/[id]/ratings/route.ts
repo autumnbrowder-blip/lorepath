@@ -39,40 +39,52 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: bookExternalId } = await params;
+  const empty = { averages: null, count: 0, userRating: null as ContentRating | null };
+
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(empty, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  const accessToken = getBearerToken(request);
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const mightHaveSession =
+    Boolean(accessToken) || /auth-token/i.test(cookieHeader);
+
+  // Signed-out: do not hit ratings at all.
+  if (!mightHaveSession) {
+    return NextResponse.json(empty, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
 
   try {
-    const communityRatings = await withTimeout(
-      getCommunityRatings(bookExternalId),
-      2500,
-      "ratings-get-community"
+    const session = await withTimeout(
+      createAuthenticatedClient({
+        accessToken,
+      }),
+      2000,
+      "ratings-get-auth"
     );
-
-    let userRating: ContentRating | null = null;
-    const accessToken = getBearerToken(request);
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const mightHaveSession =
-      Boolean(accessToken) || /auth-token/i.test(cookieHeader);
-
-    if (isSupabaseConfigured() && mightHaveSession) {
-      try {
-        const session = await withTimeout(
-          createAuthenticatedClient({
-            accessToken,
-          }),
-          2000,
-          "ratings-get-auth"
-        );
-        if (!("error" in session)) {
-          userRating = await withTimeout(
-            getUserRatingForBook(bookExternalId, session.user.id),
-            2000,
-            "ratings-get-user"
-          );
-        }
-      } catch {
-        // Anonymous community payload is enough — never hang the GET.
-      }
+    if ("error" in session) {
+      return NextResponse.json(empty, {
+        headers: { "Cache-Control": "no-store" },
+      });
     }
+
+    const [communityRatings, userRating] = await Promise.all([
+      withTimeout(
+        getCommunityRatings(bookExternalId),
+        2500,
+        "ratings-get-community"
+      ),
+      withTimeout(
+        getUserRatingForBook(bookExternalId, session.user.id),
+        2000,
+        "ratings-get-user"
+      ),
+    ]);
 
     return NextResponse.json(
       { ...communityRatings, userRating },
@@ -83,13 +95,10 @@ export async function GET(
   } catch (error) {
     console.error("[api/books/ratings GET] failed:", error);
     // Never map 57014 to a retryable 500 — clients must not re-hit the same scan.
-    return NextResponse.json(
-      { averages: null, count: 0, userRating: null },
-      {
-        status: 200,
-        headers: { "Cache-Control": "no-store" },
-      }
-    );
+    return NextResponse.json(empty, {
+      status: 200,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 }
 

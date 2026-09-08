@@ -44,14 +44,13 @@ export function createClient() {
 export async function getBrowserAccessToken(): Promise<string | null> {
   try {
     const supabase = createClient();
-    let {
+    const {
       data: { session },
     } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      const refreshed = await supabase.auth.refreshSession();
-      session = refreshed.data.session;
-    }
-    return session?.access_token?.trim() || null;
+    // No session → do not refresh or hit PostgREST.
+    if (!session) return null;
+    const token = session.access_token?.trim();
+    return token || null;
   } catch {
     return null;
   }

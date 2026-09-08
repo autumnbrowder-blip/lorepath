@@ -10,6 +10,7 @@ import {
 } from "@/lib/avatars";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isNonRetryableDataApiError } from "@/lib/supabase/schema-cache";
 import type { User } from "@supabase/supabase-js";
 import {
   BookOpen,
@@ -56,46 +57,40 @@ export function AuthNav() {
     async function loadProfile(userId: string) {
       try {
         const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.user?.id || session.user.id !== userId) {
+          if (!cancelled) setProfile(null);
+          return;
+        }
+
         const { data, error } = await supabase
           .from("profiles")
           .select("display_name, avatar_key")
-          .eq("id", userId)
+          .eq("id", session.user.id)
           .maybeSingle();
 
         if (cancelled) return;
 
-        if (error || !data) {
-          const nonRetryable =
-            error &&
-            (/42501/.test(error.message) ||
-              /timeout|57014|statement timeout/i.test(error.message) ||
-              error.code === "42501" ||
-              error.code === "PGRST301" ||
-              error.code === "401" ||
-              error.code === "403" ||
-              error.code === "500");
-          if (nonRetryable) {
+        if (error) {
+          // 401/403/500/42501/57014 — never immediately refetch.
+          if (isNonRetryableDataApiError(error.message, error.code)) {
             setProfile(null);
             return;
           }
-          // Fallback if avatar_key column isn't migrated yet
-          const { data: basic } = await supabase
-            .from("profiles")
-            .select("display_name")
-            .eq("id", userId)
-            .maybeSingle();
-          setProfile(
-            basic
-              ? { display_name: basic.display_name ?? null, avatar_key: null }
-              : null
-          );
+          setProfile(null);
           return;
         }
 
-        setProfile({
-          display_name: data.display_name ?? null,
-          avatar_key: data.avatar_key ?? null,
-        });
+        setProfile(
+          data
+            ? {
+                display_name: data.display_name ?? null,
+                avatar_key: data.avatar_key ?? null,
+              }
+            : null
+        );
       } catch {
         if (!cancelled) setProfile(null);
       }

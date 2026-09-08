@@ -8,7 +8,6 @@ import {
 } from "@/lib/supabase/server";
 import {
   isColumnMarkedMissing,
-  isNonRetryableDataApiError,
   markColumnMissing,
   noteMissingColumnFromError,
 } from "@/lib/supabase/schema-cache";
@@ -189,35 +188,12 @@ async function fetchPreferenceRow(
     return { data: (primary.data as PreferenceRow | null) ?? null, error: null };
   }
 
-  if (isNonRetryableDataApiError(primary.error.message, primary.error.code)) {
-    return { data: null, error: primary.error };
-  }
-
-  if (
-    noteMissingColumnFromError(
-      "user_preferences",
-      "romance",
-      primary.error.message
-    )
-  ) {
-    const legacy = await supabase
-      .from("user_preferences")
-      .select(LEGACY_PREFERENCE_SELECT)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (legacy.error) {
-      return { data: null, error: legacy.error };
-    }
-
-    return {
-      data: legacy.data
-        ? ({ ...legacy.data, romance: null } as PreferenceRow)
-        : null,
-      error: null,
-    };
-  }
-
+  // 401/403/500/42501/57014 and missing-column: never immediately refetch.
+  noteMissingColumnFromError(
+    "user_preferences",
+    "romance",
+    primary.error.message
+  );
   return { data: null, error: primary.error };
 }
 
@@ -259,17 +235,7 @@ async function ensureProfileExists(
     );
 
   if (upsertError) {
-    if (
-      noteMissingColumnFromError("profiles", "avatar_key", upsertError.message)
-    ) {
-      const retry = await supabase
-        .from("profiles")
-        .upsert({ id: userId }, { onConflict: "id" });
-      if (retry.error) {
-        return { ok: false, error: formatPreferenceError(retry.error) };
-      }
-      return { ok: true };
-    }
+    noteMissingColumnFromError("profiles", "avatar_key", upsertError.message);
     return { ok: false, error: formatPreferenceError(upsertError) };
   }
 
@@ -662,19 +628,6 @@ export async function readProfileDisplayFields(
     };
   }
 
-  if (noteMissingColumnFromError("profiles", "avatar_key", error.message)) {
-    const { data: basic } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", userId)
-      .maybeSingle();
-    return {
-      display_name:
-        typeof basic?.display_name === "string" ? basic.display_name : null,
-      avatar_key: null,
-      avatarColumnUnavailable: true,
-    };
-  }
-
+  noteMissingColumnFromError("profiles", "avatar_key", error.message);
   return empty;
 }

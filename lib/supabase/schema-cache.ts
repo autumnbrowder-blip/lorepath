@@ -66,6 +66,7 @@ export function isNonRetryableDataApiError(
   message: string,
   code?: string | number | null
 ): boolean {
+  const rawCode = code == null ? "" : String(code);
   const status =
     typeof code === "number"
       ? code
@@ -73,6 +74,16 @@ export function isNonRetryableDataApiError(
         ? Number(code)
         : null;
   if (status === 401 || status === 403 || status === 500) return true;
+  if (
+    rawCode === "57014" ||
+    rawCode === "42501" ||
+    rawCode === "PGRST301" ||
+    rawCode === "401" ||
+    rawCode === "403" ||
+    rawCode === "500"
+  ) {
+    return true;
+  }
   if (isPermissionDeniedError(message, typeof code === "string" ? code : undefined)) {
     return true;
   }

@@ -11,7 +11,7 @@ import {
   DEFAULT_RATINGS,
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
-import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createJwtPostgrestClient,
   createServiceRoleClient,
@@ -27,7 +27,6 @@ import {
 import type { ContentRating } from "@/types";
 import type { BookDetail, BookSource, BookSummary } from "@/types/book";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { cache } from "react";
 
@@ -257,13 +256,16 @@ function summarizeCommunityRatings(
   return { averages, count: ratings.length };
 }
 
-/** Prefer service role for reads so post-write refresh matches the write path. */
+/**
+ * Ratings reads must be authorized. Service role for community/user trusted
+ * reads; never the anon key (that 401/42501s and inflates Data API failures).
+ */
 function resolveRatingsReadClient(): SupabaseClient | null {
   const admin = createServiceRoleClient();
   if (!("error" in admin)) {
     return admin.supabase;
   }
-  return createUncachedPublicClient();
+  return null;
 }
 
 function isMissingRomanceColumn(message: string): boolean {
@@ -343,17 +345,7 @@ async function ensureProfileExists(
     );
 
   if (upsertError) {
-    if (
-      noteMissingColumnFromError("profiles", "avatar_key", upsertError.message)
-    ) {
-      const retry = await supabase
-        .from("profiles")
-        .upsert({ id: userId }, { onConflict: "id" });
-      if (retry.error) {
-        return { ok: false, error: formatRatingError(retry.error.message) };
-      }
-      return { ok: true };
-    }
+    noteMissingColumnFromError("profiles", "avatar_key", upsertError.message);
     return { ok: false, error: formatRatingError(upsertError.message) };
   }
 
@@ -383,22 +375,6 @@ async function ensureBookRecord(
   return result;
 }
 
-/** Public ratings reads — never serve from the default fetch/data cache. */
-function createUncachedPublicClient() {
-  const env = getSupabaseEnv();
-  if (!env) return null;
-
-  return createSupabaseClient(env.url, env.anonKey, {
-    global: {
-      fetch: (input, init) =>
-        fetch(input, {
-          ...init,
-          cache: "no-store",
-        }),
-    },
-  });
-}
-
 export const getCommunityRatings = cache(async function getCommunityRatings(
   bookExternalId: string,
   isbn?: string | null
@@ -414,7 +390,8 @@ export const getCommunityRatings = cache(async function getCommunityRatings(
     const { withTimeout } = await import("@/lib/provider-resilience");
     return await withTimeout(
       (async () => {
-        const supabase = resolveRatingsReadClient();
+        const supabase =
+          resolveRatingsReadClient() ?? (await getTrustedUserDataClient());
         if (!supabase) {
           return { averages: null, count: 0 };
         }
@@ -950,7 +927,7 @@ export async function findRatedBooksMatchingQuery(
   }
 
   try {
-    const supabase = resolveRatingsReadClient();
+    const supabase = await getTrustedUserDataClient();
     if (!supabase) return empty;
 
     // Assumes index ratings(rated_by). Do not join ratings!inner on books.
