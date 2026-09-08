@@ -948,6 +948,105 @@ export function rankSearchResults(
     .map(({ book }) => book);
 }
 
+/**
+ * Well-known title → the author a reader means first.
+ * Used only to pin the obvious main novel above sequels / later family books.
+ */
+const CANONICAL_TITLE_AUTHORS: Array<{ title: string; authors: string[] }> = [
+  { title: "dune", authors: ["frank herbert"] },
+  { title: "hunger games", authors: ["suzanne collins"] },
+  { title: "between two fires", authors: ["christopher buehlman"] },
+  { title: "fourth wing", authors: ["rebecca yarros"] },
+  { title: "tender is the flesh", authors: ["agustina bazterrica"] },
+];
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Query is a whole word in the title ("Dune Messiah" yes, "Aescendune" no). */
+export function titleRelatesToQuery(title: string, query: string): boolean {
+  const t = normalizeForMatch(title);
+  const q = normalizeForMatch(query);
+  if (!t || !q) return false;
+  if (t === q) return true;
+  return new RegExp(`(?:^| )${escapeRegExp(q)}(?: |$)`).test(t);
+}
+
+function authorLooksCanonical(book: BookSummary, authors: string[]): boolean {
+  return book.authors.some((author) => {
+    const normalized = normalizeAuthorForDedupe(author);
+    if (!normalized) return false;
+    return authors.some(
+      (canon) => normalized === canon || normalized.includes(canon)
+    );
+  });
+}
+
+function isCanonicalAuthorForQuery(book: BookSummary, query: string): boolean {
+  const q = normalizeTitleForDedupe(query);
+  const title = normalizeTitleForDedupe(book.title);
+  return CANONICAL_TITLE_AUTHORS.some((entry) => {
+    if (q !== entry.title && title !== entry.title) return false;
+    return authorLooksCanonical(book, entry.authors);
+  });
+}
+
+function comparePublishedYearDesc(a: BookSummary, b: BookSummary): number {
+  const aYear = normalizePublishedYear(a.publishedYear);
+  const bYear = normalizePublishedYear(b.publishedYear);
+  if (aYear == null && bYear != null) return 1;
+  if (bYear == null && aYear != null) return -1;
+  if (aYear != null && bYear != null && aYear !== bYear) return bYear - aYear;
+  return a.title.localeCompare(b.title, "en", { sensitivity: "base" });
+}
+
+/**
+ * Browse list order: exact title (canonical author first), then titles that
+ * contain the query as a word (newest year first). Unrelated substring hits
+ * like "Aescendune" are dropped.
+ */
+export function rankBrowseSearchResults(
+  books: BookSummary[],
+  query: string
+): BookSummary[] {
+  const trimmed = query.trim();
+  if (!trimmed) return books;
+
+  const exact: BookSummary[] = [];
+  const related: BookSummary[] = [];
+
+  for (const book of books) {
+    if (isExactTitleMatch(trimmed, book.title)) {
+      exact.push(book);
+    } else if (titleRelatesToQuery(book.title, trimmed)) {
+      related.push(book);
+    }
+  }
+
+  exact.sort((a, b) => {
+    const aCanon = isCanonicalAuthorForQuery(a, trimmed);
+    const bCanon = isCanonicalAuthorForQuery(b, trimmed);
+    if (aCanon !== bCanon) return aCanon ? -1 : 1;
+    return comparePublishedYearDesc(a, b);
+  });
+  related.sort(comparePublishedYearDesc);
+
+  return [...exact, ...related];
+}
+
+/** Page-1 junk: no cover and no synopsis, merch, or empty stubs. */
+export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
+  return books.filter((book) => {
+    if (isMerchandiseOrCompanion(book) || isLowQualityBook(book)) return false;
+    const cover = Boolean(book.coverUrl?.trim());
+    const description = Boolean(book.description?.trim()) &&
+      !isPlaceholderDescription(book.description);
+    if (!cover && !description) return false;
+    return true;
+  });
+}
+
 function hasDescription(book: BookSummary): boolean {
   return Boolean(book.description?.trim());
 }

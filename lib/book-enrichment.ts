@@ -1,4 +1,8 @@
 import {
+  getLanguageEditionBucket,
+  pickPreferredLanguageCode,
+} from "@/lib/book-language";
+import {
   cleanAuthors,
   cleanDescription,
   cleanTitle,
@@ -90,11 +94,21 @@ export function mergeBookDetails(
   base: BookDetail,
   supplement: Partial<BookDetail>
 ): BookDetail {
+  const supplementIsTranslation =
+    getLanguageEditionBucket({
+      language: supplement.language,
+      title: supplement.title ?? base.title,
+    }) === "non-eng";
+  const baseIsTranslation = getLanguageEditionBucket(base) === "non-eng";
   const publishedYear = pickPublishedYear(
     base.publishedYear,
-    supplement.publishedYear,
+    supplementIsTranslation && !baseIsTranslation
+      ? null
+      : supplement.publishedYear,
     base.latestEditionYear,
-    supplement.latestEditionYear
+    supplementIsTranslation && !baseIsTranslation
+      ? null
+      : supplement.latestEditionYear
   );
   const firstPublishYear = pickEarliestYear(
     base.firstPublishYear,
@@ -132,7 +146,14 @@ export function mergeBookDetails(
     latestEditionYear,
     publisher: base.publisher ?? supplement.publisher ?? null,
     pageCount: base.pageCount ?? supplement.pageCount ?? null,
-    language: base.language ?? supplement.language ?? null,
+    language:
+      base.language ??
+      (getLanguageEditionBucket({
+        language: supplement.language,
+        title: supplement.title ?? base.title,
+      }) === "non-eng"
+        ? null
+        : supplement.language ?? null),
     isbn: base.isbn ?? supplement.isbn ?? null,
   };
 }
@@ -222,7 +243,7 @@ export async function fetchOpenLibraryByTitleAuthor(
     publishedYear: firstYear,
     firstPublishYear: firstYear,
     pageCount: doc.number_of_pages_median ?? null,
-    language: doc.language?.[0]?.replace(/^\/languages\//, "") ?? null,
+    language: pickPreferredLanguageCode(doc.language),
     isbn,
     coverUrl: coverFromId(doc.cover_i),
   };
@@ -247,6 +268,7 @@ export async function fetchOpenLibraryEditionForWork(
 
   let best: OpenLibraryEdition | null = null;
   let bestYear: number | null = null;
+  let bestEnglish = false;
 
   for (const entry of entries) {
     const year = parsePublishedYear(entry.publish_date);
@@ -255,12 +277,20 @@ export async function fetchOpenLibraryEditionForWork(
       Boolean(entry.isbn_13?.[0] || entry.isbn_10?.[0]) ||
       Boolean(entry.covers?.[0]);
     if (!hasMeta && year == null) continue;
+    const taggedEnglish = (entry.languages ?? []).some((language) =>
+      /\/languages\/eng$/i.test(language.key ?? "")
+    );
+    if (best != null && bestEnglish && !taggedEnglish) continue;
+    const betterYear =
+      year != null && (bestYear == null || year > bestYear);
     if (
       best == null ||
-      (year != null && (bestYear == null || year > bestYear))
+      (taggedEnglish && !bestEnglish) ||
+      betterYear
     ) {
       best = entry;
       bestYear = year;
+      bestEnglish = taggedEnglish;
     }
   }
 
@@ -272,7 +302,9 @@ export async function fetchOpenLibraryEditionForWork(
     publisher: toDisplayText(best.publishers),
     publishedYear: parsePublishedYear(best.publish_date),
     pageCount: best.number_of_pages ?? null,
-    language: best.languages?.[0]?.key?.replace(/^\/languages\//, "") ?? null,
+    language: pickPreferredLanguageCode(
+      (best.languages ?? []).map((language) => language.key)
+    ),
     isbn,
     coverUrl: coverFromId(best.covers?.[0]),
   };
@@ -323,17 +355,27 @@ export async function fetchOpenLibraryWorkEditions(
     let bestYear: number | null = null;
     let earliestYear: number | null = null;
     let latestYear: number | null = null;
+    let latestEnglishYear: number | null = null;
 
     for (const entry of entries) {
-      // Year range spans every edition, including translations — the oldest
-      // printing is the best available proxy for first publication.
+      // First published may come from any language. Latest edition year
+      // prefers English so a 2024 translation cannot outrank the English tome.
       const entryYear = parsePublishedYear(entry.publish_date);
+      const taggedEnglish = (entry.languages ?? []).some((language) =>
+        /\/languages\/eng$/i.test(language.key)
+      );
       if (entryYear != null) {
         if (earliestYear == null || entryYear < earliestYear) {
           earliestYear = entryYear;
         }
         if (latestYear == null || entryYear > latestYear) {
           latestYear = entryYear;
+        }
+        if (
+          taggedEnglish &&
+          (latestEnglishYear == null || entryYear > latestEnglishYear)
+        ) {
+          latestEnglishYear = entryYear;
         }
       }
 
@@ -345,9 +387,6 @@ export async function fetchOpenLibraryWorkEditions(
       // Only same-title English editions qualify. Translations and omnibus
       // volumes are tagged loosely on Open Library, and their art would be
       // worse than the work cover we already have.
-      const taggedEnglish = (entry.languages ?? []).some((language) =>
-        /\/languages\/eng$/i.test(language.key)
-      );
       if (!taggedEnglish) continue;
 
       if (
@@ -386,7 +425,7 @@ export async function fetchOpenLibraryWorkEditions(
       coverUrl,
       coverYear: coverUrl ? bestYear : null,
       earliestYear,
-      latestYear,
+      latestYear: latestEnglishYear ?? latestYear,
     };
   } catch (error) {
     console.error("[open-library] work editions lookup failed:", {

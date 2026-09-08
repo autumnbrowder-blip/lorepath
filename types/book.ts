@@ -13,6 +13,17 @@ export type BookSearchSource = BookSource | "multi";
 /** Edition relationship label for translated works on browse cards. */
 export type BookEditionLabel = "original" | "english";
 
+/** One physical/API edition of a grouped work. */
+export type WorkEditionRef = {
+  id: string;
+  title: string;
+  publishedYear: number | null;
+  coverUrl: string | null;
+  source: BookSource;
+  /** Provider language when known — used to keep latest-edition English. */
+  language?: string | null;
+};
+
 export type BookSummary = {
   id: string;
   title: string;
@@ -33,6 +44,18 @@ export type BookSummary = {
    * Falls back to publishedYear when absent.
    */
   latestEditionYear?: number | null;
+  /**
+   * Stable work identity (Hardcover/OL work id, else title + author last name).
+   * Different Google volume IDs that share this key are the same book-work.
+   */
+  workKey?: string;
+  /** Other API records in this work group (search collapse). */
+  workEditions?: WorkEditionRef[];
+  /**
+   * Route id of the earliest printing in this work group (cover preferred
+   * when several share the first year). Used by the First published YEAR link.
+   */
+  firstEditionId?: string | null;
   source: BookSource;
   downloadCount?: number | null;
   /** ISBN-10 or ISBN-13 when known (used for search dedupe). */

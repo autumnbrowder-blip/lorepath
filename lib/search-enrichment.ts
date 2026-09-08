@@ -4,7 +4,6 @@ import {
   isExactTitleMatch,
 } from "@/lib/book-utils";
 import { getGoogleBookByIsbn, searchGoogleBooks } from "@/lib/google-books";
-import { fetchHardcoverBook, isHardcoverConfigured } from "@/lib/hardcover";
 import {
   fetchIsbndbByIsbn,
   fetchIsbndbByTitle,
@@ -21,8 +20,7 @@ export type DescriptionSource =
   | "google-isbn"
   | "google-title"
   | "isbndb-isbn"
-  | "isbndb-title"
-  | "hardcover";
+  | "isbndb-title";
 
 export type SearchEnrichmentResult = {
   books: BookSummary[];
@@ -177,22 +175,6 @@ async function findDescription(
           source: "isbndb-title",
         };
       }
-    }
-  }
-
-  if (isHardcoverConfigured()) {
-    const viaHardcover = await fetchHardcoverBook(book.title, authors);
-    const description = usableDescription(viaHardcover?.description);
-    if (description) {
-      return {
-        supplement: {
-          description,
-          coverUrl: viaHardcover?.coverUrl ?? null,
-          publishedYear: viaHardcover?.publishedYear ?? null,
-          pageCount: viaHardcover?.pageCount ?? null,
-        },
-        source: "hardcover",
-      };
     }
   }
 

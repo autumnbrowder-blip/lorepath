@@ -2,6 +2,7 @@ import {
   getBigBookBookById,
   isBigBookConfigured,
   isBigBookId,
+  searchBigBook,
 } from "@/lib/big-book";
 import { enrichBookDetail } from "@/lib/book-enrichment";
 import { normalizeBookDetailForDisplay } from "@/lib/book-normalize";
@@ -14,17 +15,20 @@ import {
   preferMatchingGenreTags,
   type SearchBooksOptions,
 } from "@/lib/genre-search";
-import { getGutendexBookById, isGutendexId } from "@/lib/gutendex";
+import { searchGutendex, getGutendexBookById, isGutendexId } from "@/lib/gutendex";
 import {
   getGoogleBookById,
   getGoogleBookByIsbn,
   RateLimitError,
   searchGoogleBooks,
+  type GoogleBooksPageResult,
 } from "@/lib/google-books";
 import {
   fetchHardcoverBook,
+  isHardcoverCircuitOpen,
   isHardcoverConfigured,
   isHardcoverId,
+  searchHardcover,
 } from "@/lib/hardcover";
 import {
   enrichBookDetailWithIsbndb,
@@ -61,14 +65,10 @@ import {
   searchCacheKey,
   setCachedSearchPage,
 } from "@/lib/search-cache";
-import {
-  fetchSearchProviderFlood,
-  SEARCH_FLOOD_SOURCES,
-} from "@/lib/search-flood";
 import { getVerifiedUser } from "@/lib/supabase/server";
 import {
-  bookMatchesSearchQuery,
-  rankSearchResults,
+  dropBrowseJunk,
+  rankBrowseSearchResults,
 } from "@/lib/book-utils";
 import { unstable_noStore as noStore } from "next/cache";
 import type {
@@ -81,20 +81,63 @@ import { cache } from "react";
 
 export { finalizeSearchBooks } from "@/lib/search-finalize";
 
+const EMPTY_PAGE = { books: [] as BookSummary[], hasMore: false };
+const EMPTY_GOOGLE_PAGE: GoogleBooksPageResult = {
+  books: [],
+  hasMore: false,
+  rawCount: 0,
+  error: null,
+};
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
-
-/**
- * Hard wall-clock budget for the entire searchBooks handler.
- * Must stay under Netlify/serverless function timeouts (~10s).
- */
-const SEARCH_OVERALL_BUDGET_MS = 7000;
-/** Skip slow enrichment/english attach when less than this remains. */
-const SEARCH_ENRICH_MIN_REMAINING_MS = 1200;
+/** Hard outer cap so one slow provider cannot stall the whole search. */
+const PROVIDER_SEARCH_TIMEOUT_MS = 3000;
 /** Detail-page enrichment total budget after core book is resolved. */
 const DETAIL_ENRICH_BUDGET_MS = 1500;
 
 /** Providers queried on every browse search. */
-const SEARCH_SOURCES: BookSource[] = SEARCH_FLOOD_SOURCES;
+const SEARCH_SOURCES: BookSource[] = [
+  "google",
+  "openlibrary",
+  "gutendex",
+  "bigbook",
+];
+
+function readSettledPage(
+  label: string,
+  result: PromiseSettledResult<{ books: BookSummary[]; hasMore: boolean }>
+): { books: BookSummary[]; hasMore: boolean } {
+  if (result.status === "fulfilled") {
+    return result.value;
+  }
+
+  console.error(`[searchBooks] ${label} rejected:`, result.reason);
+  return EMPTY_PAGE;
+}
+
+function readSettledGoogle(
+  result: PromiseSettledResult<GoogleBooksPageResult>
+): GoogleBooksPageResult {
+  if (result.status === "fulfilled") {
+    return result.value;
+  }
+
+  const reason = result.reason;
+  const message =
+    reason instanceof Error ? reason.message : String(reason ?? "unknown error");
+  const status =
+    reason instanceof Error
+      ? (reason as Error & { status?: number }).status
+      : undefined;
+
+  console.error(`[searchBooks] Google Books rejected:`, {
+    message,
+    status,
+  });
+  return {
+    ...EMPTY_GOOGLE_PAGE,
+    error: { message, status: status ?? null },
+  };
+}
 
 async function resolveSearchUserId(
   accessToken?: string | null
@@ -137,12 +180,9 @@ async function overlayUserRatedIdentities(
 }
 
 /**
- * Multi-stage browse search:
- * 1) Query normalization + safe variants (title never lost when author added)
- * 2) Parallel provider flood (Google, ISBNdb, Hardcover, Open Library, …)
- * 3–4) Normalize / merge via finalize (language-aware; commercial preferred)
- * Then enrich + English editions with budgets.
- * Never reuse a previous request's page — q must drive every call.
+ * Last good browse search (51fda74): Google + Open Library + Gutendex + Big Book
+ * in one Promise.allSettled, one page each. Hardcover is at most one call and
+ * is skipped when the token is missing or the circuit is open.
  */
 export async function searchBooks(
   query: string,
@@ -162,122 +202,124 @@ export async function searchBooks(
     page: pageNumber,
     mode: genreMode ? "genre" : "text",
   });
-  const canUsePublicCache = !options?.accessToken?.trim();
-  if (canUsePublicCache) {
-    const cachedPage = getCachedSearchPage(cacheKey);
-    if (cachedPage) {
-      return {
-        books: cachedPage.books,
-        sources: cachedPage.sources,
-        sourceCounts: cachedPage.sourceCounts,
-        source: cachedPage.source,
-        page: cachedPage.page,
-        hasMore: cachedPage.hasMore,
-        userRatedSlugs: [],
-        descriptionSources: cachedPage.descriptionSources,
-        googleError: cachedPage.googleError,
-        googleRawCount: cachedPage.googleRawCount,
-      };
-    }
-  }
-
-  const userIdPromise = resolveSearchUserId(options?.accessToken);
-
-  const bigBookConfigured = isBigBookConfigured();
-  const deadline = createDeadline(SEARCH_OVERALL_BUDGET_MS);
-
-  let flood;
-  try {
-    flood = await withTimeout(
-      fetchSearchProviderFlood({
-        query: searchQuery,
-        page: pageNumber,
-        genreMode,
-        searchOptions,
-        includeGutendex: genreMode || pageNumber === 1,
-        includeBigBook: bigBookConfigured,
-        debug: SEARCH_DEBUG,
-        deadline,
-      }),
-      deadline.cap(4500, 500),
-      "search flood"
+  const cachedPage = getCachedSearchPage(cacheKey);
+  if (cachedPage) {
+    const overlay = await overlayUserRatedIdentities(
+      cachedPage.books,
+      options?.accessToken
     );
-  } catch (error) {
-    console.error("[searchBooks] flood timed out — returning partial/empty:", {
-      query: searchQuery,
-      message: error instanceof Error ? error.message : String(error),
-      elapsedMs: Date.now() - deadline.startedAt,
-    });
-    flood = {
-      books: [] as BookSummary[],
-      sourceCounts: {} as Partial<Record<BookSource, number>>,
-      hasMore: false,
-      googleError: null,
-      googleRawCount: 0,
-      normalized: {
-        kind: "raw" as const,
-        raw: searchQuery,
-        title: searchQuery,
-        author: null,
-        isbn: null,
-        variants: [searchQuery],
-      },
-      primaryQuery: searchQuery,
-      timedOutProviders: ["search-flood"],
+    return {
+      ...cachedPage,
+      books: overlay.books,
+      userRatedSlugs: overlay.userRatedSlugs,
     };
   }
 
-  const rankingQuery =
-    flood.normalized.kind === "title_author" && flood.normalized.title
-      ? flood.normalized.title
-      : searchQuery;
+  const includeHardcover =
+    isHardcoverConfigured() && !isHardcoverCircuitOpen();
 
-  if (flood.googleError) {
+  const [
+    googleSettled,
+    openLibrarySettled,
+    gutendexSettled,
+    bigBookSettled,
+    hardcoverSettled,
+  ] = await Promise.allSettled([
+    withTimeout(
+      searchGoogleBooks(searchQuery, pageNumber, searchOptions),
+      PROVIDER_SEARCH_TIMEOUT_MS,
+      "google search"
+    ).catch(() => EMPTY_GOOGLE_PAGE),
+    withTimeout(
+      searchOpenLibrary(searchQuery, pageNumber, searchOptions),
+      6500,
+      "openlibrary search"
+    ).catch(() => EMPTY_PAGE),
+    genreMode || pageNumber === 1
+      ? withTimeout(
+          searchGutendex(searchQuery, pageNumber, searchOptions),
+          PROVIDER_SEARCH_TIMEOUT_MS,
+          "gutendex search"
+        ).catch(() => EMPTY_PAGE)
+      : Promise.resolve(EMPTY_PAGE),
+    withTimeout(
+      searchBigBook(searchQuery, pageNumber, searchOptions),
+      PROVIDER_SEARCH_TIMEOUT_MS,
+      "bigbook search"
+    ).catch(() => EMPTY_PAGE),
+    includeHardcover
+      ? withTimeout(
+          searchHardcover(searchQuery, pageNumber),
+          PROVIDER_SEARCH_TIMEOUT_MS,
+          "hardcover search"
+        ).catch(() => EMPTY_PAGE)
+      : Promise.resolve(EMPTY_PAGE),
+  ]);
+
+  const googleResult = readSettledGoogle(googleSettled);
+  const openLibraryResult = readSettledPage(
+    "Open Library",
+    openLibrarySettled
+  );
+  const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
+  const bigBookResult = readSettledPage("Big Book", bigBookSettled);
+  const hardcoverResult = includeHardcover
+    ? readSettledPage("Hardcover", hardcoverSettled)
+    : EMPTY_PAGE;
+
+  const googleBooks = googleResult.books;
+  const openLibraryBooks = openLibraryResult.books;
+  const gutendexBooks = gutendexResult.books;
+  const bigBookBooks = bigBookResult.books;
+  const hardcoverBooks = hardcoverResult.books;
+
+  if (googleResult.error) {
     console.error("[searchBooks] Google Books provider error:", {
       query: searchQuery,
       page: pageNumber,
       mode: options?.mode ?? "text",
-      googleError: flood.googleError,
-      googleRawCount: flood.googleRawCount,
+      googleError: googleResult.error,
+      googleRawCount: googleResult.rawCount,
     });
   }
+
+  const bigBookConfigured = isBigBookConfigured();
 
   if (SEARCH_DEBUG) {
     console.info("[searchBooks] raw provider counts", {
       query: searchQuery,
-      primary: flood.primaryQuery,
-      kind: flood.normalized.kind,
       page: pageNumber,
       mode: genreMode ? "genre" : "text",
-      sourceCounts: flood.sourceCounts,
-      totalRaw: flood.books.length,
-      googleRawCount: flood.googleRawCount,
-      googleError: flood.googleError,
+      google: googleBooks.length,
+      googleRawCount: googleResult.rawCount,
+      googleError: googleResult.error,
+      openlibrary: openLibraryBooks.length,
+      gutendex: gutendexBooks.length,
+      bigbook: bigBookBooks.length,
+      hardcover: includeHardcover ? hardcoverBooks.length : "skipped",
+      totalRaw:
+        googleBooks.length +
+        openLibraryBooks.length +
+        gutendexBooks.length +
+        bigBookBooks.length +
+        hardcoverBooks.length,
       bigBookConfigured,
       googleBooksApiKeyConfigured: Boolean(
         process.env.GOOGLE_BOOKS_API_KEY?.trim()
       ),
-      isbndbInSearchFlood: true,
-      hardcoverInSearchFlood: true,
     });
   }
 
-  // Rated books that match this query — always surface them on page 1,
-  // prefer DB identity so ratings stay attached after dedupe.
   let ratedBooks: BookSummary[] = [];
   let ratedSlugs: string[] = [];
-  if (pageNumber === 1 && deadline.remaining() >= 400) {
+  if (pageNumber === 1) {
     try {
-      const userId = await userIdPromise;
+      const userId = await resolveSearchUserId(options?.accessToken);
       const { findRatedBooksMatchingQuery } = await import("@/lib/ratings");
-      const rated = await withTimeout(
-        findRatedBooksMatchingQuery(searchQuery, {
-          mode: genreMode ? "genre" : "text",
-          userId,
-        }),
-        deadline.cap(1200, 300),
-        "rated-books-lookup"
-      );
+      const rated = await findRatedBooksMatchingQuery(searchQuery, {
+        mode: genreMode ? "genre" : "text",
+        userId,
+      });
       ratedBooks = rated.books;
       ratedSlugs = rated.ratedSlugs;
     } catch (error) {
@@ -285,258 +327,50 @@ export async function searchBooks(
     }
   }
 
-  if (SEARCH_DEBUG) {
-    console.info("[searchBooks] rated books matching query", {
-      query: searchQuery,
-      page: pageNumber,
-      ratedMatches: ratedBooks.length,
-      ratedSlugs: ratedSlugs.slice(0, 20),
-    });
-  }
+  const rawCombined = [
+    ...openLibraryBooks,
+    ...googleBooks,
+    ...gutendexBooks,
+    ...bigBookBooks,
+    ...hardcoverBooks,
+    ...ratedBooks,
+  ];
 
-  const rawCombined = [...flood.books, ...ratedBooks];
-
-  // First pass merges and dedupes but keeps everything: a book must not be
-  // dropped for a missing description before enrichment has had a chance.
   let books = finalizeSearchBooks(rawCombined, {
     ratedIds: new Set(ratedSlugs),
     protectedBooks: ratedBooks,
     debug: SEARCH_DEBUG,
-    query: genreMode ? undefined : rankingQuery,
-    deferQualityFilter: true,
+    query: genreMode ? undefined : searchQuery,
   });
-
-  // Known-title / exact-phrase fallback when the flood missed an exact title
-  // (e.g. provider outage, or a prior author-misclassification miss).
-  if (
-    !genreMode &&
-    pageNumber === 1 &&
-    deadline.remaining() >= 800 &&
-    !deadline.expired()
-  ) {
-    try {
-      const { fetchTitleSearchFallbacks } = await import(
-        "@/lib/search-title-fallback"
-      );
-      const fallbackQuery = flood.normalized.title ?? searchQuery;
-      const fallbackHits = await withTimeout(
-        fetchTitleSearchFallbacks(fallbackQuery, books),
-        deadline.cap(1500, 400),
-        "title-fallback"
-      );
-      if (fallbackHits.length > 0) {
-        books = finalizeSearchBooks([...books, ...fallbackHits], {
-          ratedIds: new Set(ratedSlugs),
-          protectedBooks: ratedBooks,
-          debug: SEARCH_DEBUG,
-          query: rankingQuery,
-          deferQualityFilter: true,
-        });
-        if (SEARCH_DEBUG) {
-          console.info("[searchBooks] title fallback merged", {
-            query: fallbackQuery,
-            fallbackHits: fallbackHits.length,
-            afterMerge: books.length,
-          });
-        }
-      }
-    } catch (error) {
-      console.error("[searchBooks] title fallback failed:", error);
-    }
-  }
-
-  // Relevance ranking for text search (genre mode keeps year-forward order
-  // from finalize, then preferMatchingGenreTags).
-  if (!genreMode) {
-    books = rankSearchResults(books, rankingQuery);
-  }
-
-  // Thin flood backup — only when commercial providers returned almost nothing
-  // (ISBNdb is already in the primary flood; this is a last resort).
-  if (
-    !genreMode &&
-    pageNumber === 1 &&
-    books.length < 2 &&
-    deadline.remaining() >= 800 &&
-    !deadline.expired()
-  ) {
-    try {
-      const { fetchBackupSearchResults } = await import(
-        "@/lib/search-enrichment"
-      );
-      const backup = await withTimeout(
-        fetchBackupSearchResults(rankingQuery, books),
-        deadline.cap(1500, 400),
-        "backup-search"
-      );
-      if (backup.length > 0) {
-        books = rankSearchResults(
-          finalizeSearchBooks([...books, ...backup], {
-            ratedIds: new Set(ratedSlugs),
-            protectedBooks: ratedBooks,
-            debug: SEARCH_DEBUG,
-            query: rankingQuery,
-            deferQualityFilter: true,
-          }),
-          rankingQuery
-        );
-      }
-    } catch (error) {
-      console.error("[searchBooks] backup provider search failed:", error);
-    }
-  }
-
-  // Fill missing synopses and attach English editions in parallel — ONLY when
-  // budget remains. Never block the response on slow enrichment.
-  const descriptionSources: Record<string, string> = {};
-  const preEnrichBooks = books;
-  const canEnrich =
-    !deadline.expired() &&
-    deadline.remaining() >= SEARCH_ENRICH_MIN_REMAINING_MS;
-
-  if (canEnrich) {
-    const enrichBudget = deadline.cap(1800, 300);
-    const [enrichSettled, englishSettled] = await Promise.allSettled([
-      (async () => {
-        const { enrichSearchDescriptions } = await import(
-          "@/lib/search-enrichment"
-        );
-        return enrichSearchDescriptions(preEnrichBooks, {
-          debug: SEARCH_DEBUG,
-          budgetMs: enrichBudget,
-          limit: 5,
-        });
-      })(),
-      genreMode
-        ? Promise.resolve(preEnrichBooks)
-        : (async () => {
-            const { attachEnglishEditions } = await import(
-              "@/lib/search-english-editions"
-            );
-            return attachEnglishEditions(preEnrichBooks, {
-              debug: SEARCH_DEBUG,
-              budgetMs: enrichBudget,
-            });
-          })(),
-    ]);
-
-    if (enrichSettled.status === "fulfilled") {
-      books = enrichSettled.value.books;
-      enrichSettled.value.filled.forEach((source, id) => {
-        descriptionSources[id] = source;
-      });
-    } else {
-      console.error(
-        "[searchBooks] description enrichment failed:",
-        enrichSettled.reason
-      );
-    }
-
-    if (!genreMode && englishSettled.status === "fulfilled") {
-      const englishResult = englishSettled.value;
-      const baseIds = new Set(books.map((book) => book.id));
-      const originalLabels = new Set(
-        englishResult
-          .filter((book) => book.editionLabel === "original")
-          .map((book) => book.id)
-      );
-      const englishExtras = englishResult.filter(
-        (book) =>
-          book.editionLabel === "english" && !baseIds.has(book.id)
-      );
-      books = [
-        ...books.map((book) =>
-          originalLabels.has(book.id)
-            ? { ...book, editionLabel: "original" as const }
-            : book
-        ),
-        ...englishExtras,
-      ];
-    } else if (!genreMode && englishSettled.status === "rejected") {
-      console.error(
-        "[searchBooks] English edition attach failed:",
-        englishSettled.reason
-      );
-    }
-  } else if (SEARCH_DEBUG || deadline.expired()) {
-    console.warn("[searchBooks] skipped enrichment — budget exhausted", {
-      query: searchQuery,
-      remainingMs: deadline.remaining(),
-      elapsedMs: Date.now() - deadline.startedAt,
-    });
-  }
-
-  // Now that every candidate has had its chance, apply the quality filter.
-  books = finalizeSearchBooks(books, {
-    ratedIds: new Set(ratedSlugs),
-    protectedBooks: ratedBooks,
-    debug: SEARCH_DEBUG,
-    query: genreMode ? undefined : rankingQuery,
-  });
-
-  // Re-apply Original / English edition labels after merges.
-  if (!genreMode) {
-    try {
-      const { labelOriginalAndEnglishEditions } = await import(
-        "@/lib/search-english-editions"
-      );
-      const {
-        applyKnownWorkEditionLabels,
-        ensureKnownTranslatedEditionPair,
-      } = await import("@/lib/known-editions");
-      books = labelOriginalAndEnglishEditions(books);
-      books = applyKnownWorkEditionLabels(books, searchQuery);
-      // Inject English translation BEFORE ranking so it can score.
-      books = ensureKnownTranslatedEditionPair(books, searchQuery);
-    } catch {
-      // Labels are cosmetic — never fail the search.
-    }
-  }
-
-  if (!genreMode) {
-    books = rankSearchResults(books, rankingQuery);
-    // Final pin: ranking must not leave a translated work without its English
-    // edition card (Cadáver exquisito → Tender Is the Flesh).
-    try {
-      const { ensureKnownTranslatedEditionPair } = await import(
-        "@/lib/known-editions"
-      );
-      books = ensureKnownTranslatedEditionPair(books, searchQuery);
-    } catch {
-      // never fail search
-    }
-  }
-
-  if (SEARCH_DEBUG) {
-    console.info("[searchBooks] after finalize", {
-      query: searchQuery,
-      page: pageNumber,
-      rawCombined: rawCombined.length,
-      afterFinalize: books.length,
-      removedByDedupeApprox: Math.max(0, rawCombined.length - books.length),
-      ratedProtected: ratedBooks.length,
-    });
-  }
-
-  // Best-effort cover fallback for the survivors that still lack one
-  // (sync OL ISBN/OLID — never stalls Browse on an external cover API).
   books = await enrichBooksWithCovers(books);
+  books = dropBrowseJunk(books);
 
   if (genreMode) {
     books = preferMatchingGenreTags(books, searchQuery);
   } else {
-    // Drop leftover/unrelated titles (e.g. a prior Dune page) even if ranking
-    // would otherwise keep a non-empty retrieval set.
-    books = books.filter((book) => bookMatchesSearchQuery(book, searchQuery));
+    books = rankBrowseSearchResults(books, searchQuery);
   }
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
-    ...flood.sourceCounts,
+    google: googleBooks.length,
+    openlibrary: openLibraryBooks.length,
+    gutendex: gutendexBooks.length,
+    ...(bigBookConfigured || bigBookBooks.length > 0
+      ? { bigbook: bigBookBooks.length }
+      : {}),
+    ...(includeHardcover ? { hardcover: hardcoverBooks.length } : {}),
   };
 
-  const hasMore = flood.hasMore;
+  const hasMore =
+    googleResult.hasMore ||
+    openLibraryResult.hasMore ||
+    gutendexResult.hasMore ||
+    bigBookResult.hasMore ||
+    hardcoverResult.hasMore;
 
-  if (canUsePublicCache) {
+  // Do not cache a commercial miss — a Google 429 or OL timeout must not
+  // pin Gutendex-only results for five minutes.
+  if (googleBooks.length > 0 || openLibraryBooks.length > 0) {
     setCachedSearchPage(cacheKey, {
       books,
       sources: SEARCH_SOURCES,
@@ -544,9 +378,8 @@ export async function searchBooks(
       source: "multi",
       page: pageNumber,
       hasMore,
-      descriptionSources,
-      googleError: flood.googleError,
-      googleRawCount: flood.googleRawCount,
+      googleError: googleResult.error,
+      googleRawCount: googleResult.rawCount,
     });
   }
 
@@ -563,10 +396,8 @@ export async function searchBooks(
     page: pageNumber,
     hasMore,
     userRatedSlugs: overlay.userRatedSlugs,
-    descriptionSources,
-    // Temporary debug fields — remove once Google search stability is confirmed.
-    googleError: flood.googleError,
-    googleRawCount: flood.googleRawCount,
+    googleError: googleResult.error,
+    googleRawCount: googleResult.rawCount,
   };
 }
 

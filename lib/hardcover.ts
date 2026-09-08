@@ -4,10 +4,111 @@ import type { BookSummary } from "@/types/book";
 /**
  * Optional Hardcover.app browse search + enrichment (GraphQL, token-gated).
  * Soft-fails when HARDCOVER_API_TOKEN is unset — other providers still return.
+ * Env name matches Netlify: HARDCOVER_API_TOKEN (not HARDCOVER_API_KEY).
  */
+export const HARDCOVER_API_TOKEN_ENV = "HARDCOVER_API_TOKEN";
 const HARDCOVER_ENDPOINT = "https://api.hardcover.app/v1/graphql";
-const FETCH_TIMEOUT_MS = 3000;
+/** Stay under the search-flood per-provider cap (2500ms) so we log here first. */
+const FETCH_TIMEOUT_MS = 2200;
 const HARDCOVER_ID_PREFIX = "hardcover-";
+
+export type HardcoverSearchError = {
+  reason:
+    | "missing_token"
+    | "empty_query"
+    | "http_error"
+    | "graphql_error"
+    | "timeout"
+    | "empty_results"
+    | "parse_error"
+    | "circuit_open";
+  status?: number;
+  message?: string;
+};
+
+const CIRCUIT_MS = 15 * 60 * 1000;
+const SEARCH_CACHE_MS = 10 * 60 * 1000;
+const SEARCH_CACHE_MAX = 40;
+
+let circuitOpenUntil = 0;
+let circuitReason: string | null = null;
+
+type CachedSearch = {
+  expiresAt: number;
+  outcome: HardcoverSearchOutcome;
+};
+
+const searchCache = new Map<string, CachedSearch>();
+
+function searchCacheKey(query: string, page: number): string {
+  return `${query.trim().toLowerCase()}|${Math.max(1, page)}`;
+}
+
+function readSearchCache(key: string): HardcoverSearchOutcome | null {
+  const entry = searchCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    searchCache.delete(key);
+    return null;
+  }
+  return {
+    books: entry.outcome.books.map((book) => ({ ...book, isbns: [...book.isbns] })),
+    error: entry.outcome.error,
+  };
+}
+
+function writeSearchCache(key: string, outcome: HardcoverSearchOutcome) {
+  if (searchCache.size >= SEARCH_CACHE_MAX) {
+    const first = searchCache.keys().next().value;
+    if (first) searchCache.delete(first);
+  }
+  searchCache.set(key, {
+    expiresAt: Date.now() + SEARCH_CACHE_MS,
+    outcome: {
+      books: outcome.books.map((book) => ({ ...book, isbns: [...book.isbns] })),
+      error: outcome.error,
+    },
+  });
+}
+
+function isCircuitOpen(): boolean {
+  return Date.now() < circuitOpenUntil;
+}
+
+export function isHardcoverCircuitOpen(): boolean {
+  return isCircuitOpen();
+}
+
+function openCircuit(reason: string) {
+  const alreadyOpen = isCircuitOpen() && circuitReason === reason;
+  circuitOpenUntil = Date.now() + CIRCUIT_MS;
+  circuitReason = reason;
+  if (!alreadyOpen) {
+    console.error("[hardcover] circuit open for 15m — skipping further calls:", {
+      env: HARDCOVER_API_TOKEN_ENV,
+      reason,
+    });
+  }
+}
+
+function shouldTripCircuit(error: HardcoverSearchError): boolean {
+  if (error.reason === "missing_token") return true;
+  if (error.status === 401 || error.status === 429) return true;
+  return /invalid_token/i.test(error.message ?? "");
+}
+
+function logHardcoverFailure(
+  error: HardcoverSearchError,
+  extra?: Record<string, unknown>
+) {
+  console.error("[hardcover] search failed:", {
+    env: HARDCOVER_API_TOKEN_ENV,
+    reason: error.reason,
+    status: error.status ?? null,
+    message: error.message ?? null,
+    ...extra,
+  });
+}
 
 const SEARCH_QUERY = `query LorePathSearch($query: String!, $page: Int!) {
   search(query: $query, query_type: "Book", per_page: 8, page: $page) {
@@ -28,13 +129,31 @@ export type HardcoverBook = {
 };
 
 export function isHardcoverConfigured(): boolean {
-  return Boolean(process.env.HARDCOVER_API_TOKEN?.trim());
+  return Boolean(process.env[HARDCOVER_API_TOKEN_ENV]?.trim());
 }
 
 function hardcoverBearerToken(): string | null {
-  const raw = process.env.HARDCOVER_API_TOKEN?.trim();
+  const raw = process.env[HARDCOVER_API_TOKEN_ENV]?.trim();
   if (!raw) return null;
   return raw.replace(/^bearer\s+/i, "").trim() || null;
+}
+
+function graphqlErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as {
+    error?: unknown;
+    message?: unknown;
+    errors?: { message?: unknown }[];
+  };
+  const fromList = record.errors?.[0]?.message;
+  if (typeof fromList === "string" && fromList.trim()) return fromList.trim();
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error.trim();
+  }
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message.trim();
+  }
+  return undefined;
 }
 
 function textList(value: unknown): string[] {
@@ -130,20 +249,51 @@ function toHardcoverBook(hit: Record<string, unknown>): HardcoverBook | null {
   };
 }
 
+type HardcoverSearchOutcome = {
+  books: HardcoverBook[];
+  error: HardcoverSearchError | null;
+};
+
 /**
  * Live Hardcover search for this query only. Never reuses another q's payload.
  */
 async function runHardcoverSearch(
   query: string,
   page = 1
-): Promise<HardcoverBook[]> {
-  const token = hardcoverBearerToken();
+): Promise<HardcoverSearchOutcome> {
   const trimmed = query.trim();
-  if (!token || !trimmed) return [];
+  const pageNumber = Math.max(1, page);
+  const cacheKey = searchCacheKey(trimmed, pageNumber);
+
+  if (!trimmed) {
+    const error: HardcoverSearchError = { reason: "empty_query" };
+    logHardcoverFailure(error, { page: pageNumber });
+    return { books: [], error };
+  }
+
+  const token = hardcoverBearerToken();
+  if (!token) {
+    const error: HardcoverSearchError = { reason: "missing_token" };
+    openCircuit("missing_token");
+    logHardcoverFailure(error, { query: trimmed, page: pageNumber });
+    return { books: [], error };
+  }
+
+  if (isCircuitOpen()) {
+    return {
+      books: [],
+      error: {
+        reason: "circuit_open",
+        message: circuitReason ?? "circuit_open",
+      },
+    };
+  }
+
+  const cached = readSearchCache(cacheKey);
+  if (cached) return cached;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  const pageNumber = Math.max(1, page);
 
   try {
     const response = await fetch(HARDCOVER_ENDPOINT, {
@@ -163,39 +313,85 @@ async function runHardcoverSearch(
       }),
     });
 
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    const graphqlMessage = graphqlErrorMessage(payload);
+
     if (!response.ok) {
-      console.error("[hardcover] search failed:", {
+      const error: HardcoverSearchError = {
+        reason: "http_error",
         status: response.status,
-        query: trimmed,
-        page: pageNumber,
-      });
-      return [];
+        message: graphqlMessage ?? response.statusText ?? `HTTP ${response.status}`,
+      };
+      if (shouldTripCircuit(error)) {
+        openCircuit(error.message ?? `http_${response.status}`);
+      }
+      logHardcoverFailure(error, { query: trimmed, page: pageNumber });
+      return { books: [], error };
     }
 
-    const payload = (await response.json()) as {
-      data?: { search?: { results?: unknown } };
-      errors?: { message?: string }[];
-    };
-
-    if (payload.errors?.length) {
-      console.error("[hardcover] search returned errors:", {
-        query: trimmed,
-        page: pageNumber,
-        message: payload.errors[0]?.message,
-      });
-      return [];
+    if (graphqlMessage) {
+      const error: HardcoverSearchError = {
+        reason: "graphql_error",
+        status: response.status,
+        message: graphqlMessage,
+      };
+      if (shouldTripCircuit(error)) {
+        openCircuit(error.message ?? "graphql_error");
+      }
+      logHardcoverFailure(error, { query: trimmed, page: pageNumber });
+      return { books: [], error };
     }
 
-    return readHits(payload.data?.search?.results)
+    const results = (payload as { data?: { search?: { results?: unknown } } })
+      ?.data?.search?.results;
+    if (results == null) {
+      const error: HardcoverSearchError = {
+        reason: "parse_error",
+        status: response.status,
+        message: "GraphQL data.search.results missing",
+      };
+      logHardcoverFailure(error, { query: trimmed, page: pageNumber });
+      return { books: [], error };
+    }
+
+    const hits = readHits(results)
       .map((hit) => toHardcoverBook(hit))
       .filter((book): book is HardcoverBook => book !== null);
+
+    if (hits.length === 0) {
+      const rawHits = (results as { hits?: unknown })?.hits;
+      const error: HardcoverSearchError = {
+        reason: "empty_results",
+        status: response.status,
+        message: Array.isArray(rawHits)
+          ? `Typesense returned ${rawHits.length} hits; none mapped to books`
+          : "Typesense results had no hits array",
+      };
+      logHardcoverFailure(error, { query: trimmed, page: pageNumber });
+      writeSearchCache(cacheKey, { books: [], error });
+      return { books: [], error };
+    }
+
+    const success = { books: hits, error: null };
+    writeSearchCache(cacheKey, success);
+    return success;
   } catch (error) {
-    console.error("[hardcover] search error:", {
-      query: trimmed,
-      page: pageNumber,
-      message: error instanceof Error ? error.message : String(error),
-    });
-    return [];
+    const message = error instanceof Error ? error.message : String(error);
+    const timedOut =
+      (error instanceof Error && error.name === "AbortError") ||
+      /abort|timeout/i.test(message);
+    const mapped: HardcoverSearchError = {
+      reason: timedOut ? "timeout" : "http_error",
+      message,
+    };
+    logHardcoverFailure(mapped, { query: trimmed, page: pageNumber });
+    return { books: [], error: mapped };
   } finally {
     clearTimeout(timeout);
   }
@@ -214,12 +410,10 @@ export async function fetchHardcoverBook(
   title: string,
   authors: string[] = []
 ): Promise<HardcoverBook | null> {
-  if (!isHardcoverConfigured()) return null;
-
   const author = authors.find(
     (name) => name && name.toLowerCase() !== "unknown author"
   );
-  const results = await runHardcoverSearch(
+  const { books: results } = await runHardcoverSearch(
     author ? `${title} ${author}` : title,
     1
   );
@@ -266,18 +460,22 @@ function toBookSummary(book: HardcoverBook): BookSummary {
 export type HardcoverPageResult = {
   books: BookSummary[];
   hasMore: boolean;
+  error: HardcoverSearchError | null;
 };
 
 /**
  * Browse flood search via Hardcover Typesense.
- * Missing HARDCOVER_API_TOKEN → empty page so Google/OL/Gutendex still return.
+ * Always called from the search flood. Missing HARDCOVER_API_TOKEN → empty
+ * page + server log so Google/OL/Gutendex still return.
  */
 export async function searchHardcover(
   query: string,
   page = 1
 ): Promise<HardcoverPageResult> {
-  if (!isHardcoverConfigured() || !query.trim()) {
-    return { books: [], hasMore: false };
+  if (!query.trim()) {
+    const error: HardcoverSearchError = { reason: "empty_query" };
+    logHardcoverFailure(error);
+    return { books: [], hasMore: false, error };
   }
 
   // Skip Google-structured operators — Hardcover wants natural language.
@@ -286,15 +484,19 @@ export async function searchHardcover(
     .replace(/\bisbn:\S+/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!cleaned) return { books: [], hasMore: false };
+  if (!cleaned) {
+    const error: HardcoverSearchError = { reason: "empty_query" };
+    logHardcoverFailure(error, { query: query.trim() });
+    return { books: [], hasMore: false, error };
+  }
 
-  const hits = await runHardcoverSearch(cleaned, page);
+  const { books: hits, error } = await runHardcoverSearch(cleaned, page);
   const books = hits
     .map((hit) => toBookSummary(hit))
     .filter((book) => Boolean(book.title?.trim()))
     .map((book) => ({ ...book, genres: [...book.genres] }));
 
-  return { books, hasMore: false };
+  return { books, hasMore: false, error };
 }
 
 export function isHardcoverId(id: string): boolean {

@@ -40,6 +40,21 @@ export function isEnglishLanguage(
 }
 
 /**
+ * When a provider lists many languages (Open Library works), prefer English
+ * so a translation code listed first cannot mark the English work as ukr/es.
+ */
+export function pickPreferredLanguageCode(
+  languages: ReadonlyArray<string | null | undefined> | null | undefined
+): string | null {
+  const codes = (languages ?? [])
+    .map((value) => normalizeLanguageCode(value))
+    .filter((value): value is string => Boolean(value));
+  const english = codes.find((code) => isEnglishLanguage(code));
+  if (english) return english;
+  return codes[0] ?? null;
+}
+
+/**
  * Titles with non-Latin scripts are almost never English editions —
  * useful when providers omit language on search cards.
  */

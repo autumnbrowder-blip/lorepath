@@ -1,12 +1,16 @@
 import { withFinalizedTags } from "@/lib/book-tags";
 import { mergePreferredBookFields } from "@/lib/book-merge";
-import { shouldKeepAsSeparateLanguageEditions } from "@/lib/book-language";
+import {
+  getLanguageEditionBucket,
+  shouldKeepAsSeparateLanguageEditions,
+} from "@/lib/book-language";
 import {
   authorKeysCompatible,
   getBookAuthorDedupeKey,
   getBookDedupeKey,
   getBookIsbnKey,
   getBookTitleDedupeKey,
+  getBookWorkDedupeKey,
   isExactTitleMatch,
   isMerchandiseOrCompanion,
   isPlaceholderDescription,
@@ -16,6 +20,12 @@ import {
   sortByPublishedYearDesc,
   type PickPreferredOptions,
 } from "@/lib/book-utils";
+import {
+  collectWorkEditionRefs,
+  firstPublishedYear,
+  pickFirstEditionId,
+  pickLatestEdition,
+} from "@/lib/book-work";
 import type { BookSummary } from "@/types/book";
 
 const MISSING_DESCRIPTION_FALLBACK = PLACEHOLDER_DESCRIPTION;
@@ -37,15 +47,9 @@ function hasDescriptionAndCover(book: BookSummary): boolean {
   return hasDescription(book) && hasCover(book);
 }
 
-/** Eligible for merge — keep real title hits even when metadata is thin. */
+/** Eligible for merge — need at least one of description or cover. */
 function hasUsableSearchFields(book: BookSummary): boolean {
-  return (
-    hasAnyDescription(book) ||
-    hasCover(book) ||
-    Boolean(book.publishedYear) ||
-    Boolean(book.isbn) ||
-    book.authors.some((author) => author.toLowerCase() !== "unknown author")
-  );
+  return hasAnyDescription(book) || hasCover(book);
 }
 
 function withDescriptionFallback(book: BookSummary): BookSummary {
@@ -101,14 +105,28 @@ function mergeExactTitleSurvivors(
 }
 
 /**
- * Winner keeps its identity; missing/better fields fill in from the loser
- * (longest description, any cover, newest year, page count, genres, ISBN).
+ * Visible card is the newest edition with a real cover. Other fields fill in
+ * from both records; firstPublishYear stays the earliest year in the pair.
  */
 function mergePreferredFields(
   winner: BookSummary,
   other: BookSummary
 ): BookSummary {
-  return mergePreferredBookFields(winner, winner, other);
+  const identity = pickLatestEdition(winner, other);
+  const merged = mergePreferredBookFields(identity, winner, other);
+  const first = firstPublishedYear([winner, other]);
+  return {
+    ...merged,
+    id: identity.id,
+    source: identity.source,
+    title: identity.title,
+    authors: identity.authors,
+    coverUrl: identity.coverUrl,
+    publishedYear: identity.publishedYear,
+    firstPublishYear: first ?? merged.firstPublishYear ?? null,
+    firstEditionId: pickFirstEditionId([winner, other]) ?? identity.id,
+    workEditions: collectWorkEditionRefs(winner, other),
+  };
 }
 
 export type FinalizeSearchOptions = PickPreferredOptions & {
@@ -294,6 +312,31 @@ function forceProtectedBooks(
   return { books: next, forcedCount };
 }
 
+/** When an English copy exists for the same title+author, drop non-English rows. */
+function dropNonEnglishWhenEnglishExists(books: BookSummary[]): BookSummary[] {
+  const groups = new Map<string, BookSummary[]>();
+  for (const book of books) {
+    const key = getBookWorkDedupeKey(book);
+    const list = groups.get(key) ?? [];
+    list.push(book);
+    groups.set(key, list);
+  }
+  const next: BookSummary[] = [];
+  for (const group of Array.from(groups.values())) {
+    const hasEnglish = group.some(
+      (book) => getLanguageEditionBucket(book) === "eng"
+    );
+    if (!hasEnglish) {
+      next.push(...group);
+      continue;
+    }
+    next.push(
+      ...group.filter((book) => getLanguageEditionBucket(book) !== "non-eng")
+    );
+  }
+  return next;
+}
+
 /**
  * 1) Keep books with a description and/or cover (exclude empty stubs)
  * 2) Deduplicate by ISBN (strongest) then normalized title + first author
@@ -302,7 +345,7 @@ function forceProtectedBooks(
  *    fields from the losing edition (rated DB ids win when provided)
  * 4) Prefer fully complete records; fall back to cover/description if needed
  * 5) Force protected (rated) books back in if quality filter dropped them
- * 6) Sort by published year (newest), then descriptions, then the rest
+ * 6) Sort by published year (newest); missing years last
  */
 export function finalizeSearchBooks(
   books: BookSummary[],
@@ -351,7 +394,9 @@ export function finalizeSearchBooks(
     pickOptions
   );
 
-  const result = sortByPublishedYearDesc(withProtected);
+  const result = sortByPublishedYearDesc(
+    dropNonEnglishWhenEnglishExists(withProtected)
+  );
   const removedByDedupe = removedByIsbn + removedByTitleAuthor;
 
   if (debug) {

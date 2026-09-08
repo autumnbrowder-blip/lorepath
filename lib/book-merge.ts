@@ -1,4 +1,5 @@
 import { finalizeBookTags } from "@/lib/book-tags";
+import { getLanguageEditionBucket } from "@/lib/book-language";
 import {
   getBookDedupeKey,
   hasRealDescription,
@@ -139,13 +140,17 @@ export function mergePreferredBookFields(
       { source: b.source, coverUrl: b.coverUrl },
     ]);
 
+  const yearSources =
+    getLanguageEditionBucket(identity) === "non-eng"
+      ? [identity, a, b]
+      : [identity, a, b].filter(
+          (book) => getLanguageEditionBucket(book) !== "non-eng"
+        );
   const publishedYear = pickPublishedYear(
-    identity.publishedYear,
-    a.publishedYear,
-    b.publishedYear,
-    identity.latestEditionYear,
-    a.latestEditionYear,
-    b.latestEditionYear
+    ...yearSources.flatMap((book) => [
+      book.publishedYear,
+      book.latestEditionYear,
+    ])
   );
 
   const firstPublishYear = pickEarliestYear(
@@ -210,7 +215,12 @@ export function mergePreferredBookFields(
     isbn,
     downloadCount:
       identity.downloadCount ?? a.downloadCount ?? b.downloadCount ?? null,
-    language: identity.language ?? a.language ?? b.language ?? null,
+    language:
+      identity.language ??
+      (getLanguageEditionBucket(identity) === "non-eng"
+        ? (a.language ?? b.language ?? null)
+        : [a, b].find((book) => getLanguageEditionBucket(book) !== "non-eng")
+            ?.language ?? null),
     editionLabel:
       identity.editionLabel ?? a.editionLabel ?? b.editionLabel ?? null,
   };

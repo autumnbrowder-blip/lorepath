@@ -1,3 +1,4 @@
+import { pickPreferredLanguageCode } from "@/lib/book-language";
 import {
   cleanAuthors,
   cleanDescription,
@@ -147,7 +148,7 @@ export function parseOpenLibrarySearchResponse(
         isbn:
           doc.isbn?.find((value) => value.replace(/\D/g, "").length >= 10) ??
           null,
-        language: doc.language?.[0]?.replace(/^\/languages\//, "") ?? null,
+        language: pickPreferredLanguageCode(doc.language),
       };
     })
     .filter((book): book is BookSummary => book !== null)
@@ -244,7 +245,10 @@ export async function searchOpenLibrary(
 }
 
 /** Author names are decoration — a slow/failed author call must not fail the work. */
-async function fetchAuthorName(authorKey?: string): Promise<string | null> {
+async function fetchAuthorName(
+  authorKey?: string,
+  timeoutMs = 3000
+): Promise<string | null> {
   if (!authorKey) return null;
 
   const authorId = authorKey.split("/").pop();
@@ -253,7 +257,7 @@ async function fetchAuthorName(authorKey?: string): Promise<string | null> {
   try {
     const response = await fetchOpenLibrary(
       `https://openlibrary.org/authors/${authorId}.json`,
-      { revalidate: 86400 }
+      { revalidate: 86400, timeoutMs }
     );
 
     if (!response.ok) return null;
@@ -269,14 +273,114 @@ async function fetchAuthorName(authorKey?: string): Promise<string | null> {
   }
 }
 
+function openLibraryOlid(id: string): string {
+  return id.startsWith(OPEN_LIBRARY_ID_PREFIX)
+    ? id.slice(OPEN_LIBRARY_ID_PREFIX.length)
+    : id;
+}
+
+function isOpenLibraryEditionOlid(olid: string): boolean {
+  return /^OL\d+M$/i.test(olid);
+}
+
+type OpenLibraryEditionRecord = {
+  title?: string;
+  description?: string | { value?: string };
+  publish_date?: string;
+  publishers?: string[];
+  isbn_13?: string[];
+  isbn_10?: string[];
+  covers?: number[];
+  languages?: { key?: string }[];
+  authors?: { key?: string; author?: { key?: string } }[];
+  number_of_pages?: number;
+  pagination?: string;
+};
+
+function editionPageCount(data: OpenLibraryEditionRecord): number | null {
+  if (typeof data.number_of_pages === "number" && data.number_of_pages > 0) {
+    return data.number_of_pages;
+  }
+  const parsed = Number.parseInt(String(data.pagination ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** Route id for the Open Library edition that owns this ISBN, when one exists. */
+export async function getOpenLibraryEditionIdByIsbn(
+  isbn: string
+): Promise<string | null> {
+  const digits = isbn.replace(/\D/g, "");
+  if (digits.length < 10) return null;
+
+  const response = await fetchOpenLibrary(
+    `https://openlibrary.org/isbn/${digits}.json`,
+    { revalidate: 86400, timeoutMs: 2500 }
+  );
+  if (!response.ok) return null;
+
+  const data: { key?: string } = await response.json();
+  const match = String(data.key ?? "").match(/OL\d+M/i);
+  return match ? toOpenLibraryId(match[0].toUpperCase()) : null;
+}
+
+async function getOpenLibraryEditionById(
+  editionId: string,
+  options?: { timeoutMs?: number }
+): Promise<BookDetail | null> {
+  const response = await fetchOpenLibrary(
+    `https://openlibrary.org/books/${editionId}.json`,
+    { revalidate: 3600, timeoutMs: options?.timeoutMs }
+  );
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Open Library API error: ${response.status}`);
+  }
+
+  const data: OpenLibraryEditionRecord = await response.json();
+  const title = cleanTitle(data.title);
+  if (!title.trim()) return null;
+
+  const authorNames = await Promise.all(
+    (data.authors ?? []).slice(0, 3).map((entry) =>
+      fetchAuthorName(entry.key || entry.author?.key, 800)
+    )
+  );
+
+  const year = parsePublishedYear(data.publish_date);
+  const isbn = data.isbn_13?.[0] ?? data.isbn_10?.[0] ?? null;
+  const language = data.languages?.[0]?.key?.replace(/^\/languages\//, "") ?? null;
+
+  return {
+    id: toOpenLibraryId(editionId),
+    title,
+    authors: cleanAuthors(
+      authorNames.filter((name): name is string => Boolean(name))
+    ),
+    description: parseOpenLibraryDescription(data.description),
+    coverUrl: openLibraryCoverUrl(data.covers?.[0]),
+    genres: [],
+    publishedYear: year,
+    firstPublishYear: year,
+    latestEditionYear: year,
+    source: "openlibrary",
+    publisher: data.publishers?.[0]?.trim() || null,
+    pageCount: editionPageCount(data),
+    language,
+    isbn,
+  };
+}
+
 export async function getOpenLibraryBookById(
   id: string,
   options?: { timeoutMs?: number }
 ): Promise<BookDetail | null> {
-  const workId = id.startsWith(OPEN_LIBRARY_ID_PREFIX)
-    ? id.slice(OPEN_LIBRARY_ID_PREFIX.length)
-    : id;
+  const olid = openLibraryOlid(id);
+  if (isOpenLibraryEditionOlid(olid)) {
+    return getOpenLibraryEditionById(olid, options);
+  }
 
+  const workId = olid;
   const response = await fetchOpenLibrary(
     `https://openlibrary.org/works/${workId}.json`,
     { revalidate: 3600, timeoutMs: options?.timeoutMs }
