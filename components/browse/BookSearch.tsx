@@ -486,6 +486,7 @@ export function BookSearch({
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
       credentials: "same-origin",
+      cache: "no-store",
       headers,
     });
     const data = await response.json();
@@ -494,7 +495,7 @@ export function BookSearch({
     }
     const echoed =
       typeof data.query === "string" ? data.query.trim().toLowerCase() : "";
-    if (echoed && echoed !== searchQuery.trim().toLowerCase()) {
+    if (echoed !== searchQuery.trim().toLowerCase()) {
       console.warn("[BookSearch] dropping mismatched search payload", {
         requested: searchQuery,
         echoed: data.query,
@@ -506,7 +507,9 @@ export function BookSearch({
         query: searchQuery,
       } satisfies SearchPagePayload;
     }
-    const books = Array.isArray(data.books) ? data.books : [];
+    const books = Array.isArray(data.books)
+      ? data.books.map((book: BookSummary) => ({ ...book }))
+      : [];
     if (
       books.length === 0 &&
       typeof data.error === "string" &&
@@ -515,7 +518,11 @@ export function BookSearch({
       // Soft empty payload from the API — show a gentle message, not leftover cards.
       throw new Error(data.error);
     }
-    return data as SearchPagePayload;
+    return {
+      ...(data as SearchPagePayload),
+      books,
+      query: searchQuery,
+    } satisfies SearchPagePayload;
   }
 
   async function runSearch(
@@ -551,11 +558,11 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = applyRatedAlignment(data.books ?? []);
-      const matched = incoming.filter((book) =>
+      const incoming = applyRatedAlignment(data.books ?? []).filter((book) =>
         bookMatchesSearchQuery(book, trimmed)
       );
-      setBooks(matched);
+
+      setBooks(incoming);
       setResultsQuery(trimmed);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
@@ -563,7 +570,7 @@ export function BookSearch({
       track("search_performed", {
         ...queryHint(trimmed),
         mode,
-        result_count: matched.length,
+        result_count: incoming.length,
         has_more: Boolean(data.hasMore),
       });
     } catch (err) {
@@ -586,7 +593,7 @@ export function BookSearch({
   }
 
   async function handleLoadMore() {
-    const trimmed = query.trim();
+    const trimmed = resultsQuery.trim();
     if (!trimmed || loadingMore || loading || !hasMore) return;
 
     const nextPage = page + 1;

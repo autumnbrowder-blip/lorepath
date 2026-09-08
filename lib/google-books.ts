@@ -39,6 +39,17 @@ const FETCH_TIMEOUT_MS = 3000;
 const GOOGLE_PAGE_SIZE = 20;
 /** One retry is enough — extra 503 loops keep the serverless function alive. */
 const MAX_503_ATTEMPTS = 2;
+/** Skip Google search after a 429 so Open Library + Gutendex can still fill the page. */
+const GOOGLE_429_COOLDOWN_MS = 60_000;
+let google429Until = 0;
+
+function isGoogleSearchCircuitOpen(): boolean {
+  return Date.now() < google429Until;
+}
+
+function openGoogle429Circuit() {
+  google429Until = Date.now() + GOOGLE_429_COOLDOWN_MS;
+}
 
 function getGoogleBooksApiKey(): string | null {
   const key = process.env.GOOGLE_BOOKS_API_KEY?.trim();
@@ -286,6 +297,18 @@ export async function searchGoogleBooks(
   page = 1,
   options?: SearchBooksOptions & { langRestrict?: string; pageSize?: number }
 ): Promise<GoogleBooksPageResult> {
+  if (isGoogleSearchCircuitOpen()) {
+    return {
+      books: [],
+      hasMore: false,
+      rawCount: 0,
+      error: {
+        message: "Google Books rate limit reached.",
+        status: 429,
+      },
+    };
+  }
+
   if (!getGoogleBooksApiKey()) {
     // Anonymous Books API quota is effectively 0 from many hosts; a key is required.
     console.warn(
@@ -336,6 +359,7 @@ export async function searchGoogleBooks(
     );
 
     if (error instanceof RateLimitError) {
+      openGoogle429Circuit();
       console.error(
         "[searchGoogleBooks] Rate limited (429). Returning empty page.",
         { query, page, mode: options?.mode, ...providerError }

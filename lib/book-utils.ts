@@ -1042,7 +1042,11 @@ export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
     const cover = Boolean(book.coverUrl?.trim());
     const description = Boolean(book.description?.trim()) &&
       !isPlaceholderDescription(book.description);
-    if (!cover && !description) return false;
+    // Open Library first_publish_year is enough to keep a real hit when
+    // Google 429s and the search doc has no cover / first_sentence.
+    const hasYear =
+      book.publishedYear != null || book.firstPublishYear != null;
+    if (!cover && !description && !hasYear) return false;
     return true;
   });
 }

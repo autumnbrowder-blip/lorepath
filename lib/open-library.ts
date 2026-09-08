@@ -180,49 +180,39 @@ export async function searchOpenLibrary(
     }
 
     /**
-     * Open Library is the backbone of browse: a single slow response used to
-     * empty the whole result set, so transient failures get one longer retry.
-     * A successful empty response is a real answer and is not retried.
+     * One attempt with enough time for search.json. A 3s abort plus retry
+     * used to burn the handler budget and return [] even when Dune exists.
      */
     const runSearch = async (search: URLSearchParams) => {
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          const response = await fetchOpenLibrary(
-            `https://openlibrary.org/search.json?${search.toString()}`,
-            {
-              noStore: true,
-              timeoutMs: 3000,
-            }
-          );
-
-          if (response.ok) {
-            const data: OpenLibrarySearchResponse = await response.json();
-            return {
-              books: parseOpenLibrarySearchResponse(data),
-              hasMore: page * pageSize < (data.numFound ?? 0),
-            };
+      try {
+        const response = await fetchOpenLibrary(
+          `https://openlibrary.org/search.json?${search.toString()}`,
+          {
+            noStore: true,
+            timeoutMs: 4800,
           }
+        );
 
-          console.error("[open-library] search failed:", {
-            query,
-            status: response.status,
-            attempt,
-          });
-          // Only 429/5xx are worth another try.
-          if (response.status !== 429 && response.status < 500) return null;
-        } catch (error) {
-          console.error("[open-library] search error:", {
-            query,
-            attempt,
-            message: error instanceof Error ? error.message : String(error),
-          });
+        if (response.ok) {
+          const data: OpenLibrarySearchResponse = await response.json();
+          return {
+            books: parseOpenLibrarySearchResponse(data),
+            hasMore: page * pageSize < (data.numFound ?? 0),
+          };
         }
 
-        if (attempt === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
+        console.error("[open-library] search failed:", {
+          query,
+          status: response.status,
+        });
+        return null;
+      } catch (error) {
+        console.error("[open-library] search error:", {
+          query,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return null;
       }
-      return null;
     };
 
     const result = await runSearch(params);

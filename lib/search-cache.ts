@@ -3,9 +3,13 @@ import type { BookSearchResult, BookSummary } from "@/types/book";
 /**
  * Short in-memory cache for browse search pages (a few minutes).
  * User-specific Inscribed data is reapplied after a hit — never stored here.
+ * Every entry is keyed by exact query + page + mode. Callers always receive
+ * cloned book arrays so overlapping requests cannot mutate a shared page.
  */
 type SearchCacheEntry = {
   expiresAt: number;
+  /** Exact search string that produced this page (trimmed). */
+  query: string;
   books: BookSummary[];
   sources: BookSearchResult["sources"];
   sourceCounts: BookSearchResult["sourceCounts"];
@@ -17,11 +21,15 @@ type SearchCacheEntry = {
   googleRawCount?: number;
 };
 
+export type CachedSearchPage = Omit<SearchCacheEntry, "expiresAt">;
+
 /** Five minutes — GET /api/books/search is keyed on q + page. */
 const TTL_MS = 300_000;
 const MAX_ENTRIES = 80;
 
 const cache = new Map<string, SearchCacheEntry>();
+/** In-flight pages keyed by searchCacheKey — never shared across different q. */
+const inFlight = new Map<string, Promise<CachedSearchPage>>();
 
 export function searchCacheKey(input: {
   query: string;
@@ -31,7 +39,28 @@ export function searchCacheKey(input: {
   const q = input.query.trim().toLowerCase();
   const page = Math.max(1, input.page);
   const mode = input.mode ?? "text";
-  return `v=browse-en5|q=${q}|page=${page}|mode=${mode}`;
+  return `v=browse-q6|q=${q}|page=${page}|mode=${mode}`;
+}
+
+function cloneBooks(books: BookSummary[]): BookSummary[] {
+  return books.map((book) => ({ ...book }));
+}
+
+function clonePage(value: CachedSearchPage): CachedSearchPage {
+  return {
+    query: value.query,
+    books: cloneBooks(value.books),
+    sources: value.sources ? [...value.sources] : value.sources,
+    sourceCounts: { ...value.sourceCounts },
+    source: value.source,
+    page: value.page,
+    hasMore: value.hasMore,
+    descriptionSources: value.descriptionSources
+      ? { ...value.descriptionSources }
+      : undefined,
+    googleError: value.googleError ?? null,
+    googleRawCount: value.googleRawCount,
+  };
 }
 
 function pruneExpired(now: number) {
@@ -46,8 +75,9 @@ function pruneExpired(now: number) {
 }
 
 export function getCachedSearchPage(
-  key: string
-): Omit<SearchCacheEntry, "expiresAt"> | null {
+  key: string,
+  expectedQuery?: string
+): CachedSearchPage | null {
   const now = Date.now();
   const entry = cache.get(key);
   if (!entry) return null;
@@ -55,30 +85,60 @@ export function getCachedSearchPage(
     cache.delete(key);
     return null;
   }
-  return {
-    books: entry.books.map((book) => ({ ...book })),
-    sources: entry.sources,
-    sourceCounts: { ...entry.sourceCounts },
-    source: entry.source,
-    page: entry.page,
-    hasMore: entry.hasMore,
-    descriptionSources: entry.descriptionSources
-      ? { ...entry.descriptionSources }
-      : undefined,
-    googleError: entry.googleError ?? null,
-    googleRawCount: entry.googleRawCount,
-  };
+  if (entry.books.length === 0) {
+    cache.delete(key);
+    return null;
+  }
+  if (expectedQuery != null) {
+    const wanted = expectedQuery.trim().toLowerCase();
+    const stored = entry.query.trim().toLowerCase();
+    if (!wanted || stored !== wanted) {
+      cache.delete(key);
+      return null;
+    }
+  }
+  return clonePage(entry);
 }
 
 export function setCachedSearchPage(
   key: string,
-  value: Omit<SearchCacheEntry, "expiresAt">
+  value: CachedSearchPage
 ): void {
+  if (value.books.length === 0) return;
+  const query = value.query.trim();
+  if (!query) return;
+  const keyQuery = key.match(/\|q=([^|]+)\|/)?.[1] ?? "";
+  if (keyQuery && keyQuery !== query.toLowerCase()) return;
+
   const now = Date.now();
   pruneExpired(now);
   cache.set(key, {
-    ...value,
-    books: value.books.map((book) => ({ ...book })),
+    ...clonePage({ ...value, query }),
     expiresAt: now + TTL_MS,
   });
+}
+
+/**
+ * Share one in-flight fetch for the same q+page. Different queries never
+ * reuse this promise. The stored page is cloned for every waiter.
+ */
+export function getInFlightSearch(
+  key: string
+): Promise<CachedSearchPage> | undefined {
+  return inFlight.get(key);
+}
+
+export function setInFlightSearch(
+  key: string,
+  pending: Promise<CachedSearchPage>
+): void {
+  inFlight.set(key, pending);
+}
+
+export function clearInFlightSearch(key: string): void {
+  inFlight.delete(key);
+}
+
+export function cloneCachedSearchPage(page: CachedSearchPage): CachedSearchPage {
+  return clonePage(page);
 }

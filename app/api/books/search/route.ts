@@ -6,7 +6,7 @@ import { getBearerToken } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-/** q is read from the live request; HTTP cache is keyed on the URL (q + page). */
+/** q is read from the live request; never serve a cached body for a different q. */
 export const dynamic = "force-dynamic";
 /** Override per-fetch force-cache so provider results cannot leak across q. */
 export const fetchCache = "force-no-store";
@@ -18,17 +18,13 @@ const SEARCH_HANDLER_BUDGET_MS = 8000;
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0, must-revalidate",
-} as const;
-
-/** Public GET cache — 5 minutes, keyed by q + page (and mode when present). */
-const PUBLIC_SEARCH_CACHE_HEADERS = {
-  "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
-  Vary: "Authorization",
+  Vary: "Accept, Authorization",
 } as const;
 
 /**
  * Search books via Open Library, Google Books, Gutendex, and Big Book.
  * Provider outages soft-fail inside searchBooks (Promise.allSettled).
+ * Always echo the requested `query` so clients can reject a mismatched body.
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -63,7 +59,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Public clients get books + paging only. Source breakdown is admin-only.
-    // Echo `query` so a stale CDN/Data Cache hit can be rejected client-side.
+    // Echo the live request `query` — never a cached/stale q.
     const payload = isAdmin
       ? { ...result, query }
       : {
@@ -83,10 +79,7 @@ export async function GET(request: NextRequest) {
         };
 
     return NextResponse.json(payload, {
-      headers:
-        accessToken || isAdmin || wantsSourceDebug
-          ? NO_STORE_HEADERS
-          : PUBLIC_SEARCH_CACHE_HEADERS,
+      headers: NO_STORE_HEADERS,
     });
   } catch (error) {
     console.error("[api/books/search] unexpected failure:", error);
