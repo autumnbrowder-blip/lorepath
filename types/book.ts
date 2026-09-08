@@ -115,4 +115,6 @@ export type BookSearchResult = {
   googleError?: GoogleBooksSearchDebug | null;
   /** Temporary: Google item count before local quality filtering. */
   googleRawCount?: number;
+  /** True when every attempted catalog source timed out or rejected. */
+  allSourcesTimedOut?: boolean;
 };

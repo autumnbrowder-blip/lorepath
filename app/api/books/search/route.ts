@@ -1,8 +1,5 @@
 import { searchBooks } from "@/lib/books";
 import { isGenreSearchMode } from "@/lib/genre-search";
-import { RateLimitError } from "@/lib/google-books";
-import { withTimeout } from "@/lib/provider-resilience";
-import { getBearerToken } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -13,18 +10,15 @@ export const fetchCache = "force-no-store";
 /** Netlify / serverless hard ceiling (seconds). Handler budget is tighter. */
 export const maxDuration = 10;
 
-/** Overall handler budget — must finish before Netlify kills the function. */
-const SEARCH_HANDLER_BUDGET_MS = 8000;
-
 const NO_STORE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0, must-revalidate",
   Vary: "Accept, Authorization",
 } as const;
 
 /**
- * Search books via Open Library, Google Books, Gutendex, and Big Book.
- * Provider outages soft-fail inside searchBooks (Promise.allSettled).
- * Always echo the requested `query` so clients can reject a mismatched body.
+ * Catalog search only: Open Library (required) + Google / Gutendex / ISBNdb.
+ * Never calls Supabase or Hardcover. A source timeout becomes [] — if any
+ * books exist, error is null.
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -33,75 +27,47 @@ export async function GET(request: NextRequest) {
   const pageParam = Number(searchParams.get("page") ?? "1");
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
   const mode = isGenreSearchMode(modeParam) ? "genre" : "text";
-  const accessToken = getBearerToken(request);
 
   if (!query) {
     return NextResponse.json(
-      { error: "Search query is required.", query: "" },
+      { error: "Search query is required.", query: "", books: [] },
       { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
   try {
-    const result = await withTimeout(
-      searchBooks(query, page, {
-        mode,
-        accessToken,
-      }),
-      SEARCH_HANDLER_BUDGET_MS,
-      "api/books/search"
+    const result = await searchBooks(query, page, { mode });
+    const books = result.books ?? [];
+    const error =
+      books.length === 0 && result.allSourcesTimedOut
+        ? "Search took too long across the shelves. Try again shortly."
+        : null;
+
+    return NextResponse.json(
+      {
+        query,
+        books,
+        page: result.page,
+        hasMore: result.hasMore,
+        error,
+      },
+      {
+        status: 200,
+        headers: NO_STORE_HEADERS,
+      }
     );
-    const wantsSourceDebug = searchParams.get("debugSources") === "1";
-    let isAdmin = false;
-    if (wantsSourceDebug) {
-      const { sessionUserIsAdmin } = await import("@/lib/admin");
-      isAdmin = await sessionUserIsAdmin();
-    }
-
-    // Public clients get books + paging only. Source breakdown is admin-only.
-    // Echo the live request `query` — never a cached/stale q.
-    const payload = isAdmin
-      ? { ...result, query }
-      : {
-          query,
-          books: result.books,
-          page: result.page,
-          hasMore: result.hasMore,
-          userRatedSlugs: result.userRatedSlugs ?? [],
-          ...(wantsSourceDebug
-            ? {
-                sourceCounts: result.sourceCounts,
-                descriptionSources: result.descriptionSources ?? {},
-                // Status only — provider error bodies can name the project.
-                googleStatus: result.googleError?.status ?? null,
-              }
-            : {}),
-        };
-
-    return NextResponse.json(payload, {
-      headers: NO_STORE_HEADERS,
-    });
   } catch (error) {
     console.error("[api/books/search] unexpected failure:", error);
-
-    // Prefer soft empty results over a hard failure / Netlify timeout.
-    const message =
-      error instanceof RateLimitError
-        ? "The archives are resting briefly. Try again in a moment."
-        : error instanceof Error && error.name === "TimeoutError"
-          ? "Search took too long across the shelves. Showing what we found — try again shortly."
-          : "Search could not reach every shelf. Try again shortly.";
-
     return NextResponse.json(
       {
         query,
         books: [],
         page,
         hasMore: false,
-        error: message,
+        error:
+          "Search could not reach every shelf. Try again shortly.",
       },
       {
-        // 200 so the browse UI can render an empty state + message without a crash.
         status: 200,
         headers: NO_STORE_HEADERS,
       }

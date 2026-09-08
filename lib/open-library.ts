@@ -189,7 +189,7 @@ export async function searchOpenLibrary(
           `https://openlibrary.org/search.json?${search.toString()}`,
           {
             noStore: true,
-            timeoutMs: 4800,
+            timeoutMs: 12000,
           }
         );
 

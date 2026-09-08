@@ -13,6 +13,7 @@ import {
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isStatementTimeoutError } from "@/lib/supabase/statement-timeout";
 import {
   alignBooksToRatedSlugs,
   createRatedBookLookup,
@@ -204,7 +205,7 @@ export function BookSearch({
       if (!user) {
         setClientLoggedIn(false);
         // Keep SSR identities if present; only clear when we know logged out
-        // and SSR also had none.
+        // and SSR also had none. Do not query ratings or preferences.
         if (initialRatedIdentities.length === 0) {
           setRatedIdentities([]);
           setInscribedCardIds([]);
@@ -214,54 +215,47 @@ export function BookSearch({
 
       setClientLoggedIn(true);
 
-      // 1) Direct browser query (ratings are readable; filter by this user).
+      // One query by rated_by (assumes index ratings(rated_by)) — not N per card.
       const { data: ratingRows, error: ratingError } = await supabase
         .from("ratings")
-        .select("book_id")
+        .select(
+          `
+          books!inner (
+            slug,
+            title,
+            author
+          )
+        `
+        )
         .eq("rated_by", user.id);
 
       let next: UserRatedIdentity[] = [];
       let source: RatedSource = "none";
 
       if (!ratingError && ratingRows && ratingRows.length > 0) {
-        const bookIds = Array.from(
-          new Set(
-            ratingRows
-              .map((row) =>
-                typeof row.book_id === "string" ? row.book_id : null
-              )
-              .filter((id): id is string => Boolean(id))
-          )
-        );
-
-        if (bookIds.length > 0) {
-          const { data: bookRows } = await supabase
-            .from("books")
-            .select("slug, title, author")
-            .in("id", bookIds);
-
-          for (const book of bookRows ?? []) {
-            const slug =
-              typeof book.slug === "string" ? book.slug.trim() : "";
-            const title =
-              typeof book.title === "string" ? book.title.trim() : "";
-            if (!slug || !title) continue;
-            if (next.some((row) => row.slug === slug)) continue;
-            next.push({
-              slug,
-              title,
-              author:
-                typeof book.author === "string"
-                  ? book.author.trim() || null
-                  : null,
-            });
-          }
-          if (next.length > 0) source = "browser-query";
+        for (const row of ratingRows) {
+          const book = Array.isArray(row.books) ? row.books[0] : row.books;
+          if (!book || typeof book !== "object") continue;
+          const slug =
+            typeof book.slug === "string" ? book.slug.trim() : "";
+          const title =
+            typeof book.title === "string" ? book.title.trim() : "";
+          if (!slug || !title) continue;
+          if (next.some((entry) => entry.slug === slug)) continue;
+          next.push({
+            slug,
+            title,
+            author:
+              typeof book.author === "string"
+                ? book.author.trim() || null
+                : null,
+          });
         }
+        if (next.length > 0) source = "browser-query";
       }
 
-      // 2) API fallback only when the browser query itself failed.
-      if (ratingError) {
+      // Do not retry the same ratings read on 57014 / 57014-mapped 500s.
+      if (ratingError && !isStatementTimeoutError(ratingError)) {
         const headers: Record<string, string> = {};
         const {
           data: { session },
@@ -471,18 +465,6 @@ export function BookSearch({
     }
 
     const headers: Record<string, string> = {};
-    if (isSupabaseConfigured()) {
-      try {
-        const {
-          data: { session },
-        } = await createClient().auth.getSession();
-        if (session?.access_token) {
-          headers.Authorization = `Bearer ${session.access_token}`;
-        }
-      } catch {
-        // Search still works without bearer; Inscribed falls back to client set.
-      }
-    }
 
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
@@ -491,7 +473,10 @@ export function BookSearch({
       headers,
     });
     const data = await response.json();
-    if (!response.ok) {
+    const books = Array.isArray(data.books)
+      ? data.books.map((book: BookSummary) => ({ ...book }))
+      : [];
+    if (!response.ok && books.length === 0) {
       throw new Error(data.error ?? "Search failed.");
     }
     const echoed =
@@ -508,9 +493,6 @@ export function BookSearch({
         query: searchQuery,
       } satisfies SearchPagePayload;
     }
-    const books = Array.isArray(data.books)
-      ? data.books.map((book: BookSummary) => ({ ...book }))
-      : [];
     if (
       books.length === 0 &&
       typeof data.error === "string" &&
