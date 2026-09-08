@@ -61,14 +61,21 @@ import {
 } from "@/lib/provider-resilience";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import {
+  clearInFlightSearch,
+  cloneCachedSearchPage,
   getCachedSearchPage,
+  getInFlightSearch,
   searchCacheKey,
   setCachedSearchPage,
+  setInFlightSearch,
+  type CachedSearchPage,
 } from "@/lib/search-cache";
 import { getVerifiedUser } from "@/lib/supabase/server";
 import {
+  bookMatchesSearchQuery,
   dropBrowseJunk,
   rankBrowseSearchResults,
+  rankSearchResults,
 } from "@/lib/book-utils";
 import { unstable_noStore as noStore } from "next/cache";
 import type {
@@ -81,16 +88,21 @@ import { cache } from "react";
 
 export { finalizeSearchBooks } from "@/lib/search-finalize";
 
-const EMPTY_PAGE = { books: [] as BookSummary[], hasMore: false };
-const EMPTY_GOOGLE_PAGE: GoogleBooksPageResult = {
-  books: [],
-  hasMore: false,
-  rawCount: 0,
-  error: null,
-};
+function emptyPage(): { books: BookSummary[]; hasMore: boolean } {
+  return { books: [], hasMore: false };
+}
+
+function emptyGooglePage(
+  error: GoogleBooksPageResult["error"] = null
+): GoogleBooksPageResult {
+  return { books: [], hasMore: false, rawCount: 0, error };
+}
+
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
 /** Hard outer cap so one slow provider cannot stall the whole search. */
 const PROVIDER_SEARCH_TIMEOUT_MS = 3000;
+/** Open Library search.json often needs ~4.5–5s; stay under the ~8s handler. */
+const OPEN_LIBRARY_SEARCH_TIMEOUT_MS = 5000;
 /** Detail-page enrichment total budget after core book is resolved. */
 const DETAIL_ENRICH_BUDGET_MS = 1500;
 
@@ -102,23 +114,33 @@ const SEARCH_SOURCES: BookSource[] = [
   "bigbook",
 ];
 
+function cloneSummaries(books: BookSummary[]): BookSummary[] {
+  return books.map((book) => ({ ...book }));
+}
+
 function readSettledPage(
   label: string,
   result: PromiseSettledResult<{ books: BookSummary[]; hasMore: boolean }>
 ): { books: BookSummary[]; hasMore: boolean } {
   if (result.status === "fulfilled") {
-    return result.value;
+    return {
+      books: cloneSummaries(result.value.books),
+      hasMore: result.value.hasMore,
+    };
   }
 
   console.error(`[searchBooks] ${label} rejected:`, result.reason);
-  return EMPTY_PAGE;
+  return emptyPage();
 }
 
 function readSettledGoogle(
   result: PromiseSettledResult<GoogleBooksPageResult>
 ): GoogleBooksPageResult {
   if (result.status === "fulfilled") {
-    return result.value;
+    return {
+      ...result.value,
+      books: cloneSummaries(result.value.books),
+    };
   }
 
   const reason = result.reason;
@@ -133,10 +155,7 @@ function readSettledGoogle(
     message,
     status,
   });
-  return {
-    ...EMPTY_GOOGLE_PAGE,
-    error: { message, status: status ?? null },
-  };
+  return emptyGooglePage({ message, status: status ?? undefined });
 }
 
 async function resolveSearchUserId(
@@ -179,42 +198,38 @@ async function overlayUserRatedIdentities(
   return { books: next, userRatedSlugs };
 }
 
-/**
- * Last good browse search (51fda74): Google + Open Library + Gutendex + Big Book
- * in one Promise.allSettled, one page each. Hardcover is at most one call and
- * is skipped when the token is missing or the circuit is open.
- */
-export async function searchBooks(
-  query: string,
-  page = 1,
-  options?: SearchBooksOptions
+async function overlayCachedPage(
+  page: CachedSearchPage,
+  accessToken?: string | null
 ): Promise<BookSearchResult> {
-  noStore();
-  const pageNumber = Math.max(1, page);
-  const genreMode = isGenreSearchMode(options?.mode);
-  const searchQuery = genreMode ? normalizeGenreQuery(query) : query.trim();
-  const searchOptions: SearchBooksOptions | undefined = genreMode
-    ? { mode: "genre" }
-    : undefined;
+  const cloned = cloneCachedSearchPage(page);
+  const overlay = await overlayUserRatedIdentities(cloned.books, accessToken);
+  return {
+    books: overlay.books,
+    sources: cloned.sources,
+    sourceCounts: cloned.sourceCounts,
+    source: cloned.source,
+    page: cloned.page,
+    hasMore: cloned.hasMore,
+    descriptionSources: cloned.descriptionSources,
+    userRatedSlugs: overlay.userRatedSlugs,
+    googleError: cloned.googleError,
+    googleRawCount: cloned.googleRawCount,
+  };
+}
 
-  const cacheKey = searchCacheKey({
-    query: searchQuery,
-    page: pageNumber,
-    mode: genreMode ? "genre" : "text",
-  });
-  const cachedPage = getCachedSearchPage(cacheKey);
-  if (cachedPage) {
-    const overlay = await overlayUserRatedIdentities(
-      cachedPage.books,
-      options?.accessToken
-    );
-    return {
-      ...cachedPage,
-      books: overlay.books,
-      userRatedSlugs: overlay.userRatedSlugs,
-    };
-  }
-
+/**
+ * Fetch one browse page. Google + Open Library + Gutendex + Big Book in one
+ * Promise.allSettled. Hardcover is skipped when the token is missing or the
+ * circuit is open, and empty Hardcover pages are never merged.
+ */
+async function fetchSearchPageUncached(
+  searchQuery: string,
+  pageNumber: number,
+  genreMode: boolean,
+  searchOptions: SearchBooksOptions | undefined,
+  accessToken?: string | null
+): Promise<CachedSearchPage> {
   const includeHardcover =
     isHardcoverConfigured() && !isHardcoverCircuitOpen();
 
@@ -229,31 +244,31 @@ export async function searchBooks(
       searchGoogleBooks(searchQuery, pageNumber, searchOptions),
       PROVIDER_SEARCH_TIMEOUT_MS,
       "google search"
-    ).catch(() => EMPTY_GOOGLE_PAGE),
+    ).catch(() => emptyGooglePage()),
     withTimeout(
       searchOpenLibrary(searchQuery, pageNumber, searchOptions),
-      6500,
+      OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
       "openlibrary search"
-    ).catch(() => EMPTY_PAGE),
+    ).catch(() => emptyPage()),
     genreMode || pageNumber === 1
       ? withTimeout(
           searchGutendex(searchQuery, pageNumber, searchOptions),
           PROVIDER_SEARCH_TIMEOUT_MS,
           "gutendex search"
-        ).catch(() => EMPTY_PAGE)
-      : Promise.resolve(EMPTY_PAGE),
+        ).catch(() => emptyPage())
+      : Promise.resolve(emptyPage()),
     withTimeout(
       searchBigBook(searchQuery, pageNumber, searchOptions),
       PROVIDER_SEARCH_TIMEOUT_MS,
       "bigbook search"
-    ).catch(() => EMPTY_PAGE),
+    ).catch(() => emptyPage()),
     includeHardcover
       ? withTimeout(
           searchHardcover(searchQuery, pageNumber),
           PROVIDER_SEARCH_TIMEOUT_MS,
           "hardcover search"
-        ).catch(() => EMPTY_PAGE)
-      : Promise.resolve(EMPTY_PAGE),
+        ).catch(() => emptyPage())
+      : Promise.resolve(emptyPage()),
   ]);
 
   const googleResult = readSettledGoogle(googleSettled);
@@ -265,7 +280,7 @@ export async function searchBooks(
   const bigBookResult = readSettledPage("Big Book", bigBookSettled);
   const hardcoverResult = includeHardcover
     ? readSettledPage("Hardcover", hardcoverSettled)
-    : EMPTY_PAGE;
+    : emptyPage();
 
   const googleBooks = googleResult.books;
   const openLibraryBooks = openLibraryResult.books;
@@ -282,7 +297,7 @@ export async function searchBooks(
     console.error("[searchBooks] Google Books provider error:", {
       query: searchQuery,
       page: pageNumber,
-      mode: options?.mode ?? "text",
+      mode: genreMode ? "genre" : "text",
       googleError: googleResult.error,
       googleRawCount: googleResult.rawCount,
     });
@@ -319,7 +334,7 @@ export async function searchBooks(
   let ratedSlugs: string[] = [];
   if (pageNumber === 1) {
     try {
-      const userId = await resolveSearchUserId(options?.accessToken);
+      const userId = await resolveSearchUserId(accessToken);
       const { findRatedBooksMatchingQuery } = await import("@/lib/ratings");
       const rated = await findRatedBooksMatchingQuery(searchQuery, {
         mode: genreMode ? "genre" : "text",
@@ -340,6 +355,12 @@ export async function searchBooks(
     ...hardcoverBooks,
     ...ratedBooks,
   ];
+  const providerHitCount =
+    openLibraryBooks.length +
+    googleBooks.length +
+    gutendexBooks.length +
+    bigBookBooks.length +
+    hardcoverBooks.length;
 
   let books = finalizeSearchBooks(rawCombined, {
     ratedIds: new Set(ratedSlugs),
@@ -348,12 +369,27 @@ export async function searchBooks(
     query: genreMode ? undefined : searchQuery,
   });
   books = await enrichBooksWithCovers(books);
+  const afterFinalize = books;
   books = dropBrowseJunk(books);
 
   if (genreMode) {
     books = preferMatchingGenreTags(books, searchQuery);
   } else {
     books = rankBrowseSearchResults(books, searchQuery);
+  }
+
+  // Google 429 / missing covers must not wipe real OL/Gutendex hits.
+  if (books.length === 0 && providerHitCount > 0) {
+    const matching = (afterFinalize.length > 0 ? afterFinalize : rawCombined)
+      .filter((book) =>
+        genreMode ? true : bookMatchesSearchQuery(book, searchQuery)
+      );
+    books = genreMode
+      ? matching
+      : rankBrowseSearchResults(matching, searchQuery);
+    if (books.length === 0) {
+      books = matching;
+    }
   }
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
@@ -373,37 +409,85 @@ export async function searchBooks(
     bigBookResult.hasMore ||
     (hardcoverBooks.length > 0 && hardcoverResult.hasMore);
 
-  // Do not cache a commercial miss — a Google 429 or OL timeout must not
-  // pin Gutendex-only results for five minutes.
-  if (googleBooks.length > 0 || openLibraryBooks.length > 0) {
-    setCachedSearchPage(cacheKey, {
-      books,
-      sources: SEARCH_SOURCES,
-      sourceCounts,
-      source: "multi",
-      page: pageNumber,
-      hasMore,
-      googleError: googleResult.error,
-      googleRawCount: googleResult.rawCount,
-    });
-  }
-
-  const overlay = await overlayUserRatedIdentities(
-    books,
-    options?.accessToken
-  );
-
   return {
-    books: overlay.books,
+    query: searchQuery,
+    books: cloneSummaries(books),
     sources: SEARCH_SOURCES,
     sourceCounts,
     source: "multi",
     page: pageNumber,
     hasMore,
-    userRatedSlugs: overlay.userRatedSlugs,
     googleError: googleResult.error,
     googleRawCount: googleResult.rawCount,
   };
+}
+
+/**
+ * Last good browse search (51fda74): Google + Open Library + Gutendex + Big Book
+ * in one Promise.allSettled, one page each. Hardcover is at most one call and
+ * is skipped when the token is missing or the circuit is open.
+ *
+ * Cache and in-flight work are keyed by exact q + page. Overlapping dune vs
+ * fourth wing never share one array; cache hits are always cloned.
+ */
+export async function searchBooks(
+  query: string,
+  page = 1,
+  options?: SearchBooksOptions
+): Promise<BookSearchResult> {
+  noStore();
+  const pageNumber = Math.max(1, page);
+  const genreMode = isGenreSearchMode(options?.mode);
+  const searchQuery = genreMode ? normalizeGenreQuery(query) : query.trim();
+  const searchOptions: SearchBooksOptions | undefined = genreMode
+    ? { mode: "genre" }
+    : undefined;
+  const mode = genreMode ? "genre" : "text";
+
+  const cacheKey = searchCacheKey({
+    query: searchQuery,
+    page: pageNumber,
+    mode,
+  });
+  const cachedPage = getCachedSearchPage(cacheKey, searchQuery);
+  if (cachedPage) {
+    return overlayCachedPage(cachedPage, options?.accessToken);
+  }
+
+  const existing = getInFlightSearch(cacheKey);
+  if (existing) {
+    const shared = await existing;
+    return overlayCachedPage(shared, options?.accessToken);
+  }
+
+  const pending = fetchSearchPageUncached(
+    searchQuery,
+    pageNumber,
+    genreMode,
+    searchOptions,
+    options?.accessToken
+  ).finally(() => {
+    clearInFlightSearch(cacheKey);
+  });
+  setInFlightSearch(cacheKey, pending);
+
+  const pageResult = await pending;
+
+  // Do not cache empty pages, or a Google-only miss that would pin Gutendex
+  // leftovers. Never cache a page whose query does not match this request.
+  const echoed = pageResult.query.trim().toLowerCase();
+  const requested = searchQuery.trim().toLowerCase();
+  if (
+    pageResult.books.length > 0 &&
+    echoed === requested &&
+    (pageResult.sourceCounts.google ?? 0) +
+      (pageResult.sourceCounts.openlibrary ?? 0) >
+      0
+  ) {
+    setCachedSearchPage(cacheKey, pageResult);
+  }
+
+  return overlayCachedPage(pageResult, options?.accessToken);
 }
 
 export type GetBookByIdOptions = {
