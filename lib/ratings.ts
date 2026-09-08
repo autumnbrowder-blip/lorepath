@@ -48,7 +48,7 @@ const RATINGS_SQL_HINT =
   "Run supabase/migrations/20260716_fix_ratings_production.sql in the Supabase SQL Editor, then try again.";
 
 const RLS_HINT =
-  `Could not save rating (permission denied). Sign out and back in so your session token is sent, then try again. ${RATINGS_SQL_HINT}`;
+  "Those marks could not be recorded. Stay on this page and try again. If it fails twice, sign in again.";
 
 const GRANT_HINT =
   `Could not save rating (permission denied on ratings/books). ${RATINGS_SQL_HINT}`;
@@ -984,18 +984,20 @@ export async function findRatedBooksMatchingQuery(
 }
 
 type SubmitRatingOptions = {
-  /** Optional sanity check; the write always uses verified JWT user.id for rated_by. */
+  /** Optional sanity check; the write always uses verified auth user.id for rated_by. */
   expectedUserId?: string;
-  /** Browser-supplied access token (Authorization Bearer) — preferred on Netlify. */
+  /** Browser-supplied access token (Authorization Bearer) or cookie session JWT. */
   accessToken?: string | null;
-  /** When the route already verified the JWT, skip a second Auth round-trip. */
+  /** When the route already verified getUser(), skip a second Auth round-trip. */
   verifiedUserId?: string;
 };
 
+const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
+
 /**
  * Persist a per-user rating. Column is `rated_by` (not `user_id`).
- * Verifies the JWT, then upserts with a PostgREST client that sends that JWT
- * so auth.uid() matches rated_by. Never writes with the anon key alone.
+ * Never inserts when the session user is null. rated_by is always the
+ * verified auth user id (auth.uid()), never a client-supplied id.
  */
 export async function submitUserRating(
   bookExternalId: string,
@@ -1013,25 +1015,23 @@ export async function submitUserRating(
     return { success: false, error: "Supabase is not configured." };
   }
 
-  // 1) Verify the user via access token / cookie session (skip if the route
-  //    already verified the same JWT).
-  let sessionUserId: string;
-  let accessToken: string;
-  if (options?.verifiedUserId && options.accessToken?.trim()) {
-    sessionUserId = options.verifiedUserId;
-    accessToken = options.accessToken.trim();
-  } else {
+  // 1) Session user from the route (getUser) or a JWT/cookie verify.
+  //    Never start the insert if this is null.
+  let sessionUserId: string | null = options?.verifiedUserId?.trim() || null;
+  let accessToken = options?.accessToken?.trim() || "";
+  if (!sessionUserId) {
     const auth = await getVerifiedUser({
       accessToken: options?.accessToken,
     });
     if ("error" in auth) {
-      return {
-        success: false,
-        error: "You are not signed in. Please sign in and try again.",
-      };
+      return { success: false, error: SIGN_IN_TO_INSCRIBE };
     }
     sessionUserId = auth.user.id;
     accessToken = auth.accessToken;
+  }
+
+  if (!sessionUserId) {
+    return { success: false, error: SIGN_IN_TO_INSCRIBE };
   }
 
   if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
@@ -1045,12 +1045,20 @@ export async function submitUserRating(
     return { success: false, error: ROMANCE_HINT };
   }
 
-  // 2) User-JWT PostgREST write (auth.uid() must match rated_by).
-  const jwtClient = createJwtPostgrestClient(accessToken);
-  if ("error" in jwtClient) {
-    return { success: false, error: jwtClient.error };
+  // 2) Write client: service role after getUser() (server-only), else the
+  //    user JWT so PostgREST auth.uid() matches rated_by. Never anon-only.
+  const admin = createServiceRoleClient();
+  let supabase: SupabaseClient | null =
+    !("error" in admin) ? admin.supabase : null;
+  if (!supabase && accessToken) {
+    const jwtClient = createJwtPostgrestClient(accessToken);
+    if (!("error" in jwtClient)) {
+      supabase = jwtClient.supabase;
+    }
   }
-  const supabase = jwtClient.supabase;
+  if (!supabase) {
+    return { success: false, error: SIGN_IN_TO_INSCRIBE };
+  }
 
   const profileResult = await ensureProfileExists(supabase, sessionUserId);
   if (!profileResult.ok) {
@@ -1075,8 +1083,8 @@ export async function submitUserRating(
     pacing: ratings.pacing,
   };
 
-  // Write without .select() so INSERT/UPDATE failures are unambiguous.
-  // Assumes unique index ratings(book_id, rated_by).
+  // Unique (book_id, rated_by). rated_by is always the verified auth user id
+  // (the same id as auth.uid() from getUser()). Never insert without that id.
   const { error } = await supabase
     .from("ratings")
     .upsert(row, { onConflict: "book_id,rated_by" });
@@ -1087,7 +1095,7 @@ export async function submitUserRating(
     return { success: false, error: formatRatingError(error.message) };
   }
 
-  // Confirm via the same JWT client used for the write.
+  // Confirm the row, then re-fetch community averages on the same write client.
   const readBack = await fetchUserRatingRow(
     supabase,
     bookResult.bookDbId,

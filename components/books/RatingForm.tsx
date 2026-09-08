@@ -23,6 +23,10 @@ import {
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
+const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
+const RATING_SAVE_ERROR =
+  "Those marks could not be recorded. Stay on this page and try again. If it fails twice, sign in again.";
+
 type RatingFormProps = {
   bookId: string;
   isLoggedIn: boolean;
@@ -95,8 +99,10 @@ export function RatingForm({
   const wasUpdatingRef = useRef(initialRatings != null);
   /** Status container; scrolled into view when a save succeeds. */
   const statusRef = useRef<HTMLDivElement | null>(null);
+  /** Save-error alert — scrolled and focused so it cannot be missed. */
+  const errorRef = useRef<HTMLDivElement | null>(null);
 
-  // Scroll only on success (never on error), after the message has rendered.
+  // Scroll only on success, after the message has rendered.
   // scroll-margin-top on the container keeps it clear of the sticky navbar.
   useEffect(() => {
     if (!success || !statusRef.current) return;
@@ -109,14 +115,13 @@ export function RatingForm({
     });
   }, [success]);
 
-  async function authHeaders(): Promise<Record<string, string> | null> {
-    const token = await getBrowserAccessToken();
-    if (!token) return null;
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-  }
+  useEffect(() => {
+    if (!error) return;
+    const node = errorRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.focus();
+  }, [error]);
 
   function applyConfirmedRating(next: ContentRating) {
     confirmedRef.current = next;
@@ -152,52 +157,90 @@ export function RatingForm({
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!isLoggedIn) {
+      setError(SIGN_IN_TO_INSCRIBE);
+      return;
+    }
     wasUpdatingRef.current = hasExistingRating;
     setLoading(true);
     setError(null);
     setSuccess(false);
 
+    const submitted = ratings;
+
     try {
-      const headers = await authHeaders();
-      if (!headers) {
-        setError("You are not signed in. Please sign in and try again.");
-        setLoading(false);
-        return;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      const token = await getBrowserAccessToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
       }
 
       const response = await fetch(`/api/books/${bookId}/ratings`, {
         method: "POST",
         headers,
-        credentials: "same-origin",
+        credentials: "include",
         cache: "no-store",
-        body: JSON.stringify(ratings),
+        body: JSON.stringify(submitted),
       });
 
-      const data = (await response.json()) as {
+      let data: {
         error?: string;
         communityRatings?: CommunityRatingsSummary;
         userRating?: ContentRating;
-      };
+        averages?: CommunityRatingsSummary["averages"];
+        count?: number;
+      } = {};
+      try {
+        data = (await response.json()) as typeof data;
+      } catch {
+        setError(RATING_SAVE_ERROR);
+        return;
+      }
+
+      if (response.status === 401) {
+        setError(SIGN_IN_TO_INSCRIBE);
+        return;
+      }
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          throw new Error(
-            data.error ?? "You are not signed in. Please sign in and try again."
-          );
-        }
-        throw new Error(data.error ?? "Failed to submit rating.");
+        setError(RATING_SAVE_ERROR);
+        return;
       }
 
-      // Prefer confirmed values from the API so remount/refresh cannot blank to zeros.
-      if (data.userRating) {
-        applyConfirmedRating(data.userRating);
-      } else {
-        confirmedRef.current = ratings;
-        setHasExistingRating(true);
-      }
+      // Keep the sliders on the values just submitted — never reset to 0.
+      applyConfirmedRating(submitted);
 
       if (data.communityRatings) {
         applyCommunityRatings(data.communityRatings);
+      }
+
+      try {
+        const refreshHeaders: Record<string, string> = {};
+        if (token) {
+          refreshHeaders.Authorization = `Bearer ${token}`;
+        }
+        const refresh = await fetch(`/api/books/${bookId}/ratings`, {
+          credentials: "include",
+          cache: "no-store",
+          headers: refreshHeaders,
+        });
+        // One read after a successful save — never retry on 401.
+        if (refresh.status !== 401 && refresh.ok) {
+          const next = (await refresh.json()) as {
+            averages?: CommunityRatingsSummary["averages"];
+            count?: number;
+          };
+          if (typeof next.count === "number" && next.count > 0) {
+            applyCommunityRatings({
+              averages: next.averages ?? null,
+              count: next.count,
+            });
+          }
+        }
+      } catch {
+        // Community refresh is best-effort; the save already succeeded.
       }
 
       // Let browse cards show Inscribed immediately after return (same tab).
@@ -216,8 +259,6 @@ export function RatingForm({
         // sessionStorage may be unavailable.
       }
 
-      // POST already returned confirmed user + community marks — skip a
-      // redundant GET. Refresh RSC islands (match score / rated lists).
       setSuccess(true);
       if (returnToFirstRating) {
         const params = new URLSearchParams({
@@ -228,12 +269,8 @@ export function RatingForm({
         return;
       }
       router.refresh();
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Something went wrong."
-      );
+    } catch {
+      setError(RATING_SAVE_ERROR);
     } finally {
       setLoading(false);
     }
@@ -288,12 +325,7 @@ export function RatingForm({
                 role="status"
                 aria-live="polite"
               >
-                {error ? (
-                  <div className="alert-error">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p className="line-clamp-2">{error}</p>
-                  </div>
-                ) : success ? (
+                {success ? (
                   <div className="alert-success">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#f0d78a]" />
                     <p className="font-heading text-sm nav-dragon-gold">
@@ -333,6 +365,21 @@ export function RatingForm({
                     />
                   );
                 })}
+
+                {error ? (
+                  <div
+                    ref={errorRef}
+                    tabIndex={-1}
+                    role="alert"
+                    className="mt-1 flex items-start gap-2 rounded-sm border border-gold-600/45 bg-[#0c1f19]/75 px-3 py-2 font-heading text-sm leading-snug nav-dragon-gold outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-600/70"
+                  >
+                    <AlertCircle
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[#e2c06a]"
+                      aria-hidden="true"
+                    />
+                    <p>{error}</p>
+                  </div>
+                ) : null}
 
                 <button
                   type="submit"

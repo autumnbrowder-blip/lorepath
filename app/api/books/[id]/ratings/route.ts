@@ -6,6 +6,7 @@ import {
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
+  createClient,
   getBearerToken,
 } from "@/lib/supabase/server";
 import { withTimeout } from "@/lib/provider-resilience";
@@ -102,6 +103,10 @@ export async function GET(
   }
 }
 
+const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
+const RATING_SAVE_ERROR =
+  "Those marks could not be recorded. Stay on this page and try again. If it fails twice, sign in again.";
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -115,16 +120,23 @@ export async function POST(
     );
   }
 
-  // Verify JWT first. Writes use a PostgREST client that sends that JWT —
-  // see submitUserRating (rated_by is always the verified user.id).
-  const session = await createAuthenticatedClient({
-    accessToken: getBearerToken(request),
-  });
-  if ("error" in session) {
-    return NextResponse.json(
-      { error: "You must be signed in to submit a rating.", code: session.code },
-      { status: 401 }
-    );
+  // Cookie session via createServerClient; Bearer is optional extra.
+  const supabase = await createClient();
+  const bearer = getBearerToken(request);
+  let user = bearer
+    ? (await supabase.auth.getUser(bearer)).data.user
+    : null;
+  let accessToken = bearer;
+  if (!user) {
+    user = (await supabase.auth.getUser()).data.user;
+  }
+  if (user && !accessToken) {
+    accessToken =
+      (await supabase.auth.getSession()).data.session?.access_token ?? null;
+  }
+
+  if (!user) {
+    return NextResponse.json({ error: SIGN_IN_TO_INSCRIBE }, { status: 401 });
   }
 
   let body: unknown;
@@ -145,18 +157,19 @@ export async function POST(
   }
 
   const result = await submitUserRating(bookExternalId, body, {
-    expectedUserId: session.user.id,
-    accessToken: session.accessToken,
-    verifiedUserId: session.user.id,
+    expectedUserId: user.id,
+    accessToken,
+    verifiedUserId: user.id,
   });
 
   if (!result.success) {
-    const status = /not signed in/i.test(result.error) ? 401 : /permission denied|row-level security|42501/i.test(result.error) ? 403 : 500;
-    return NextResponse.json({ error: result.error }, { status });
+    const isAuth = /sign in to inscribe|not signed in/i.test(result.error);
+    return NextResponse.json(
+      { error: isAuth ? SIGN_IN_TO_INSCRIBE : RATING_SAVE_ERROR },
+      { status: isAuth ? 401 : 500 }
+    );
   }
 
-  // Prefer community averages computed on the same service-role client as the
-  // write — avoids empty averages from a flaky anon/romance SELECT right after save.
   return NextResponse.json({
     success: true,
     message: "Your marks have been recorded in the tome.",
