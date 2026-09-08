@@ -13,7 +13,6 @@ import {
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import { createClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { isStatementTimeoutError } from "@/lib/supabase/statement-timeout";
 import {
   alignBooksToRatedSlugs,
   createRatedBookLookup,
@@ -137,6 +136,8 @@ export function BookSearch({
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
   const searchRequestIdRef = useRef(0);
   const ratedDebugLoggedRef = useRef(false);
+  /** One Data API fill per mount — never retry 401/403/500/57014. */
+  const ratedApiOnceRef = useRef(false);
   /** True after the first client rated-identity load attempt finishes. */
   const [ratedLoadAttempted, setRatedLoadAttempted] = useState(
     initialRatedIdentities.length > 0
@@ -189,8 +190,9 @@ export function BookSearch({
   }
 
   /**
-   * Primary path: read ratings with the browser Supabase session (same as AuthNav).
-   * API / cookie SSR often miss the session on Netlify; this does not.
+   * Inscribed badges only. Search results never hit Supabase.
+   * Prefer SSR identities; if the browser session exists and SSR missed it,
+   * one /api/me/rated-slugs call (rated_by = user). Never retry 401/403/500.
    */
   const refreshRatedIdentities = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
@@ -215,53 +217,19 @@ export function BookSearch({
 
       setClientLoggedIn(true);
 
-      // One query by rated_by (assumes index ratings(rated_by)) — not N per card.
-      const { data: ratingRows, error: ratingError } = await supabase
-        .from("ratings")
-        .select(
-          `
-          books!inner (
-            slug,
-            title,
-            author
-          )
-        `
-        )
-        .eq("rated_by", user.id);
+      let next: UserRatedIdentity[] = initialRatedIdentities.map((row) => ({
+        ...row,
+      }));
+      let source: RatedSource =
+        next.length > 0 ? "ssr" : "none";
 
-      let next: UserRatedIdentity[] = [];
-      let source: RatedSource = "none";
-
-      if (!ratingError && ratingRows && ratingRows.length > 0) {
-        for (const row of ratingRows) {
-          const book = Array.isArray(row.books) ? row.books[0] : row.books;
-          if (!book || typeof book !== "object") continue;
-          const slug =
-            typeof book.slug === "string" ? book.slug.trim() : "";
-          const title =
-            typeof book.title === "string" ? book.title.trim() : "";
-          if (!slug || !title) continue;
-          if (next.some((entry) => entry.slug === slug)) continue;
-          next.push({
-            slug,
-            title,
-            author:
-              typeof book.author === "string"
-                ? book.author.trim() || null
-                : null,
-          });
-        }
-        if (next.length > 0) source = "browser-query";
-      }
-
-      // Do not retry the same ratings read on 57014 / 57014-mapped 500s.
-      if (ratingError && !isStatementTimeoutError(ratingError)) {
+      // One shot when SSR had no session. Do not query ratings from the browser.
+      if (next.length === 0 && !ratedApiOnceRef.current) {
+        ratedApiOnceRef.current = true;
         const headers: Record<string, string> = {};
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          headers.Authorization = `Bearer ${session.access_token}`;
+        const accessToken = session?.access_token;
+        if (accessToken) {
+          headers.Authorization = `Bearer ${accessToken}`;
         }
         const response = await fetch("/api/me/rated-slugs", {
           credentials: "same-origin",
@@ -285,9 +253,9 @@ export function BookSearch({
             source = "api";
           }
         }
+        // 401 / 403 / 42501 / 500 / 57014: do not retry.
       }
 
-      // 3) Same-tab ratings just submitted.
       for (const slug of readJustRatedSlugs()) {
         if (!next.some((row) => row.slug === slug)) {
           next.push({ slug, title: "", author: null });
@@ -305,11 +273,11 @@ export function BookSearch({
         setRatedSource("none");
       }
     } catch {
-      // Keep SSR / last-known identities.
+      // Keep SSR / last-known identities. Do not retry.
     } finally {
       setRatedLoadAttempted(true);
     }
-  }, [initialRatedIdentities.length]);
+  }, [initialRatedIdentities]);
 
   // Detect browser session + load rated works (do not gate on SSR isLoggedIn).
   useEffect(() => {

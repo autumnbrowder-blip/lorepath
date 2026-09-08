@@ -1,8 +1,6 @@
 import { sourceFromBookSlug } from "@/lib/book-cache";
 import { searchBooks } from "@/lib/books";
 import { fetchNytBestsellers } from "@/lib/nyt-books";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createServiceRoleClient, createClient } from "@/lib/supabase/server";
 import type { BookSource, BookSummary } from "@/types/book";
 
 const SUGGESTION_LIMIT = 6;
@@ -54,84 +52,6 @@ function pushUnique(
   into.push(book);
 }
 
-/**
- * Prefer books that already have community marks in our archive.
- * Soft-fails to [] — never throws.
- */
-async function loadCommunityRatedBooks(): Promise<BookSummary[]> {
-  if (!isSupabaseConfigured()) return [];
-
-  try {
-    const admin = createServiceRoleClient();
-    const supabase =
-      "error" in admin ? await createClient() : admin.supabase;
-
-    const { data, error } = await supabase
-      .from("ratings")
-      .select(
-        `
-        book_id,
-        books (
-          slug,
-          title,
-          author,
-          cover_image_url,
-          genre
-        )
-      `
-      )
-      .limit(200);
-
-    if (error || !data?.length) return [];
-
-    const counts = new Map<
-      string,
-      { count: number; book: BookSummary }
-    >();
-
-    for (const row of data) {
-      const raw = Array.isArray(row.books) ? row.books[0] : row.books;
-      if (!raw || typeof raw !== "object") continue;
-      const slug = typeof raw.slug === "string" ? raw.slug.trim() : "";
-      const title = typeof raw.title === "string" ? raw.title.trim() : "";
-      if (!slug || !title) continue;
-
-      const author =
-        typeof raw.author === "string" && raw.author.trim()
-          ? raw.author.trim()
-          : "";
-      const summary = asSummary({
-        id: slug,
-        title,
-        authors: author ? [author] : [],
-        coverUrl:
-          typeof raw.cover_image_url === "string"
-            ? raw.cover_image_url
-            : null,
-        genres:
-          typeof raw.genre === "string" && raw.genre.trim()
-            ? [raw.genre.trim()]
-            : [],
-      });
-      if (!summary) continue;
-
-      const prev = counts.get(slug);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        counts.set(slug, { count: 1, book: summary });
-      }
-    }
-
-    return Array.from(counts.values())
-      .sort((a, b) => b.count - a.count)
-      .map((entry) => entry.book)
-      .slice(0, SUGGESTION_LIMIT);
-  } catch {
-    return [];
-  }
-}
-
 async function loadCuratedSearchBooks(
   needed: number,
   seen: Set<string>
@@ -162,22 +82,13 @@ async function loadCuratedSearchBooks(
 }
 
 /**
- * Books for the first-rating prompt: community-rated first, then NYT,
- * then curated popular-title searches. Always soft-fails.
+ * Books for the first-rating prompt: NYT then curated popular-title searches.
+ * Do not SELECT from ratings without book_id or rated_by — that seq-scans
+ * and cancels with SQLSTATE 57014.
  */
 export async function getFirstRatingSuggestions(): Promise<BookSummary[]> {
   const suggestions: BookSummary[] = [];
   const seen = new Set<string>();
-
-  try {
-    const community = await loadCommunityRatedBooks();
-    for (const book of community) {
-      pushUnique(suggestions, book, seen);
-      if (suggestions.length >= SUGGESTION_LIMIT) return suggestions;
-    }
-  } catch {
-    // continue to fallbacks
-  }
 
   try {
     const nyt = await fetchNytBestsellers();

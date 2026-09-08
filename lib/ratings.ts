@@ -105,6 +105,7 @@ async function fetchUserRatingRow(
   bookDbId: string,
   userId: string
 ): Promise<{ data: ContentRating | null; error: string | null }> {
+  // Assumes unique index ratings(book_id, rated_by). Never SELECT without both.
   if (isColumnMarkedMissing("ratings", "romance")) {
     const legacy = await supabase
       .from("ratings")
@@ -172,13 +173,18 @@ async function fetchUserRatingRow(
 
 async function fetchAllRatingsForBook(
   supabase: SupabaseClient,
-  bookDbId: string
+  bookDbId: string,
+  signal?: AbortSignal
 ): Promise<{ data: ContentRating[]; error: string | null }> {
+  // Community averages for one book — rating columns only.
+  // Assumes index ratings(book_id). Never scan the full ratings table.
   if (isColumnMarkedMissing("ratings", "romance")) {
-    const legacy = await supabase
+    let legacyQuery = supabase
       .from("ratings")
       .select(LEGACY_RATING_SELECT)
       .eq("book_id", bookDbId);
+    if (signal) legacyQuery = legacyQuery.abortSignal(signal);
+    const legacy = await legacyQuery;
 
     if (legacy.error) {
       return { data: [], error: legacy.error.message };
@@ -195,19 +201,23 @@ async function fetchAllRatingsForBook(
     };
   }
 
-  const full = await supabase
+  let fullQuery = supabase
     .from("ratings")
     .select(RATING_SELECT)
     .eq("book_id", bookDbId);
+  if (signal) fullQuery = fullQuery.abortSignal(signal);
+  const full = await fullQuery;
 
   if (
     full.error &&
     noteMissingColumnFromError("ratings", "romance", full.error.message)
   ) {
-    const legacy = await supabase
+    let legacyQuery = supabase
       .from("ratings")
       .select(LEGACY_RATING_SELECT)
       .eq("book_id", bookDbId);
+    if (signal) legacyQuery = legacyQuery.abortSignal(signal);
+    const legacy = await legacyQuery;
 
     if (legacy.error) {
       return { data: [], error: legacy.error.message };
@@ -400,6 +410,7 @@ export const getCommunityRatings = cache(async function getCommunityRatings(
     return { averages: null, count: 0 };
   }
 
+  const controller = new AbortController();
   try {
     const { withTimeout } = await import("@/lib/provider-resilience");
     return await withTimeout(
@@ -418,7 +429,12 @@ export const getCommunityRatings = cache(async function getCommunityRatings(
           return { averages: null, count: 0 };
         }
 
-        const result = await fetchAllRatingsForBook(supabase, bookId);
+        // One book page query — columns only, filtered by book_id.
+        const result = await fetchAllRatingsForBook(
+          supabase,
+          bookId,
+          controller.signal
+        );
         if (result.error) {
           return { averages: null, count: 0 };
         }
@@ -429,6 +445,7 @@ export const getCommunityRatings = cache(async function getCommunityRatings(
       `community-ratings:${bookExternalId}`
     );
   } catch {
+    controller.abort();
     return { averages: null, count: 0 };
   }
 });
@@ -572,7 +589,7 @@ export function computeUserReadingStats(
 export async function getUserRatedBooks(
   userId: string
 ): Promise<UserRatedBook[]> {
-  if (!isSupabaseConfigured()) {
+  if (!userId.trim() || !isSupabaseConfigured()) {
     return [];
   }
 
@@ -592,6 +609,7 @@ export async function getUserRatedBooks(
       books: unknown;
     };
 
+    // Stats / rated list — one query. Assumes index ratings(rated_by).
     const first = isColumnMarkedMissing("ratings", "romance")
       ? await supabase
           .from("ratings")
@@ -753,6 +771,7 @@ export async function getUserRatedIdentities(
     return [];
   }
 
+  const controller = new AbortController();
   try {
     const { PAGE_FETCH_TIMEOUT_MS, withTimeout } = await import(
       "@/lib/provider-resilience"
@@ -762,6 +781,8 @@ export async function getUserRatedIdentities(
         const supabase = await getTrustedUserDataClient();
         if (!supabase) return [];
 
+        // Browse Inscribed badges — one query by rated_by, not per card.
+        // Assumes index ratings(rated_by).
         const { data, error } = await supabase
           .from("ratings")
           .select(
@@ -773,7 +794,8 @@ export async function getUserRatedIdentities(
         )
       `
           )
-          .eq("rated_by", userId);
+          .eq("rated_by", userId)
+          .abortSignal(controller.signal);
 
         if (error || !data || data.length === 0) {
           return [];
@@ -799,6 +821,7 @@ export async function getUserRatedIdentities(
       `rated-identities:${userId}`
     );
   } catch {
+    controller.abort();
     return [];
   }
 }
@@ -822,6 +845,7 @@ export async function getUserRatingCount(userId: string): Promise<number> {
     const supabase = await getTrustedUserDataClient();
     if (!supabase) return 0;
 
+    // Assumes index ratings(rated_by). Head-only — no row payload.
     const { count, error } = await supabase
       .from("ratings")
       .select("id", { count: "exact", head: true })
@@ -836,10 +860,6 @@ export async function getUserRatingCount(userId: string): Promise<number> {
 
 function sourceFromSlug(slug: string): BookSource {
   return sourceFromBookSlug(slug);
-}
-
-function sanitizeIlikeToken(token: string): string {
-  return token.replace(/[%_,.()"'\\]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 type RatedDbBookRow = {
@@ -911,9 +931,9 @@ export type RatedBooksForSearch = {
 };
 
 /**
- * Find books in our database that already have ratings (user or community)
- * and match the search query. Used to keep rated books visible in browse
- * search and to prefer their stored slug/identity during dedupe.
+ * Find this user's already-rated books that match the browse query.
+ * One query filtered by rated_by — never a community-wide ratings scan
+ * and never a per-card loop. Anonymous search must not call this.
  */
 export async function findRatedBooksMatchingQuery(
   query: string,
@@ -922,7 +942,8 @@ export async function findRatedBooksMatchingQuery(
   noStore();
 
   const empty: RatedBooksForSearch = { books: [], ratedSlugs: [] };
-  if (!isSupabaseConfigured() || !query.trim()) {
+  const userId = options?.userId?.trim() ?? "";
+  if (!isSupabaseConfigured() || !query.trim() || !userId) {
     return empty;
   }
 
@@ -930,23 +951,11 @@ export async function findRatedBooksMatchingQuery(
     const supabase = resolveRatingsReadClient();
     if (!supabase) return empty;
 
-    const tokens = query
-      .trim()
-      .split(/\s+/)
-      .map(sanitizeIlikeToken)
-      .filter((token) => token.length >= 2);
-    const primary =
-      tokens.find((token) => token.length >= 3) ?? tokens[0] ?? null;
-
-    // Prefer books the signed-in user has rated; also include any community-
-    // rated titles so ratings stay discoverable for everyone.
-    let rows: RatedDbBookRow[] = [];
-
-    if (options?.userId) {
-      const userRated = await supabase
-        .from("ratings")
-        .select(
-          `
+    // Assumes index ratings(rated_by). Do not join ratings!inner on books.
+    const userRated = await supabase
+      .from("ratings")
+      .select(
+        `
           books!inner (
             slug,
             title,
@@ -959,62 +968,18 @@ export async function findRatedBooksMatchingQuery(
             page_count
           )
         `
-        )
-        .eq("rated_by", options.userId)
-        .limit(200);
-
-      if (!userRated.error && userRated.data) {
-        rows = userRated.data.flatMap((row) => {
-          const book = Array.isArray(row.books) ? row.books[0] : row.books;
-          return book ? [book as RatedDbBookRow] : [];
-        });
-      }
-    }
-
-    // Community-rated books filtered by a cheap ilike token when possible.
-    let communityQuery = supabase
-      .from("books")
-      .select(
-        `
-        slug,
-        title,
-        author,
-        isbn,
-        cover_image_url,
-        description,
-        published_year,
-        genre,
-        page_count,
-        ratings!inner ( id )
-      `
       )
-      .limit(80);
+      .eq("rated_by", userId)
+      .limit(200);
 
-    if (primary && options?.mode !== "genre") {
-      communityQuery = communityQuery.or(
-        `title.ilike.%${primary}%,author.ilike.%${primary}%`
-      );
-    } else if (primary && options?.mode === "genre") {
-      communityQuery = communityQuery.or(
-        `genre.ilike.%${primary}%,title.ilike.%${primary}%`
-      );
+    if (userRated.error) {
+      return empty;
     }
 
-    const community = await communityQuery;
-    if (!community.error && community.data) {
-      const communityRows = community.data.map((row) => ({
-        slug: row.slug as string,
-        title: row.title as string,
-        author: (row.author as string | null) ?? null,
-        isbn: (row.isbn as string | null) ?? null,
-        cover_image_url: (row.cover_image_url as string | null) ?? null,
-        description: (row.description as string | null) ?? null,
-        published_year: (row.published_year as number | null) ?? null,
-        genre: (row.genre as string | null) ?? null,
-        page_count: (row.page_count as number | null) ?? null,
-      }));
-      rows = [...rows, ...communityRows];
-    }
+    const rows: RatedDbBookRow[] = (userRated.data ?? []).flatMap((row) => {
+      const book = Array.isArray(row.books) ? row.books[0] : row.books;
+      return book ? [book as RatedDbBookRow] : [];
+    });
 
     const bySlug = new Map<string, RatedDbBookRow>();
     for (const row of rows) {
@@ -1132,6 +1097,7 @@ export async function submitUserRating(
   };
 
   // Write without .select() so INSERT/UPDATE failures are unambiguous.
+  // Assumes unique index ratings(book_id, rated_by).
   const { error } = await supabase
     .from("ratings")
     .upsert(row, { onConflict: "book_id,rated_by" });

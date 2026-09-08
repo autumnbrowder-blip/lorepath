@@ -197,7 +197,6 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     usersResult,
     ratingsResult,
     recentResult,
-    ratedBookRowsResult,
     profilesResult,
     pageViews,
   ] = await Promise.all([
@@ -222,7 +221,6 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
       )
       .order("created_at", { ascending: false })
       .limit(20),
-    supabase.from("ratings").select("book_id"),
     // Registered users — newest first (emails joined from auth.admin below).
     supabase
       .from("profiles")
@@ -233,11 +231,9 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     getPageViewStats(supabase),
   ]);
 
-  const booksWithRatings = new Set(
-    (ratedBookRowsResult.data ?? [])
-      .map((row) => row.book_id as string | null)
-      .filter((id): id is string => Boolean(id))
-  ).size;
+  // Never SELECT every ratings.book_id — that seq-scans and 57014s.
+  // Head count of ratings is the cheap stand-in (not distinct books).
+  const booksWithRatings = ratingsResult.count ?? 0;
 
   const emailById = await loadAuthEmailMap(supabase);
 

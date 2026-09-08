@@ -166,6 +166,7 @@ async function loadViewerState(
     const user = await getCachedUser();
 
     if (!user) {
+      // No session → do not query user_preferences or this user's ratings.
       return ANONYMOUS_VIEWER;
     }
 
@@ -255,6 +256,7 @@ export default async function BookDetailPage({
   });
 
   const [ratingsResult, viewer, latestEdition] = await Promise.all([
+    // Match Score / community averages: one query for this book_id only.
     withTimeout(getCommunityRatings(id, book.isbn), 1500, "page-community-ratings")
       .catch((error) => {
         console.error("[books/[id]] community ratings failed:", {

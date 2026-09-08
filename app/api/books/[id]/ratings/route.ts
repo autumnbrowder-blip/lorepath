@@ -82,6 +82,7 @@ export async function GET(
     );
   } catch (error) {
     console.error("[api/books/ratings GET] failed:", error);
+    // Never map 57014 to a retryable 500 — clients must not re-hit the same scan.
     return NextResponse.json(
       { averages: null, count: 0, userRating: null },
       {

@@ -158,6 +158,7 @@ async function fetchPreferenceRow(
   | { data: PreferenceRow; error: null }
   | { data: null; error: PostgrestError | { message: string; code?: string } | null }
 > {
+  // Assumes unique index user_preferences(user_id). Never SELECT without user_id.
   if (isColumnMarkedMissing("user_preferences", "romance")) {
     const legacy = await supabase
       .from("user_preferences")
@@ -280,6 +281,7 @@ async function upsertPreferenceRow(
   supabase: SupabaseClient,
   row: PreferenceWriteRow
 ): Promise<{ error: PostgrestError | null }> {
+  // Assumes unique index user_preferences(user_id).
   const result = await supabase
     .from("user_preferences")
     .upsert(row, { onConflict: "user_id" });
@@ -299,7 +301,7 @@ export async function getUserPreferences(
   // Never serve a cached empty/default payload after a successful save.
   noStore();
 
-  if (!isSupabaseConfigured()) {
+  if (!userId.trim() || !isSupabaseConfigured()) {
     return null;
   }
 
@@ -327,8 +329,13 @@ export async function loadPreferencesForPage(userId: string): Promise<
 > {
   noStore();
 
-  if (!isSupabaseConfigured()) {
-    return { preferences: null, error: "Supabase is not configured." };
+  if (!userId.trim() || !isSupabaseConfigured()) {
+    return {
+      preferences: null,
+      error: !userId.trim()
+        ? "You are not signed in. Please sign in and try again."
+        : "Supabase is not configured.",
+    };
   }
 
   const supabase = await getTrustedUserDataClient();
