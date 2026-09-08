@@ -146,16 +146,19 @@ function readSettledGoogle(
   const reason = result.reason;
   const message =
     reason instanceof Error ? reason.message : String(reason ?? "unknown error");
-  const status =
+  const status: number | undefined =
     reason instanceof Error
-      ? (reason as Error & { status?: number }).status
+      ? (reason as Error & { status?: number | null }).status ?? undefined
       : undefined;
 
   console.error(`[searchBooks] Google Books rejected:`, {
     message,
     status,
   });
-  return emptyGooglePage({ message, status: status ?? undefined });
+  return emptyGooglePage({
+    message,
+    status: status ?? undefined,
+  });
 }
 
 async function resolveSearchUserId(
