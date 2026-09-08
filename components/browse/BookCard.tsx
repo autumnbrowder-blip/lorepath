@@ -146,10 +146,10 @@ export function BookCard({
           ) : null}
           <Link
             href={tomeHref}
-            className="lp-book-card-open inline-flex h-9 w-auto items-center justify-center px-3"
+            className="lp-book-card-open match-score-badge match-score-badge--excellent relative inline-flex h-9 w-auto items-center justify-center px-4 no-underline"
             data-testid="open-the-tome"
           >
-            Open the Tome
+            <span className="match-score-badge-label">Open the Tome</span>
           </Link>
         </div>
       </div>
