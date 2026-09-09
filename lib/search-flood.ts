@@ -10,6 +10,7 @@ import {
   withTimeout,
 } from "@/lib/provider-resilience";
 import {
+  googleSearchQuery,
   normalizeSearchQuery,
   primarySearchString,
   secondarySearchVariants,
@@ -180,13 +181,16 @@ export async function fetchSearchProviderFlood(input: {
   const wave: Promise<ProviderPage>[] = [];
   const catalogQuery = plainQuery(primary) || primary;
 
-  // Google: keep a short strategy fan-out (highest recall, no 1 req/s throttle).
-  for (const strategy of strategies) {
+  // One Google HTTP call per flood page — same query choice as searchBooks.
+  {
     const ms = stepTimeout();
+    const googleQuery = input.genreMode
+      ? catalogQuery
+      : googleSearchQuery(catalogQuery);
     wave.push(
-      timedProviderPage("google", `google search:${strategy}`, ms, async () => {
+      timedProviderPage("google", `google search:${googleQuery}`, ms, async () => {
         const result = await searchGoogleBooks(
-          strategy,
+          googleQuery,
           input.page,
           input.searchOptions
         );
@@ -218,7 +222,11 @@ export async function fetchSearchProviderFlood(input: {
 
   // Open Library in the SAME wave — do not wait for commercial to finish first.
   if (!input.genreMode) {
-    const olQuery = (normalized.title || catalogQuery).trim();
+    const olQuery = (
+      normalized.kind === "author"
+        ? normalized.raw || catalogQuery
+        : normalized.title || catalogQuery
+    ).trim();
     if (olQuery) {
       const ms = stepTimeout();
       wave.push(

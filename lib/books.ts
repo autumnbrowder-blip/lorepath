@@ -65,6 +65,7 @@ import {
   searchCacheKey,
   setCachedSearchPage,
   setInFlightSearch,
+  SEARCH_PAGE_429_TTL_MS,
   type CachedSearchPage,
 } from "@/lib/search-cache";
 import {
@@ -76,8 +77,7 @@ import {
   repairSearchQuery,
 } from "@/lib/book-utils";
 import {
-  googleAuthorPriorityQuery,
-  googleTitlePriorityQuery,
+  googleSearchQuery,
 } from "@/lib/search-query";
 import { recoverPopularTitleHits } from "@/lib/search-recovery";
 import { unstable_noStore as noStore } from "next/cache";
@@ -111,6 +111,8 @@ const DETAIL_ENRICH_BUDGET_MS = 1500;
 /** Core catalog lookups — keep short so Hardcover cannot decide page existence. */
 const CORE_LOOKUP_TIMEOUT_MS = 2000;
 
+const GOOGLE_429_WARNING =
+  "One archive is resting. Results below are still valid.";
 /** Catalog sources for browse search. Hardcover is never called here. */
 const SEARCH_SOURCES: BookSource[] = [
   "openlibrary",
@@ -239,22 +241,15 @@ async function fetchSearchPageUncached(
 ): Promise<CachedSearchPage> {
   const includeIsbndb = hasIsbndbApiKey();
   const includeGutendex = genreMode || pageNumber === 1;
-  const titlePriorityQuery =
-    !genreMode && pageNumber === 1
-      ? googleTitlePriorityQuery(searchQuery)
-      : null;
-  const authorPriorityQuery =
-    !genreMode && pageNumber === 1
-      ? googleAuthorPriorityQuery(searchQuery)
-      : null;
+  // One Google HTTP call per search page. Person names use inauthor;
+  // multi-word titles use intitle; otherwise raw q.
+  const googleQuery = genreMode
+    ? searchQuery
+    : googleSearchQuery(searchQuery);
 
-  // A) q={userQuery}  B) intitle:"…"  C) inauthor:"…"
-  // Same allSettled wave as Open Library. Gutendex is extra. Hardcover off.
   const [
     openLibrarySettled,
     googleSettled,
-    googleTitleSettled,
-    googleAuthorSettled,
     gutendexSettled,
     isbndbSettled,
   ] = await Promise.allSettled([
@@ -264,30 +259,10 @@ async function fetchSearchPageUncached(
       "openlibrary search"
     ),
     withTimeout(
-      searchGoogleBooks(searchQuery, pageNumber, searchOptions),
+      searchGoogleBooks(googleQuery, pageNumber, searchOptions),
       OPTIONAL_SEARCH_TIMEOUT_MS,
       "google search"
     ),
-    titlePriorityQuery
-      ? withTimeout(
-          searchGoogleBooks(titlePriorityQuery, pageNumber, {
-            ...searchOptions,
-            tripRateLimitCircuit: false,
-          }),
-          OPTIONAL_SEARCH_TIMEOUT_MS,
-          "google title-priority search"
-        )
-      : Promise.resolve(emptyGooglePage()),
-    authorPriorityQuery
-      ? withTimeout(
-          searchGoogleBooks(authorPriorityQuery, pageNumber, {
-            ...searchOptions,
-            tripRateLimitCircuit: false,
-          }),
-          OPTIONAL_SEARCH_TIMEOUT_MS,
-          "google author-priority search"
-        )
-      : Promise.resolve(emptyGooglePage()),
     includeGutendex
       ? withTimeout(
           searchGutendex(searchQuery, pageNumber, searchOptions),
@@ -309,36 +284,17 @@ async function fetchSearchPageUncached(
     openLibrarySettled
   );
   const googleResult = readSettledGoogle(googleSettled);
-  const googleTitleResult = titlePriorityQuery
-    ? readSettledGoogle(googleTitleSettled)
-    : emptyGooglePage();
-  const googleAuthorResult = authorPriorityQuery
-    ? readSettledGoogle(googleAuthorSettled)
-    : emptyGooglePage();
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
   const isbndbResult = includeIsbndb
     ? readSettledPage("ISBNdb", isbndbSettled)
     : emptyPage();
 
   const openLibraryBooks = openLibraryResult.books;
-  const googleBooks = [
-    ...googleResult.books,
-    ...googleTitleResult.books,
-    ...googleAuthorResult.books,
-  ];
+  const googleBooks = googleResult.books;
   const gutendexBooks = gutendexResult.books;
   const isbndbBooks = isbndbResult.books;
-  const googleRawCount =
-    (googleResult.rawCount ?? 0) +
-    (googleTitleResult.rawCount ?? 0) +
-    (googleAuthorResult.rawCount ?? 0);
-  const googleError =
-    [googleResult.error, googleTitleResult.error, googleAuthorResult.error].find(
-      (error) => error?.status === 429
-    ) ??
-    googleResult.error ??
-    googleTitleResult.error ??
-    googleAuthorResult.error;
+  const googleRawCount = googleResult.rawCount ?? 0;
+  const googleError = googleResult.error;
 
   if (googleError) {
     console.error("[searchBooks] Google Books provider error:", {
@@ -347,8 +303,7 @@ async function fetchSearchPageUncached(
       mode: genreMode ? "genre" : "text",
       googleError,
       googleRawCount,
-      titlePriorityQuery,
-      authorPriorityQuery,
+      googleQuery,
     });
   }
 
@@ -364,8 +319,11 @@ async function fetchSearchPageUncached(
   if (includeGutendex && settledFailed(gutendexSettled)) {
     searchErrors.push("gutendex:rejected");
   }
+  const google429 = googleError?.status === 429;
   console.info(
-    `[search] q=${searchQuery} google=${googleBooks.length} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} err=${searchErrors.join(",") || "-"}`
+    google429
+      ? `[search] q=${searchQuery} google=429 remaining=OL ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} err=${searchErrors.join(",") || "-"}`
+      : `[search] q=${searchQuery} google=${googleBooks.length} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} err=${searchErrors.join(",") || "-"}`
   );
 
   if (SEARCH_DEBUG) {
@@ -377,8 +335,7 @@ async function fetchSearchPageUncached(
       google: googleBooks.length,
       googleRawCount,
       googleError,
-      titlePriorityQuery,
-      authorPriorityQuery,
+      googleQuery,
       gutendex: gutendexBooks.length,
       isbndb: includeIsbndb ? isbndbBooks.length : "skipped",
       totalRaw:
@@ -463,8 +420,6 @@ async function fetchSearchPageUncached(
   const attempted = [
     openLibrarySettled,
     googleSettled,
-    ...(titlePriorityQuery ? [googleTitleSettled] : []),
-    ...(authorPriorityQuery ? [googleAuthorSettled] : []),
     ...(includeGutendex ? [gutendexSettled] : []),
     ...(includeIsbndb ? [isbndbSettled] : []),
   ];
@@ -482,15 +437,10 @@ async function fetchSearchPageUncached(
   const hasMore =
     openLibraryResult.hasMore ||
     googleResult.hasMore ||
-    googleTitleResult.hasMore ||
-    googleAuthorResult.hasMore ||
     gutendexResult.hasMore ||
     isbndbResult.hasMore;
 
-  const warning =
-    googleError?.status === 429
-      ? "Google Books is rate-limited right now. Showing Open Library results."
-      : null;
+  const warning = google429 ? GOOGLE_429_WARNING : null;
 
   return {
     query: searchQuery,
@@ -564,7 +514,13 @@ export async function searchBooks(
       (pageResult.sourceCounts.google ?? 0) >
       0
   ) {
-    setCachedSearchPage(cacheKey, pageResult);
+    // A Google 429 must not occupy the 10-min success slot. Cache OL briefly
+    // so we still serve results without hammering Google.
+    if (pageResult.googleError?.status === 429) {
+      setCachedSearchPage(cacheKey, pageResult, SEARCH_PAGE_429_TTL_MS);
+    } else {
+      setCachedSearchPage(cacheKey, pageResult);
+    }
   }
 
   return toSearchResult(pageResult);
@@ -678,7 +634,7 @@ async function loadCoreBook(
     }
 
     if (searchHint) {
-      const viaHint = await trySource("google", () =>
+      const viaHint = await trySource("openlibrary", () =>
         resolveViaSearchHint(bookId, searchHint)
       );
       if (viaHint) return viaHint;
@@ -1185,9 +1141,9 @@ async function resolveGoogleVolume(
 }
 
 /**
- * When direct Google volume fetch fails, use the browse query to recover
- * the same volume (exact id) or the best title/author match.
- * Open Library is preferred; ISBNdb is a last-resort detail fallback only.
+ * When direct Google volume fetch fails, recover from Open Library using
+ * the browse query. Never starts a Google search (quota).
+ * ISBNdb is a last-resort detail fallback only.
  */
 async function resolveViaSearchHint(
   bookId: string,
@@ -1196,68 +1152,6 @@ async function resolveViaSearchHint(
   const hint = searchHint.trim();
   if (!hint) return null;
 
-  try {
-    const googlePage = await searchGoogleBooks(hint, 1);
-    const exactGoogle = googlePage.books.find((row) => row.id === bookId);
-    if (exactGoogle) {
-      try {
-        const detail = await getGoogleBookById(exactGoogle.id);
-        if (detail) return detail;
-      } catch (error) {
-        console.error("[getBookById] hint exact-id detail failed:", {
-          bookId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-
-      const viaOl = await resolveOpenLibraryFallback({
-        bookId,
-        isbn: exactGoogle.isbn,
-        title: exactGoogle.title,
-        authors: exactGoogle.authors,
-        searchHint: hint,
-      });
-      if (viaOl) return viaOl;
-
-      return summaryToDetail(exactGoogle, bookId);
-    }
-
-    if (googlePage.books.length > 0) {
-      const best = rankSearchResults(googlePage.books, hint)[0];
-      if (best?.isbn) {
-        try {
-          const byIsbn = await getGoogleBookByIsbn(best.isbn);
-          if (byIsbn) return { ...byIsbn, id: bookId };
-        } catch (error) {
-          console.error("[getBookById] hint ISBN fallback failed:", {
-            bookId,
-            isbn: best.isbn,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
-      if (best) {
-        const viaOl = await resolveOpenLibraryFallback({
-          bookId,
-          isbn: best.isbn,
-          title: best.title,
-          authors: best.authors,
-          searchHint: hint,
-        });
-        if (viaOl) return viaOl;
-        return summaryToDetail(best, bookId);
-      }
-    }
-  } catch (error) {
-    console.error("[getBookById] Google searchHint failed:", {
-      bookId,
-      hint,
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  // Primary reliable alternate: Open Library only (no ISBNdb flood).
   const fromOl = await resolveOpenLibraryFallback({
     bookId,
     searchHint: hint,

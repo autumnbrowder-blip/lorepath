@@ -426,10 +426,12 @@ export function BookSearch({
           ) : null}
 
           {!queryEmpty && warning && !error ? (
-            <div className="alert-error mb-8">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>{warning}</p>
-            </div>
+            <p
+              className="mb-6 font-heading text-sm text-[#4a2f0f]/75"
+              role="status"
+            >
+              {warning}
+            </p>
           ) : null}
 
           {!queryEmpty && loading && books.length === 0 ? (

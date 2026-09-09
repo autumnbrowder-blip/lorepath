@@ -25,8 +25,10 @@ type SearchCacheEntry = {
 
 export type CachedSearchPage = Omit<SearchCacheEntry, "expiresAt">;
 
-/** Five minutes — GET /api/books/search is keyed on q + page. */
-const TTL_MS = 300_000;
+/** Ten minutes — GET /api/books/search is keyed on q + page. */
+const TTL_MS = 600_000;
+/** Brief merged-page TTL when Google 429'd so we still serve OL, then retry. */
+export const SEARCH_PAGE_429_TTL_MS = 60_000;
 const MAX_ENTRIES = 80;
 
 const cache = new Map<string, SearchCacheEntry>();
@@ -41,7 +43,7 @@ export function searchCacheKey(input: {
   const q = input.query.trim().toLowerCase();
   const page = Math.max(1, input.page);
   const mode = input.mode ?? "text";
-  return `v=browse-q11|q=${q}|page=${page}|mode=${mode}`;
+  return `v=browse-q12|q=${q}|page=${page}|mode=${mode}`;
 }
 
 function cloneBooks(books: BookSummary[]): BookSummary[] {
@@ -106,7 +108,8 @@ export function getCachedSearchPage(
 
 export function setCachedSearchPage(
   key: string,
-  value: CachedSearchPage
+  value: CachedSearchPage,
+  ttlMs: number = TTL_MS
 ): void {
   if (value.books.length === 0) return;
   const query = value.query.trim();
@@ -118,7 +121,7 @@ export function setCachedSearchPage(
   pruneExpired(now);
   cache.set(key, {
     ...clonePage({ ...value, query }),
-    expiresAt: now + TTL_MS,
+    expiresAt: now + ttlMs,
   });
 }
 

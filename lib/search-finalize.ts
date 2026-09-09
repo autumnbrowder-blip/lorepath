@@ -7,6 +7,7 @@ import {
   getBookIsbnKey,
   getBookWorkDedupeKey,
   hasRealAuthor,
+  isAuthorQuery,
   isExactTitleMatch,
   isMerchandiseOrCompanion,
   isPlaceholderDescription,
@@ -71,6 +72,19 @@ function repairBookText<T extends BookSummary>(book: T): T {
 
 function isQueryTitleSurvivor(book: BookSummary, query: string): boolean {
   if (isExactTitleMatch(query, book.title)) return true;
+  if (isAuthorQuery(query)) {
+    const q = query.trim().toLowerCase();
+    if (
+      book.authors.some((author) => author.toLowerCase().includes(q))
+    ) {
+      return true;
+    }
+    const tokens = q.split(/\s+/).filter((token) => token.length >= 2);
+    const authors = book.authors.join(" ").toLowerCase();
+    if (tokens.length > 0 && tokens.every((token) => authors.includes(token))) {
+      return true;
+    }
+  }
   // Prefix hits like "Aristotle and Dante Discover…" for q=aristotle and dante
   // must not lose to an unrelated complete record in selectQualityBooks.
   return titleRelatesToQuery(book.title, query) && hasRealAuthor(book);

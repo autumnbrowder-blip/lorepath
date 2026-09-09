@@ -228,6 +228,79 @@ export type GoogleBooksPageResult = {
   error: GoogleBooksProviderError | null;
 };
 
+/** Successful Google volume pages — repeat searches must not re-hit Google. */
+const GOOGLE_SEARCH_TTL_MS = 600_000;
+/** Brief 429 cache so we skip Google without poisoning a 10-min success page. */
+const GOOGLE_429_CACHE_TTL_MS = 60_000;
+const GOOGLE_SEARCH_CACHE_MAX = 80;
+
+type CachedGoogleSearch = {
+  expiresAt: number;
+  page: GoogleBooksPageResult;
+  kind: "success" | "rate_limit";
+};
+
+const googleSearchCache = new Map<string, CachedGoogleSearch>();
+
+function googleSearchCacheKey(
+  query: string,
+  page: number,
+  options?: { mode?: string; pageSize?: number; langRestrict?: string }
+): string {
+  const q = query.trim().toLowerCase();
+  const p = Math.max(1, page);
+  const mode = options?.mode ?? "text";
+  const pageSize = options?.pageSize ?? "";
+  const lang = options?.langRestrict?.trim() ?? "";
+  return `v=google-q1|q=${q}|page=${p}|mode=${mode}|ps=${pageSize}|lang=${lang}`;
+}
+
+function cloneGooglePage(page: GoogleBooksPageResult): GoogleBooksPageResult {
+  return {
+    books: page.books.map((book) => ({ ...book })),
+    hasMore: page.hasMore,
+    rawCount: page.rawCount,
+    error: page.error ? { ...page.error } : null,
+  };
+}
+
+function pruneGoogleSearchCache(now: number) {
+  for (const [key, entry] of Array.from(googleSearchCache.entries())) {
+    if (entry.expiresAt <= now) googleSearchCache.delete(key);
+  }
+  if (googleSearchCache.size <= GOOGLE_SEARCH_CACHE_MAX) return;
+  const overflow = googleSearchCache.size - GOOGLE_SEARCH_CACHE_MAX;
+  const keys = Array.from(googleSearchCache.keys()).slice(0, overflow);
+  for (const key of keys) googleSearchCache.delete(key);
+}
+
+function getCachedGoogleSearch(key: string): CachedGoogleSearch | null {
+  const now = Date.now();
+  const entry = googleSearchCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    googleSearchCache.delete(key);
+    return null;
+  }
+  return { ...entry, page: cloneGooglePage(entry.page) };
+}
+
+function setCachedGoogleSearch(
+  key: string,
+  page: GoogleBooksPageResult,
+  kind: CachedGoogleSearch["kind"]
+) {
+  const now = Date.now();
+  pruneGoogleSearchCache(now);
+  const ttl =
+    kind === "rate_limit" ? GOOGLE_429_CACHE_TTL_MS : GOOGLE_SEARCH_TTL_MS;
+  googleSearchCache.set(key, {
+    expiresAt: now + ttl,
+    page: cloneGooglePage(page),
+    kind,
+  });
+}
+
 async function fetchGoogleSearch(
   query: string,
   page = 1,
@@ -308,16 +381,26 @@ export async function searchGoogleBooks(
     tripRateLimitCircuit?: boolean;
   }
 ): Promise<GoogleBooksPageResult> {
+  const cacheKey = googleSearchCacheKey(query, page, options);
+  const cached = getCachedGoogleSearch(cacheKey);
+  if (cached) {
+    return cached.page;
+  }
+
+  const rateLimitedPage = (): GoogleBooksPageResult => ({
+    books: [],
+    hasMore: false,
+    rawCount: 0,
+    error: {
+      message: "Google Books rate limit reached.",
+      status: 429,
+    },
+  });
+
   if (isGoogleSearchCircuitOpen()) {
-    return {
-      books: [],
-      hasMore: false,
-      rawCount: 0,
-      error: {
-        message: "Google Books rate limit reached.",
-        status: 429,
-      },
-    };
+    const page429 = rateLimitedPage();
+    setCachedGoogleSearch(cacheKey, page429, "rate_limit");
+    return page429;
   }
 
   if (!getGoogleBooksApiKey()) {
@@ -355,12 +438,14 @@ export async function searchGoogleBooks(
       }
     }
 
-    return {
+    const success: GoogleBooksPageResult = {
       books: dedupeBooks(books),
       hasMore,
       rawCount,
       error: null,
     };
+    setCachedGoogleSearch(cacheKey, success, "success");
+    return success;
   } catch (error) {
     const providerError = toProviderError(
       error,
@@ -377,16 +462,25 @@ export async function searchGoogleBooks(
         "[searchGoogleBooks] Rate limited (429). Returning empty page.",
         { query, page, mode: options?.mode, ...providerError }
       );
-    } else {
-      console.error("[searchGoogleBooks] Request failed:", {
-        query,
-        page,
-        mode: options?.mode,
-        ...providerError,
-      });
+      const page429: GoogleBooksPageResult = {
+        books: [],
+        hasMore: false,
+        rawCount: 0,
+        error: providerError,
+      };
+      setCachedGoogleSearch(cacheKey, page429, "rate_limit");
+      return page429;
     }
 
-    // Soft-fail so Promise.allSettled siblings still surface results
+    console.error("[searchGoogleBooks] Request failed:", {
+      query,
+      page,
+      mode: options?.mode,
+      ...providerError,
+    });
+
+    // Soft-fail so Promise.allSettled siblings still surface results.
+    // Do not cache other errors as a 10-min Google success.
     return { books: [], hasMore: false, rawCount: 0, error: providerError };
   }
 }

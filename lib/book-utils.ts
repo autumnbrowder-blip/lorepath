@@ -252,29 +252,51 @@ export function cleanTitle(title?: string | null): string {
   return repairSearchQuery(title ?? "") || "Untitled";
 }
 
-/** Detect queries that look like an author name (e.g. "John Gwynne"). */
+/** Title function/content words — "Fourth Wing" must not become author=. */
+const AUTHOR_QUERY_TITLE_TERMS =
+  /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean)$/i;
+
+function isAuthorNameToken(word: string): boolean {
+  return /^[A-Za-z][A-Za-z'-]*$/.test(word) && word.length >= 2;
+}
+
+function isAuthorMiddleInitial(word: string): boolean {
+  return /^[A-Za-z]\.?$/.test(word);
+}
+
+/**
+ * Detect queries that look like an author name.
+ * "liane moriarty", "navessa allen", "sarah a. parker", "Mary Robinette Kowal".
+ * Title-shaped queries ("Fourth Wing", "Divine Rivals") stay keyword/title search.
+ */
 export function isAuthorQuery(query: string): boolean {
   const trimmed = query.trim();
-  const words = trimmed.split(/\s+/);
+  const words = trimmed.split(/\s+/).filter(Boolean);
 
-  // Two-word queries are usually titles ("Divine Rivals", "Fourth Wing").
-  // Real author searches still work as keyword/title floods; reserve this
-  // path for clearer multi-token names ("Mary Robinette Kowal").
-  if (words.length < 3 || words.length > 4) return false;
   if (/\d/.test(trimmed)) return false;
   if (!/^[a-zA-Z\s.'-]+$/.test(trimmed)) return false;
 
-  // Title function/content words — "Between Two Fires" must NOT become inauthor:.
-  const notAuthorTerms =
-    /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean)$/i;
-  if (words.some((word) => notAuthorTerms.test(word))) return false;
-
-  // Author searches are usually proper names (e.g. "Mary Robinette Kowal")
-  if (!words.every((word) => /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word))) {
+  if (
+    words.some(
+      (word) =>
+        !isAuthorMiddleInitial(word) && AUTHOR_QUERY_TITLE_TERMS.test(word)
+    )
+  ) {
     return false;
   }
 
-  return true;
+  if (words.length === 2) {
+    return words.every(isAuthorNameToken);
+  }
+
+  if (words.length === 3 && isAuthorMiddleInitial(words[1] ?? "")) {
+    return isAuthorNameToken(words[0] ?? "") && isAuthorNameToken(words[2] ?? "");
+  }
+
+  if (words.length < 3 || words.length > 4) return false;
+
+  // Longer names still prefer Cap Case so "Big Little Truths" stays a title.
+  return words.every((word) => /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word));
 }
 
 /**

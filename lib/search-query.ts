@@ -213,6 +213,7 @@ export function googleTitlePriorityQuery(input: string): string | null {
  * Extra Google Books author query. Two words with no digits look like a
  * person name (`liane moriarty`); also first + initial + last
  * (`sarah a. parker`). Returns `inauthor:"…"` or null.
+ * Title-shaped two-word queries ("Fourth Wing") are not person names.
  */
 export function googleAuthorPriorityQuery(input: string): string | null {
   const raw = cleanSpaces(repairSearchQuery(input));
@@ -221,11 +222,22 @@ export function googleAuthorPriorityQuery(input: string): string | null {
   if (/inauthor:/i.test(raw)) return null;
 
   const words = raw.split(/\s+/).filter(Boolean);
-  if (words.length === 2) {
-    return `inauthor:"${raw}"`;
-  }
-  if (words.length === 3 && /^[a-z]\.?$/i.test(words[1] ?? "")) {
-    return `inauthor:"${raw}"`;
-  }
-  return null;
+  const twoWord = words.length === 2;
+  const initialName =
+    words.length === 3 && /^[a-z]\.?$/i.test(words[1] ?? "");
+  if (!twoWord && !initialName) return null;
+  if (!isAuthorQuery(raw)) return null;
+  return `inauthor:"${raw}"`;
+}
+
+/**
+ * The single Google Books `q` for one search page. Never issue A/B/C extras.
+ * Person name → inauthor; 2+ word titles → intitle; otherwise raw q.
+ */
+export function googleSearchQuery(input: string): string {
+  const raw = cleanSpaces(repairSearchQuery(input));
+  if (!raw) return raw;
+  return (
+    googleAuthorPriorityQuery(raw) ?? googleTitlePriorityQuery(raw) ?? raw
+  );
 }

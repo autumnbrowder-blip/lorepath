@@ -1,4 +1,3 @@
-import { getGoogleBookByIsbn, searchGoogleBooks } from "@/lib/google-books";
 import {
   knownWorkCatalogSeed,
   knownWorksMatchingQuery,
@@ -27,19 +26,6 @@ function detailToSummary(detail: BookDetail): BookSummary {
   };
 }
 
-async function softGoogleIsbn(isbn: string): Promise<BookSummary | null> {
-  try {
-    const detail = await withTimeout(
-      getGoogleBookByIsbn(isbn),
-      2000,
-      `google-isbn:${isbn}`
-    );
-    return detail ? detailToSummary(detail) : null;
-  } catch {
-    return null;
-  }
-}
-
 async function softOlIsbn(isbn: string): Promise<BookSummary | null> {
   try {
     const detail = await withTimeout(
@@ -50,19 +36,6 @@ async function softOlIsbn(isbn: string): Promise<BookSummary | null> {
     return detail ? detailToSummary(detail) : null;
   } catch {
     return null;
-  }
-}
-
-async function softGooglePhrase(query: string): Promise<BookSummary[]> {
-  try {
-    const page = await withTimeout(
-      searchGoogleBooks(query, 1, { pageSize: 10 }),
-      2000,
-      "google-phrase-recovery"
-    );
-    return page.books;
-  } catch {
-    return [];
   }
 }
 
@@ -116,15 +89,14 @@ async function recoverOneKnownWork(
     const originalIsbns = (known.originalLanguageIsbns ?? []).slice(0, 1);
 
     const settled = await Promise.allSettled([
-      softGooglePhrase(known.googlePhrase),
       softOlTitle(known.matchTitle),
       ...(known.altTitles ?? []).slice(0, 1).map((title) => softOlTitle(title)),
       ...englishIsbns.map(async (isbn) => ({
-        book: (await softGoogleIsbn(isbn)) ?? (await softOlIsbn(isbn)),
+        book: await softOlIsbn(isbn),
         kind: "english" as const,
       })),
       ...originalIsbns.map(async (isbn) => ({
-        book: (await softGoogleIsbn(isbn)) ?? (await softOlIsbn(isbn)),
+        book: await softOlIsbn(isbn),
         kind: "original" as const,
       })),
     ]);
@@ -204,7 +176,6 @@ export async function recoverPopularTitleHits(
   } else if (existing.length === 0 && trimmed.split(/\s+/).length >= 2) {
     const plain = trimmed.replace(/"/g, "");
     const settled = await Promise.allSettled([
-      softGooglePhrase(`intitle:"${plain}"`),
       softOlTitle(plain),
     ]);
     for (const result of settled) {

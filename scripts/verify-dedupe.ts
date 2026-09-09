@@ -17,6 +17,7 @@ import {
   dedupeBooks,
   dropBrowseJunk,
   getBookDedupeKey,
+  isAuthorQuery,
   isJunkCatalogAuthor,
   isTitleOnlyStub,
   normalizeAuthorForDedupe,
@@ -25,7 +26,7 @@ import {
   rankBrowseSearchResults,
   repairMojibake,
 } from "../lib/book-utils";
-import { googleAuthorPriorityQuery, googleTitlePriorityQuery } from "../lib/search-query";
+import { googleAuthorPriorityQuery, googleSearchQuery, googleTitlePriorityQuery } from "../lib/search-query";
 import { applyKnownWorkFields } from "../lib/known-editions";
 import type { BookSummary } from "../types/book";
 
@@ -1183,6 +1184,21 @@ check(
   null
 );
 check("single-word moriarty does not add inauthor", googleAuthorPriorityQuery("moriarty"), null);
+check(
+  "google search query for a person name is inauthor once",
+  googleSearchQuery("liane moriarty"),
+  'inauthor:"liane moriarty"'
+);
+check(
+  "google search query for a 2-word title is intitle once",
+  googleSearchQuery("fourth wing"),
+  'intitle:"fourth wing"'
+);
+check("google search query for dune is raw", googleSearchQuery("dune"), "dune");
+check("isAuthorQuery lowercase two-word name", isAuthorQuery("liane moriarty"), true);
+check("isAuthorQuery navessa allen", isAuthorQuery("navessa allen"), true);
+check("isAuthorQuery sarah a. parker", isAuthorQuery("sarah a. parker"), true);
+check("isAuthorQuery does not treat Fourth Wing as an author", isAuthorQuery("Fourth Wing"), false);
 
 const rankedWhistler = rankBrowseSearchResults(
   [
