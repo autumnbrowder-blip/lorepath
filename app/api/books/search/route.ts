@@ -51,6 +51,9 @@ export async function GET(request: NextRequest) {
         books,
         page: result.page,
         hasMore: result.hasMore,
+        sourceCounts: result.sourceCounts ?? {},
+        warning: result.warning ?? null,
+        googleError: result.googleError ?? null,
         error,
       },
       {
@@ -66,6 +69,8 @@ export async function GET(request: NextRequest) {
         books: [],
         page,
         hasMore: false,
+        sourceCounts: {},
+        warning: null,
         error:
           "Search could not reach every shelf. Try again shortly.",
       },

@@ -20,6 +20,7 @@ type SearchCacheEntry = {
   googleError?: BookSearchResult["googleError"];
   googleRawCount?: number;
   allSourcesTimedOut?: boolean;
+  warning?: string | null;
 };
 
 export type CachedSearchPage = Omit<SearchCacheEntry, "expiresAt">;
@@ -40,7 +41,7 @@ export function searchCacheKey(input: {
   const q = input.query.trim().toLowerCase();
   const page = Math.max(1, input.page);
   const mode = input.mode ?? "text";
-  return `v=browse-q10|q=${q}|page=${page}|mode=${mode}`;
+  return `v=browse-q11|q=${q}|page=${page}|mode=${mode}`;
 }
 
 function cloneBooks(books: BookSummary[]): BookSummary[] {
@@ -62,6 +63,7 @@ function clonePage(value: CachedSearchPage): CachedSearchPage {
     googleError: value.googleError ?? null,
     googleRawCount: value.googleRawCount,
     allSourcesTimedOut: value.allSourcesTimedOut,
+    warning: value.warning ?? null,
   };
 }
 

@@ -42,6 +42,16 @@ function hasCover(book: BookSummary): boolean {
 /** Eligible for a card — title + author is enough even with no synopsis. */
 function hasUsableSearchFields(book: BookSummary): boolean {
   if (isTitleOnlyStub(book)) return false;
+  const year =
+    book.publishedYear ?? book.firstPublishYear ?? null;
+  if (
+    year != null &&
+    year >= 2024 &&
+    year <= 2026 &&
+    hasRealAuthor(book)
+  ) {
+    return true;
+  }
   return hasRealAuthor(book) || hasAnyDescription(book) || hasCover(book);
 }
 

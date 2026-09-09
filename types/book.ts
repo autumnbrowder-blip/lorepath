@@ -117,4 +117,6 @@ export type BookSearchResult = {
   googleRawCount?: number;
   /** True when every attempted catalog source timed out or rejected. */
   allSourcesTimedOut?: boolean;
+  /** Soft warning (e.g. Google 429) — results from other catalogs still returned. */
+  warning?: string | null;
 };

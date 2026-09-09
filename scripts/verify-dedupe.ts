@@ -25,7 +25,7 @@ import {
   rankBrowseSearchResults,
   repairMojibake,
 } from "../lib/book-utils";
-import { googleTitlePriorityQuery } from "../lib/search-query";
+import { googleAuthorPriorityQuery, googleTitlePriorityQuery } from "../lib/search-query";
 import { applyKnownWorkFields } from "../lib/known-editions";
 import type { BookSummary } from "../types/book";
 
@@ -1157,11 +1157,32 @@ check(
   'intitle:"big little truths"'
 );
 check(
+  "intitle query for a 2-word title",
+  googleTitlePriorityQuery("whistler patchett"),
+  'intitle:"whistler patchett"'
+);
+check(
   "quoted two-word title still gets intitle",
   googleTitlePriorityQuery('"whistler patchett"'),
   'intitle:"whistler patchett"'
 );
 check("single-word dune does not add intitle", googleTitlePriorityQuery("dune"), null);
+check(
+  "two-word person name gets inauthor",
+  googleAuthorPriorityQuery("liane moriarty"),
+  'inauthor:"liane moriarty"'
+);
+check(
+  "middle-initial name gets inauthor",
+  googleAuthorPriorityQuery("sarah a. parker"),
+  'inauthor:"sarah a. parker"'
+);
+check(
+  "three-word title does not get inauthor",
+  googleAuthorPriorityQuery("big little truths"),
+  null
+);
+check("single-word moriarty does not add inauthor", googleAuthorPriorityQuery("moriarty"), null);
 
 const rankedWhistler = rankBrowseSearchResults(
   [
@@ -1324,6 +1345,62 @@ check(
   duneStillRanks.some((b) => b.id === "google-fourth-wing"),
   false
 );
+
+const moriartyRanked = rankBrowseSearchResults(
+  [
+    book({
+      id: "google-blt-2026",
+      title: "Big Little Truths",
+      authors: ["Liane Moriarty"],
+      coverUrl: "https://covers.example/blt.jpg",
+      description: null,
+      publishedYear: 2026,
+    }),
+    book({
+      id: "google-apples",
+      title: "Apples Never Fall",
+      authors: ["Liane Moriarty"],
+      coverUrl: "https://covers.example/apples.jpg",
+      description: "A family mystery told across one autumn.",
+      publishedYear: 2021,
+    }),
+  ],
+  "liane moriarty"
+);
+check("author query keeps Moriarty books", moriartyRanked.length, 2);
+check("author query sorts newest year first", moriartyRanked[0]?.id, "google-blt-2026");
+check(
+  "2026 Moriarty is kept without a description",
+  moriartyRanked.some((b) => b.id === "google-blt-2026"),
+  true
+);
+
+const allenRanked = rankBrowseSearchResults(
+  [
+    book({
+      id: "google-navessa",
+      title: "Lights Out",
+      authors: ["Navessa Allen"],
+      coverUrl: "https://covers.example/lights.jpg",
+      description: "Short.",
+      publishedYear: 2024,
+    }),
+  ],
+  "navessa allen"
+);
+check("author query keeps Navessa Allen", allenRanked[0]?.authors[0], "Navessa Allen");
+
+const thinRecent = dropBrowseJunk([
+  book({
+    id: "google-thin-2026",
+    title: "Big Little Truths",
+    authors: ["Liane Moriarty"],
+    coverUrl: "https://covers.example/blt.jpg",
+    description: null,
+    publishedYear: 2026,
+  }),
+]);
+check("dropBrowseJunk keeps 2026 book with no description", thinRecent.length, 1);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

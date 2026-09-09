@@ -24,6 +24,7 @@ type SearchPagePayload = {
   page?: number;
   /** Echo of the q that produced this payload — reject stale cache hits. */
   query?: string;
+  warning?: string | null;
 };
 
 function mergeSearchResults(
@@ -72,6 +73,7 @@ export function BookSearch({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const initialSearchDone = useRef(false);
   const lastUrlSearchRef = useRef("");
@@ -145,18 +147,32 @@ export function BookSearch({
     mode: "text" | "genre" = "text"
   ) {
     const trimmed = repairSearchQuery(searchQuery);
-    if (!trimmed) return;
+    if (!trimmed) {
+      abortRef.current?.abort();
+      searchRequestIdRef.current += 1;
+      setHasSearched(false);
+      setResultsQuery("");
+      setPage(1);
+      setHasMore(false);
+      setLoading(false);
+      setLoadingMore(false);
+      setError(null);
+      setWarning(null);
+      if (syncUrl) {
+        router.replace("/browse", { scroll: false });
+      }
+      return;
+    }
 
     const requestId = ++searchRequestIdRef.current;
     lastUrlSearchRef.current = `${mode}:${trimmed}`;
-    setBooks([]);
+    // Do not clear books or hide NYT until this fetch resolves.
     setPage(1);
     setHasMore(false);
-    setResultsQuery(trimmed);
     setLoading(true);
     setLoadingMore(false);
     setError(null);
-    setHasSearched(true);
+    setWarning(null);
     searchModeRef.current = mode;
 
     if (syncUrl) {
@@ -177,8 +193,14 @@ export function BookSearch({
 
       setBooks(incoming);
       setResultsQuery(trimmed);
+      setHasSearched(true);
       setPage(data.page ?? 1);
       setHasMore(Boolean(data.hasMore));
+      setWarning(
+        typeof data.warning === "string" && data.warning.trim()
+          ? data.warning
+          : null
+      );
       track("search_performed", {
         ...queryHint(trimmed),
         mode,
@@ -193,6 +215,8 @@ export function BookSearch({
       if (requestId !== searchRequestIdRef.current) return;
       setBooks([]);
       setHasMore(false);
+      setHasSearched(true);
+      setWarning(null);
       setError(
         err instanceof Error ? err.message : "Something went wrong. Try again."
       );
@@ -267,6 +291,10 @@ export function BookSearch({
     await runSearch(query, true, "text");
   }
 
+  const queryEmpty = !query.trim();
+  const showBestsellers =
+    queryEmpty || (!hasSearched && books.length === 0);
+
   return (
     <FantasyPageShell variant="browse" priority>
       <div className="browse-page-wrap relative flex min-h-full flex-col pb-[env(safe-area-inset-bottom,0px)]">
@@ -318,21 +346,28 @@ export function BookSearch({
         </div>
 
         <div className="browse-page-pad mx-auto w-full max-w-6xl px-4 pb-[max(3rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-16">
-          {!hasSearched && !loading && (
+          {showBestsellers ? (
             <BestsellersSection
               books={bestsellers}
               error={bestsellersError}
             />
-          )}
+          ) : null}
 
-          {error && (
+          {!queryEmpty && error ? (
             <div className="alert-error mb-8">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <p>{error}</p>
             </div>
-          )}
+          ) : null}
 
-          {loading ? (
+          {!queryEmpty && warning && !error ? (
+            <div className="alert-error mb-8">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{warning}</p>
+            </div>
+          ) : null}
+
+          {!queryEmpty && loading && books.length === 0 ? (
             <div
               className="parchment-plaque mx-auto flex max-w-lg flex-col items-center justify-center px-6 py-12 text-center"
               aria-live="polite"
@@ -346,7 +381,9 @@ export function BookSearch({
                 Unrolling scrolls across the shared shelves.
               </p>
             </div>
-          ) : hasSearched && books.length === 0 && !error ? (
+          ) : null}
+
+          {!queryEmpty && !loading && hasSearched && books.length === 0 && !error ? (
             <div className="parchment-plaque mx-auto max-w-xl px-6 py-12 text-center">
               <Search className="mx-auto mb-4 h-8 w-8 text-[#a67c2d]" />
               <p className="font-storybook text-xl font-semibold tracking-[0.06em] text-[#2f1f0f]">
@@ -361,7 +398,9 @@ export function BookSearch({
                 Tip: shorter keywords often open more doors.
               </p>
             </div>
-          ) : books.length > 0 ? (
+          ) : null}
+
+          {!queryEmpty && books.length > 0 ? (
             <>
               <div className="mb-5">
                 <p className="text-center font-heading text-base font-medium tracking-[0.04em] text-[#d4b36a] sm:text-lg">

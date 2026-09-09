@@ -3,8 +3,6 @@ import {
   cleanDescription,
   cleanTitle,
   dedupeBooks,
-  formatAuthorSearchQuery,
-  isAuthorQuery,
   isLowQualityBook,
   keepProviderSubjects,
   parsePublishedYear,
@@ -251,11 +249,7 @@ async function fetchGoogleSearch(
   );
 
   const searchQuery = repairSearchQuery(
-    genreMode
-      ? toGoogleSubjectQuery(query)
-      : isAuthorQuery(query)
-        ? formatAuthorSearchQuery(query)
-        : query
+    genreMode ? toGoogleSubjectQuery(query) : query
   );
 
   const startIndex = Math.max(0, (page - 1) * pageSize);

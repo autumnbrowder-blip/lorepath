@@ -187,37 +187,45 @@ export function secondarySearchVariants(
 }
 
 /**
- * Extra Google Books query for a specific title so 2025–2026 releases are
- * not buried under older partial-title hits. 3+ words or a quoted phrase.
+ * Extra Google Books query so multi-word titles (including 2025–2026
+ * releases) are requested as `intitle:"{query}"`. 2+ words or a quoted phrase.
  * Returns `intitle:"…"` or null (no extra request).
  */
 export function googleTitlePriorityQuery(input: string): string | null {
   const raw = cleanSpaces(repairSearchQuery(input));
   if (!raw) return null;
   if (/intitle:/i.test(raw)) return null;
-  if (isAuthorQuery(raw)) return null;
 
   const quoted =
     raw.match(/["“]([^"”]+)["”]/)?.[1]?.trim() ||
     raw.match(/'([^']+)'/)?.[1]?.trim() ||
     null;
 
-  let title: string | null = quoted;
-  if (!title) {
-    const normalized = normalizeSearchQuery(raw);
-    if (normalized.kind === "isbn" || normalized.kind === "author") {
-      return null;
-    }
-    const candidate =
-      normalized.kind === "title_author"
-        ? normalized.title
-        : normalized.title ?? raw;
-    const words = (candidate ?? "").split(/\s+/).filter(Boolean);
-    if (words.length < 3) return null;
-    title = candidate;
-  }
-
-  const cleaned = (title ?? "").replace(/["“”']/g, "").trim();
+  const title = quoted ?? raw;
+  const cleaned = title.replace(/["“”']/g, "").trim();
   if (!cleaned) return null;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return null;
   return `intitle:"${cleaned}"`;
+}
+
+/**
+ * Extra Google Books author query. Two words with no digits look like a
+ * person name (`liane moriarty`); also first + initial + last
+ * (`sarah a. parker`). Returns `inauthor:"…"` or null.
+ */
+export function googleAuthorPriorityQuery(input: string): string | null {
+  const raw = cleanSpaces(repairSearchQuery(input));
+  if (!raw) return null;
+  if (/\d/.test(raw)) return null;
+  if (/inauthor:/i.test(raw)) return null;
+
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length === 2) {
+    return `inauthor:"${raw}"`;
+  }
+  if (words.length === 3 && /^[a-z]\.?$/i.test(words[1] ?? "")) {
+    return `inauthor:"${raw}"`;
+  }
+  return null;
 }

@@ -1248,13 +1248,38 @@ function comparePublishedYearDesc(a: BookSummary, b: BookSummary): number {
   if (aYear == null && bYear != null) return 1;
   if (bYear == null && aYear != null) return -1;
   if (aYear != null && bYear != null && aYear !== bYear) return bYear - aYear;
+
+  const aDesc = !isPlaceholderDescription(a.description);
+  const bDesc = !isPlaceholderDescription(b.description);
+  if (aDesc !== bDesc) return aDesc ? -1 : 1;
+
   return a.title.localeCompare(b.title, "en", { sensitivity: "base" });
+}
+
+/** Author-line match for browse (all tokens land in authors). */
+function authorMatchesSearchQuery(
+  book: BookSummary,
+  query: string
+): boolean {
+  const q = normalizeForMatch(query);
+  if (!q) return false;
+  const authors = normalizeForMatch(book.authors.join(" "));
+  if (!authors) return false;
+  if (authors.includes(q)) return true;
+  const tokens = q.split(" ").filter((token) => token.length >= 2);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => authors.includes(token));
+}
+
+function isRecentReleaseYear(year: number | null | undefined): boolean {
+  const normalized = normalizePublishedYear(year);
+  return normalized != null && normalized >= 2024 && normalized <= 2026;
 }
 
 /**
  * Browse list order: exact title (canonical author first), then titles that
- * contain the query as a word (newest year first). Unrelated substring hits
- * like "Aescendune" are dropped.
+ * contain the query as a word, then author matches. Newest year first, then
+ * described records. Unrelated substring hits like "Aescendune" are dropped.
  */
 export function rankBrowseSearchResults(
   books: BookSummary[],
@@ -1265,12 +1290,15 @@ export function rankBrowseSearchResults(
 
   const exact: BookSummary[] = [];
   const related: BookSummary[] = [];
+  const authors: BookSummary[] = [];
 
   for (const book of books) {
     if (isExactTitleMatch(trimmed, book.title)) {
       exact.push(book);
     } else if (browseCardMatchesQuery(book, trimmed)) {
       related.push(book);
+    } else if (authorMatchesSearchQuery(book, trimmed)) {
+      authors.push(book);
     }
   }
 
@@ -1286,8 +1314,9 @@ export function rankBrowseSearchResults(
     if (aCanon !== bCanon) return aCanon ? -1 : 1;
     return comparePublishedYearDesc(a, b);
   });
+  authors.sort(comparePublishedYearDesc);
 
-  return [...exact, ...related];
+  return [...exact, ...related, ...authors];
 }
 
 /** Page-1 junk: title-only stubs, merch, empty records, or fake authors. */
@@ -1297,10 +1326,16 @@ export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
     if (isMerchandiseOrCompanion(book) || isLowQualityBook(book)) return false;
     if (isJunkCatalogAuthor(book.authors)) return false;
     const cover = Boolean(book.coverUrl?.trim());
-    const description = Boolean(book.description?.trim()) &&
+    const description =
+      Boolean(book.description?.trim()) &&
       !isPlaceholderDescription(book.description);
     const hasYear =
       book.publishedYear != null || book.firstPublishYear != null;
+    const recent =
+      isRecentReleaseYear(book.publishedYear) ||
+      isRecentReleaseYear(book.firstPublishYear);
+    // 2024–2026 releases stay even when the synopsis is short or missing.
+    if (recent && hasRealAuthor(book)) return true;
     if (!cover && !description && !hasYear && !hasRealAuthor(book)) return false;
     return true;
   });

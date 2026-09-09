@@ -75,7 +75,10 @@ import {
   rankSearchResults,
   repairSearchQuery,
 } from "@/lib/book-utils";
-import { googleTitlePriorityQuery } from "@/lib/search-query";
+import {
+  googleAuthorPriorityQuery,
+  googleTitlePriorityQuery,
+} from "@/lib/search-query";
 import { recoverPopularTitleHits } from "@/lib/search-recovery";
 import { unstable_noStore as noStore } from "next/cache";
 import type {
@@ -218,6 +221,7 @@ function toSearchResult(page: CachedSearchPage): BookSearchResult {
     googleError: cloned.googleError,
     googleRawCount: cloned.googleRawCount,
     allSourcesTimedOut: cloned.allSourcesTimedOut,
+    warning: cloned.warning ?? null,
   };
 }
 
@@ -239,13 +243,18 @@ async function fetchSearchPageUncached(
     !genreMode && pageNumber === 1
       ? googleTitlePriorityQuery(searchQuery)
       : null;
+  const authorPriorityQuery =
+    !genreMode && pageNumber === 1
+      ? googleAuthorPriorityQuery(searchQuery)
+      : null;
 
-  // Attach allSettled immediately so optional 2s timeouts are never unhandled
-  // while Open Library (required) is still running. Hardcover stays off.
+  // A) q={userQuery}  B) intitle:"…"  C) inauthor:"…"
+  // Same allSettled wave as Open Library. Gutendex is extra. Hardcover off.
   const [
     openLibrarySettled,
     googleSettled,
     googleTitleSettled,
+    googleAuthorSettled,
     gutendexSettled,
     isbndbSettled,
   ] = await Promise.allSettled([
@@ -267,6 +276,16 @@ async function fetchSearchPageUncached(
           }),
           OPTIONAL_SEARCH_TIMEOUT_MS,
           "google title-priority search"
+        )
+      : Promise.resolve(emptyGooglePage()),
+    authorPriorityQuery
+      ? withTimeout(
+          searchGoogleBooks(authorPriorityQuery, pageNumber, {
+            ...searchOptions,
+            tripRateLimitCircuit: false,
+          }),
+          OPTIONAL_SEARCH_TIMEOUT_MS,
+          "google author-priority search"
         )
       : Promise.resolve(emptyGooglePage()),
     includeGutendex
@@ -293,6 +312,9 @@ async function fetchSearchPageUncached(
   const googleTitleResult = titlePriorityQuery
     ? readSettledGoogle(googleTitleSettled)
     : emptyGooglePage();
+  const googleAuthorResult = authorPriorityQuery
+    ? readSettledGoogle(googleAuthorSettled)
+    : emptyGooglePage();
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
   const isbndbResult = includeIsbndb
     ? readSettledPage("ISBNdb", isbndbSettled)
@@ -302,12 +324,21 @@ async function fetchSearchPageUncached(
   const googleBooks = [
     ...googleResult.books,
     ...googleTitleResult.books,
+    ...googleAuthorResult.books,
   ];
   const gutendexBooks = gutendexResult.books;
   const isbndbBooks = isbndbResult.books;
   const googleRawCount =
-    (googleResult.rawCount ?? 0) + (googleTitleResult.rawCount ?? 0);
-  const googleError = googleResult.error ?? googleTitleResult.error;
+    (googleResult.rawCount ?? 0) +
+    (googleTitleResult.rawCount ?? 0) +
+    (googleAuthorResult.rawCount ?? 0);
+  const googleError =
+    [googleResult.error, googleTitleResult.error, googleAuthorResult.error].find(
+      (error) => error?.status === 429
+    ) ??
+    googleResult.error ??
+    googleTitleResult.error ??
+    googleAuthorResult.error;
 
   if (googleError) {
     console.error("[searchBooks] Google Books provider error:", {
@@ -317,8 +348,25 @@ async function fetchSearchPageUncached(
       googleError,
       googleRawCount,
       titlePriorityQuery,
+      authorPriorityQuery,
     });
   }
+
+  const searchErrors: string[] = [];
+  if (googleError) {
+    searchErrors.push(
+      `google:${googleError.status ?? googleError.message}`
+    );
+  }
+  if (settledFailed(openLibrarySettled)) {
+    searchErrors.push("ol:rejected");
+  }
+  if (includeGutendex && settledFailed(gutendexSettled)) {
+    searchErrors.push("gutendex:rejected");
+  }
+  console.info(
+    `[search] q=${searchQuery} google=${googleBooks.length} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} err=${searchErrors.join(",") || "-"}`
+  );
 
   if (SEARCH_DEBUG) {
     console.info("[searchBooks] raw provider counts", {
@@ -330,6 +378,7 @@ async function fetchSearchPageUncached(
       googleRawCount,
       googleError,
       titlePriorityQuery,
+      authorPriorityQuery,
       gutendex: gutendexBooks.length,
       isbndb: includeIsbndb ? isbndbBooks.length : "skipped",
       totalRaw:
@@ -390,14 +439,32 @@ async function fetchSearchPageUncached(
     books = genreMode
       ? matching
       : rankBrowseSearchResults(matching, searchQuery);
-    // Do not fall back to substring hits ("Aescendune" for q=dune). Empty is
-    // better than the wrong catalog when OL/Google timed out.
+  }
+
+  // Google 429 / ranking must never wipe Open Library hits.
+  if (books.length === 0 && openLibraryBooks.length > 0) {
+    const olKeep = dropBrowseJunk(openLibraryBooks).filter(
+      (book) => !isTitleOnlyStub(book)
+    );
+    books = genreMode
+      ? olKeep
+      : rankBrowseSearchResults(
+          olKeep.filter((book) => bookMatchesSearchQuery(book, searchQuery)),
+          searchQuery
+        );
+    if (books.length === 0) {
+      books =
+        olKeep.length > 0
+          ? olKeep
+          : openLibraryBooks.filter((book) => !isTitleOnlyStub(book));
+    }
   }
 
   const attempted = [
     openLibrarySettled,
     googleSettled,
     ...(titlePriorityQuery ? [googleTitleSettled] : []),
+    ...(authorPriorityQuery ? [googleAuthorSettled] : []),
     ...(includeGutendex ? [gutendexSettled] : []),
     ...(includeIsbndb ? [isbndbSettled] : []),
   ];
@@ -415,8 +482,15 @@ async function fetchSearchPageUncached(
   const hasMore =
     openLibraryResult.hasMore ||
     googleResult.hasMore ||
+    googleTitleResult.hasMore ||
+    googleAuthorResult.hasMore ||
     gutendexResult.hasMore ||
     isbndbResult.hasMore;
+
+  const warning =
+    googleError?.status === 429
+      ? "Google Books is rate-limited right now. Showing Open Library results."
+      : null;
 
   return {
     query: searchQuery,
@@ -429,6 +503,7 @@ async function fetchSearchPageUncached(
     googleError,
     googleRawCount,
     allSourcesTimedOut,
+    warning,
   };
 }
 
