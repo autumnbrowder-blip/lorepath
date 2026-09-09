@@ -6,6 +6,7 @@ import {
   isTitleOnlyStub,
   parsePublishedYear,
 } from "@/lib/book-utils";
+import { parseUtf8Json } from "@/lib/utf8-json";
 import { finalizeBookTags } from "@/lib/book-tags";
 import { mergePreferredBookFields } from "@/lib/book-merge";
 import {
@@ -170,7 +171,7 @@ async function fetchNytList(
       return [];
     }
 
-    const data: NytListResponse = await response.json();
+    const data: NytListResponse = await parseUtf8Json(response);
     if (data.fault?.faultstring) {
       console.error(`NYT Books API fault (${listLabel}):`, data.fault.faultstring);
       return [];
@@ -388,11 +389,20 @@ export function nytSummaryToDetail(
 
 /** Resolve a NYT book id from current list metadata (detail-page fallback). */
 export async function getNytBookById(id: string): Promise<BookDetail | null> {
-  if (!isNytId(id)) return null;
+  try {
+    if (!isNytId(id)) return null;
 
-  const { books } = await fetchNytBestsellers();
-  const match = books.find((book) => book.id === id);
-  if (!match) return null;
+    const { books } = await fetchNytBestsellers();
+    const match = books.find((book) => book.id === id);
+    if (!match) return null;
 
-  return nytSummaryToDetail(match, isbnFromNytId(id));
+    return nytSummaryToDetail(match, isbnFromNytId(id));
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      id,
+      error instanceof Error ? error.message : String(error)
+    );
+    return null;
+  }
 }

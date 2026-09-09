@@ -43,12 +43,12 @@ import {
   isOpenLibraryId,
   searchOpenLibrary,
 } from "@/lib/open-library";
-import { bookIsbnKey, cacheBookDetail, getCachedBookBySlug, persistHardcoverCache } from "@/lib/book-cache";
+import { cacheBookDetail, getCachedBookBySlug, sourceFromBookSlug } from "@/lib/book-cache";
 import {
+  classifyProviderError,
   createDeadline,
   softStep,
   summarizeFailures,
-  withProviderRetry,
   withTimeout,
   type ProviderFailure,
 } from "@/lib/provider-resilience";
@@ -69,10 +69,11 @@ import {
   isTitleOnlyStub,
   rankBrowseSearchResults,
   rankSearchResults,
+  repairSearchQuery,
 } from "@/lib/book-utils";
 import { googleTitlePriorityQuery } from "@/lib/search-query";
+import { recoverPopularTitleHits } from "@/lib/search-recovery";
 import { unstable_noStore as noStore } from "next/cache";
-import { headers } from "next/headers";
 import type {
   BookDetail,
   BookSearchResult,
@@ -116,16 +117,27 @@ function isHardcoverId(id: string): boolean {
   return id.startsWith("hardcover-");
 }
 
-/** Next.js Link prefetch of /books/[id] must not spend Hardcover quota. */
-function isRouterPrefetch(): boolean {
-  try {
-    const h = headers();
-    if (h.get("next-router-prefetch")) return true;
-    const purpose = (h.get("purpose") ?? h.get("sec-purpose") ?? "").toLowerCase();
-    return purpose.includes("prefetch");
-  } catch {
-    return false;
-  }
+function logBookDetailError(id: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("[book-detail]", id, message);
+}
+
+/** Last-resort tome so `/books/[id]` can render a layout instead of a 500. */
+function stubBookFromHint(bookId: string, title: string): BookDetail {
+  return {
+    id: bookId,
+    title,
+    authors: ["Unknown author"],
+    coverUrl: null,
+    description: null,
+    genres: [],
+    publishedYear: null,
+    source: sourceFromBookSlug(bookId),
+    publisher: null,
+    pageCount: null,
+    language: null,
+    isbn: null,
+  };
 }
 
 function cloneSummaries(books: BookSummary[]): BookSummary[] {
@@ -335,6 +347,18 @@ async function fetchSearchPageUncached(
     ...openLibraryBooks,
     ...gutendexBooks,
   ];
+  if (!genreMode && pageNumber === 1) {
+    try {
+      const recovered = await recoverPopularTitleHits(
+        searchQuery,
+        rawCombined,
+        { debug: SEARCH_DEBUG }
+      );
+      rawCombined.push(...recovered);
+    } catch {
+      // Recovery is best-effort — never fail the page.
+    }
+  }
   const providerHitCount = rawCombined.length;
 
   let books = finalizeSearchBooks(rawCombined, {
@@ -416,7 +440,9 @@ export async function searchBooks(
   noStore();
   const pageNumber = Math.max(1, page);
   const genreMode = isGenreSearchMode(options?.mode);
-  const searchQuery = genreMode ? normalizeGenreQuery(query) : query.trim();
+  const searchQuery = genreMode
+    ? normalizeGenreQuery(repairSearchQuery(query))
+    : repairSearchQuery(query);
   const searchOptions: SearchBooksOptions | undefined = genreMode
     ? { mode: "genre" }
     : undefined;
@@ -501,90 +527,103 @@ function isUsableCoreBook(book: BookDetail | null): book is BookDetail {
 
 /**
  * Core record only (title, authors, cover, description, year, id).
- * Tries the id's own provider with one retry, then any other source that can
- * resolve the same id/isbn/title. Never throws — failures are collected.
+ * ol-* → Open Library first; everything else → Google first. Each catalog
+ * gets its own 2s timeout + try/catch. Never throws.
  */
 async function loadCoreBook(
   bookId: string,
   searchHint: string | undefined,
   onFailure: (failure: ProviderFailure) => void
 ): Promise<BookDetail | null> {
-  const coreDeadline = createDeadline(4000);
-  const attempt = <T,>(
-    provider: string,
-    run: (tries: number) => Promise<T>,
-    timeoutMs = CORE_LOOKUP_TIMEOUT_MS
-  ) => {
-    const capped = coreDeadline.cap(timeoutMs, 100);
-    if (capped <= 0) return Promise.resolve(null);
-    return withProviderRetry(
-      { provider, id: bookId, timeoutMs: capped, retries: 0, onFailure },
-      run
-    );
-  };
+  try {
+    const trySource = async (
+      provider: string,
+      run: () => Promise<BookDetail | null>
+    ): Promise<BookDetail | null> => {
+      try {
+        const result = await withTimeout(
+          run(),
+          CORE_LOOKUP_TIMEOUT_MS,
+          `${provider} lookup`
+        );
+        if (isUsableCoreBook(result)) return { ...result, id: bookId };
+        return null;
+      } catch (error) {
+        logBookDetailError(bookId, error);
+        const classified = classifyProviderError(error);
+        onFailure({
+          provider,
+          id: bookId,
+          status: classified.status,
+          message: classified.message,
+          transient: classified.transient,
+          attempt: 1,
+        });
+        return null;
+      }
+    };
 
-  if (isBigBookId(bookId)) {
-    const primary = await attempt("bigbook", () => getBigBookBookById(bookId));
-    if (isUsableCoreBook(primary)) return primary;
-  } else if (isOpenLibraryId(bookId)) {
-    const primary = await attempt("openlibrary", () =>
-      getOpenLibraryBookById(bookId, { timeoutMs: CORE_LOOKUP_TIMEOUT_MS })
-    );
-    if (isUsableCoreBook(primary)) return primary;
-  } else if (isGutendexId(bookId)) {
-    const primary = await attempt("gutendex", () => getGutendexBookById(bookId));
-    if (isUsableCoreBook(primary)) return primary;
-  } else if (isIsbndbId(bookId)) {
-    const primary = await attempt("isbndb", () => resolveIsbndbBook(bookId));
-    if (isUsableCoreBook(primary)) return primary;
-  } else if (isNytId(bookId)) {
-    const primary = await attempt("nyt", () => resolveNytBook(bookId));
-    if (isUsableCoreBook(primary)) return primary;
-  } else if (isHardcoverId(bookId)) {
-    // Never fetch Hardcover for core identity. Fall through to Google / OL / NYT.
-  } else {
-    // Bare ids are Google volume ids (may include hyphens, e.g. E-OLEAAAQBAJ).
-    const primary = await attempt("google", () =>
-      resolveGoogleVolume(bookId, searchHint)
-    );
-    if (isUsableCoreBook(primary)) return primary;
+    if (isOpenLibraryId(bookId)) {
+      const primary = await trySource("openlibrary", () =>
+        getOpenLibraryBookById(bookId, { timeoutMs: CORE_LOOKUP_TIMEOUT_MS })
+      );
+      if (primary) return primary;
+    } else if (isBigBookId(bookId)) {
+      const primary = await trySource("bigbook", () => getBigBookBookById(bookId));
+      if (primary) return primary;
+    } else if (isGutendexId(bookId)) {
+      const primary = await trySource("gutendex", () => getGutendexBookById(bookId));
+      if (primary) return primary;
+    } else if (isIsbndbId(bookId)) {
+      const primary = await trySource("isbndb", () => resolveIsbndbBook(bookId));
+      if (primary) return primary;
+    } else if (isNytId(bookId)) {
+      const primary = await trySource("nyt", () => resolveNytBook(bookId));
+      if (primary) return primary;
+    } else if (!isHardcoverId(bookId)) {
+      const primary = await trySource("google", () => getGoogleBookById(bookId));
+      if (primary) return primary;
+    }
+
+    const isbn = isbnFromIsbndbId(bookId) ?? isbnFromNytId(bookId) ?? null;
+    if (isbn) {
+      const viaGoogleIsbn = await trySource("google", () =>
+        getGoogleBookByIsbn(isbn)
+      );
+      if (viaGoogleIsbn) return viaGoogleIsbn;
+
+      const viaOlIsbn = await trySource("openlibrary", () =>
+        getOpenLibraryBookByIsbn(isbn)
+      );
+      if (viaOlIsbn) return viaOlIsbn;
+    }
+
+    if (searchHint) {
+      const viaHint = await trySource("google", () =>
+        resolveViaSearchHint(bookId, searchHint)
+      );
+      if (viaHint) return viaHint;
+    }
+
+    if (!isOpenLibraryId(bookId)) {
+      const viaOl = await trySource("openlibrary", () =>
+        resolveOpenLibraryFallback({ bookId, searchHint })
+      );
+      if (viaOl) return viaOl;
+    }
+
+    if (isOpenLibraryId(bookId) && !searchHint) {
+      const viaGoogle = await trySource("google", () =>
+        resolveGoogleVolume(bookId, searchHint)
+      );
+      if (viaGoogle) return viaGoogle;
+    }
+
+    return null;
+  } catch (error) {
+    logBookDetailError(bookId, error);
+    return null;
   }
-
-  // Cross-provider recovery: any source that can answer for this id/isbn/title.
-  if (coreDeadline.expired()) return null;
-
-  const isbn = isbnFromIsbndbId(bookId) ?? isbnFromNytId(bookId) ?? null;
-  if (isbn && !coreDeadline.expired()) {
-    const viaGoogleIsbn = await attempt("google-isbn", () =>
-      getGoogleBookByIsbn(isbn)
-    );
-    if (isUsableCoreBook(viaGoogleIsbn)) return { ...viaGoogleIsbn, id: bookId };
-
-    const viaOlIsbn = await attempt("openlibrary-isbn", () =>
-      getOpenLibraryBookByIsbn(isbn)
-    );
-    if (isUsableCoreBook(viaOlIsbn)) return { ...viaOlIsbn, id: bookId };
-  }
-
-  if (searchHint && !coreDeadline.expired()) {
-    const viaHint = await attempt(
-      "search-hint",
-      () => resolveViaSearchHint(bookId, searchHint),
-      2000
-    );
-    if (isUsableCoreBook(viaHint)) return { ...viaHint, id: bookId };
-  }
-
-  if (!coreDeadline.expired()) {
-    const viaOl = await attempt(
-      "openlibrary-fallback",
-      () => resolveOpenLibraryFallback({ bookId, searchHint }),
-      2000
-    );
-    if (isUsableCoreBook(viaOl)) return { ...viaOl, id: bookId };
-  }
-
-  return null;
 }
 
 /**
@@ -653,7 +692,9 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
         coreFailures.length > 0 &&
         coreFailures.every((failure) => failure.transient);
       const archivesBusy =
-        isGoogleBooksBusy() || coreFailures.some((failure) => failure.status === 429);
+        isGoogleBooksBusy() ||
+        transient ||
+        coreFailures.some((failure) => failure.status === 429);
       console.error("[getBookById] no usable record:", {
         id: bookId,
         searchHint: searchHint ?? null,
@@ -661,6 +702,16 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
         reasons: summarizeFailures(coreFailures),
         failures: coreFailures,
       });
+      if (searchHint) {
+        return {
+          book: normalizeBookDetailForDisplay(
+            stubBookFromHint(bookId, searchHint)
+          ),
+          failures: coreFailures,
+          transient,
+          archivesBusy: true,
+        };
+      }
       return {
         book: null,
         failures: coreFailures,
@@ -673,8 +724,13 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
     recovered = { ...book, id: bookId };
     book = { ...book, id: bookId };
 
-    const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
-    book = applyKnownEditionYears(fillMissingCoverUrl(book));
+    try {
+      const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
+      book = applyKnownEditionYears(fillMissingCoverUrl(book));
+    } catch (error) {
+      logBookDetailError(bookId, error);
+      book = recovered;
+    }
 
     const enrichDeadline = createDeadline(DETAIL_ENRICH_BUDGET_MS);
     const core = book;
@@ -688,11 +744,16 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
       const timeoutMs = enrichDeadline.cap(desiredMs, 100);
       if (timeoutMs <= 0) return;
       const before = book;
-      book = await softStep(
-        { provider, id: bookId, timeoutMs, onFailure: onOptionalFailure },
-        before,
-        async () => fillMissingCoverUrl(await run())
-      );
+      try {
+        book = await softStep(
+          { provider, id: bookId, timeoutMs, onFailure: onOptionalFailure },
+          before,
+          async () => fillMissingCoverUrl(await run())
+        );
+      } catch (error) {
+        logBookDetailError(bookId, error);
+        book = before;
+      }
       if (!isUsableCoreBook(book)) book = before;
     };
 
@@ -728,49 +789,44 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
     try {
       tagged = withFinalizedTags(tagged);
     } catch (error) {
-      console.error("[getBookById] tag finalize failed:", {
-        id: bookId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+      logBookDetailError(bookId, error);
     }
 
-    // 3) Hardcover is detail-only, and only when the tome page asked for it.
-    // Prefetch / ratings / browse / search never set enrichHardcover.
-    const allowHardcover = enrichHardcover && !isRouterPrefetch();
-    if (allowHardcover) {
-      try {
-        const { enrichFromHardcover } = await import("@/lib/hardcover");
-        tagged = await enrichFromHardcover(tagged);
-      } catch (error) {
-        console.error("[getBookById] hardcover enrich skipped:", {
-          id: bookId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
+    // Hardcover never blocks the page decision. Memory overlay only; live
+    // fetch is fire-and-forget after we already have a title.
+    try {
+      const { overlayHardcoverMemoryCache } = await import("@/lib/hardcover");
+      tagged = overlayHardcoverMemoryCache(tagged);
+    } catch (error) {
+      logBookDetailError(bookId, error);
     }
 
     if (!isUsableCoreBook(tagged)) {
       tagged = { ...coreTitle, id: bookId };
     }
 
-    tagged = normalizeBookDetailForDisplay(tagged);
+    try {
+      tagged = normalizeBookDetailForDisplay(tagged);
+    } catch (error) {
+      logBookDetailError(bookId, error);
+    }
     recovered = tagged;
 
-    void cacheBookDetail(bookId, tagged)
-      .then(async () => {
-        if (!allowHardcover) return;
-        const { peekHardcoverMemoryCache } = await import("@/lib/hardcover");
-        const record = peekHardcoverMemoryCache(tagged.isbn, bookId);
-        if (record && !record.empty) {
-          await persistHardcoverCache(bookId, bookIsbnKey(tagged.isbn), record);
-        }
-      })
-      .catch((error) => {
-        console.error("[getBookById] cache write failed:", {
-          id: bookId,
-          message: error instanceof Error ? error.message : String(error),
+    if (enrichHardcover) {
+      void import("@/lib/hardcover")
+        .then(({ enrichFromHardcover }) => enrichFromHardcover(tagged))
+        .then((enriched) => {
+          if (!isUsableCoreBook(enriched)) return;
+          return cacheBookDetail(bookId, enriched);
+        })
+        .catch((error) => {
+          logBookDetailError(bookId, error);
         });
-      });
+    }
+
+    void cacheBookDetail(bookId, tagged).catch((error) => {
+      logBookDetailError(bookId, error);
+    });
 
     const failures = [...coreFailures, ...optionalFailures];
     const archivesBusy =
@@ -785,16 +841,33 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
 
     return { book: tagged, failures, transient: false, archivesBusy };
   } catch (error) {
-    console.error("[getBookById] unexpected failure:", {
-      id,
-      message: error instanceof Error ? error.message : String(error),
-    });
+    logBookDetailError(id, error);
     if (recovered?.title?.trim()) {
+      try {
+        return {
+          book: normalizeBookDetailForDisplay(recovered),
+          failures: [],
+          transient: false,
+          archivesBusy: isGoogleBooksBusy(),
+        };
+      } catch (normalizeError) {
+        logBookDetailError(id, normalizeError);
+        return {
+          book: recovered,
+          failures: [],
+          transient: false,
+          archivesBusy: isGoogleBooksBusy(),
+        };
+      }
+    }
+    const hintTitle = searchHintRaw.trim();
+    const bookId = decodeBookRouteId(id);
+    if (bookId && hintTitle) {
       return {
-        book: recovered,
+        book: stubBookFromHint(bookId, hintTitle),
         failures: [],
-        transient: false,
-        archivesBusy: isGoogleBooksBusy(),
+        transient: true,
+        archivesBusy: true,
       };
     }
     return empty;
@@ -806,8 +879,13 @@ export async function getBookById(
   id: string,
   options?: GetBookByIdOptions
 ): Promise<BookDetail | null> {
-  const { book } = await loadBookDetail(id, options);
-  return book;
+  try {
+    const { book } = await loadBookDetail(id, options);
+    return book;
+  } catch (error) {
+    logBookDetailError(id, error);
+    return null;
+  }
 }
 
 /** Decode a `/books/[id]` segment safely (handles encodeURIComponent links). */

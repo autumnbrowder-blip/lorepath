@@ -27,7 +27,8 @@ export type BookDbRow = {
 
 /** Digits-only ISBN suitable for `books.isbn` (null when missing/invalid). */
 export function bookIsbnKey(isbn: string | null | undefined): string | null {
-  const digits = isbn?.replace(/\D/g, "") || "";
+  if (typeof isbn !== "string") return null;
+  const digits = isbn.replace(/\D/g, "") || "";
   if (digits.length === 10 || digits.length === 13) return digits;
   return null;
 }
@@ -168,6 +169,7 @@ export async function getCachedBookBySlug(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[book-cache] read failed:", message);
+    console.error("[book-detail]", trimmed, message);
     return null;
   }
 }
@@ -397,6 +399,7 @@ export async function readHardcoverRowCache(
       markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
     }
     console.error("[book-cache] hardcover read failed:", message);
+    console.error("[book-detail]", trimmed, message);
     return null;
   }
 }
@@ -459,6 +462,11 @@ export async function persistHardcoverCache(
       });
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isHardcoverColumnMissing(message)) {
+      markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
+    }
     console.error("[book-cache] hardcover write failed:", error);
+    console.error("[book-detail]", trimmed, message);
   }
 }

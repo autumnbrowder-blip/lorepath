@@ -420,8 +420,13 @@ export const getCommunityRatings = cache(async function getCommunityRatings(
       2000,
       `community-ratings:${bookExternalId}`
     );
-  } catch {
+  } catch (error) {
     controller.abort();
+    console.error(
+      "[book-detail]",
+      bookExternalId,
+      error instanceof Error ? error.message : String(error)
+    );
     return { averages: null, count: 0 };
   }
 });
@@ -467,7 +472,12 @@ export async function getUserRatingForBook(
       2000,
       `user-rating:${bookExternalId}`
     );
-  } catch {
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      bookExternalId,
+      error instanceof Error ? error.message : String(error)
+    );
     return null;
   }
 }

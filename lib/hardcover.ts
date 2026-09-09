@@ -179,10 +179,35 @@ export function peekHardcoverMemoryCache(
   isbn?: string | null,
   slug?: string | null
 ): HardcoverCacheRecord | null {
-  const key = hardcoverCacheKey(isbn, slug);
-  if (!key) return null;
-  const entry = memoryCache.get(key);
-  return cacheFresh(entry) ? entry ?? null : null;
+  try {
+    const key = hardcoverCacheKey(isbn, slug);
+    if (!key) return null;
+    const entry = memoryCache.get(key);
+    return cacheFresh(entry) ? entry ?? null : null;
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      slug ?? isbn ?? "hardcover-cache",
+      error instanceof Error ? error.message : String(error)
+    );
+    return null;
+  }
+}
+
+/** Sync memory overlay only — never network, never throws. */
+export function overlayHardcoverMemoryCache(book: BookDetail): BookDetail {
+  try {
+    const record = peekHardcoverMemoryCache(book.isbn, book.id);
+    if (!record) return book;
+    return applyHardcoverCache(book, record);
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      book.id,
+      error instanceof Error ? error.message : String(error)
+    );
+    return book;
+  }
 }
 
 function graphqlErrorMessage(payload: unknown): string | undefined {
@@ -675,6 +700,11 @@ export async function enrichFromHardcover(book: BookDetail): Promise<BookDetail>
       id: book.id,
       message: error instanceof Error ? error.message : String(error),
     });
+    console.error(
+      "[book-detail]",
+      book.id,
+      error instanceof Error ? error.message : String(error)
+    );
     return book;
   }
 }

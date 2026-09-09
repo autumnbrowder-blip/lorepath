@@ -160,7 +160,8 @@ export async function getGutendexBookById(
         id,
         status: response.status,
       });
-      throw new Error(`Project Gutenberg API error: ${response.status}`);
+      console.error("[book-detail]", id, `Project Gutenberg API error: ${response.status}`);
+      return null;
     }
 
     const data = (await response.json()) as GutendexBook;
@@ -176,10 +177,14 @@ export async function getGutendexBookById(
       isbn: null,
     };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Project Gutenberg request timed out.");
-    }
-    throw error;
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? "Project Gutenberg request timed out."
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    console.error("[book-detail]", id, message);
+    return null;
   } finally {
     clearTimeout(timeout);
   }

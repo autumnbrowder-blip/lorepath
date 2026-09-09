@@ -7,6 +7,7 @@ import {
   isAuthorQuery,
   parsePublishedYear,
 } from "@/lib/book-utils";
+import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   GENRE_PAGE_SIZE,
   isGenreSearchMode,
@@ -194,7 +195,7 @@ export async function searchOpenLibrary(
         );
 
         if (response.ok) {
-          const data: OpenLibrarySearchResponse = await response.json();
+          const data: OpenLibrarySearchResponse = await parseUtf8Json(response);
           return {
             books: parseOpenLibrarySearchResponse(data),
             hasMore: page * pageSize < (data.numFound ?? 0),
@@ -252,7 +253,7 @@ async function fetchAuthorName(
 
     if (!response.ok) return null;
 
-    const data: OpenLibraryAuthor = await response.json();
+    const data: OpenLibraryAuthor = await parseUtf8Json(response);
     return data.name ?? null;
   } catch (error) {
     console.error("[open-library] author lookup failed:", {
@@ -308,7 +309,7 @@ export async function getOpenLibraryEditionIdByIsbn(
   );
   if (!response.ok) return null;
 
-  const data: { key?: string } = await response.json();
+  const data: { key?: string } = await parseUtf8Json(response);
   const match = String(data.key ?? "").match(/OL\d+M/i);
   return match ? toOpenLibraryId(match[0].toUpperCase()) : null;
 }
@@ -317,25 +318,44 @@ async function getOpenLibraryEditionById(
   editionId: string,
   options?: { timeoutMs?: number }
 ): Promise<BookDetail | null> {
-  const response = await fetchOpenLibrary(
-    `https://openlibrary.org/books/${editionId}.json`,
-    { revalidate: 3600, timeoutMs: options?.timeoutMs }
-  );
+  try {
+    const response = await fetchOpenLibrary(
+      `https://openlibrary.org/books/${editionId}.json`,
+      { revalidate: 3600, timeoutMs: options?.timeoutMs }
+    );
 
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Open Library API error: ${response.status}`);
+    console.error(
+      "[book-detail]",
+      editionId,
+      `Open Library API error: ${response.status}`
+    );
+    return null;
   }
 
-  const data: OpenLibraryEditionRecord = await response.json();
+  const data: OpenLibraryEditionRecord = await parseUtf8Json(response);
   const title = cleanTitle(data.title);
   if (!title.trim()) return null;
 
-  const authorNames = await Promise.all(
-    (data.authors ?? []).slice(0, 3).map((entry) =>
-      fetchAuthorName(entry.key || entry.author?.key, 800)
-    )
-  );
+  let authors = ["Unknown author"];
+  try {
+    const authorNames = await Promise.all(
+      (data.authors ?? []).slice(0, 3).map((entry) =>
+        fetchAuthorName(entry.key || entry.author?.key, 400)
+      )
+    );
+    const cleaned = cleanAuthors(
+      authorNames.filter((name): name is string => Boolean(name))
+    );
+    if (cleaned.length > 0) authors = cleaned;
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      editionId,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 
   const year = parsePublishedYear(data.publish_date);
   const isbn = data.isbn_13?.[0] ?? data.isbn_10?.[0] ?? null;
@@ -344,9 +364,7 @@ async function getOpenLibraryEditionById(
   return {
     id: toOpenLibraryId(editionId),
     title,
-    authors: cleanAuthors(
-      authorNames.filter((name): name is string => Boolean(name))
-    ),
+    authors,
     description: parseOpenLibraryDescription(data.description),
     coverUrl: openLibraryCoverUrl(data.covers?.[0]),
     genres: [],
@@ -359,53 +377,84 @@ async function getOpenLibraryEditionById(
     language,
     isbn,
   };
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      editionId,
+      error instanceof Error ? error.message : String(error)
+    );
+    return null;
+  }
 }
 
 export async function getOpenLibraryBookById(
   id: string,
   options?: { timeoutMs?: number }
 ): Promise<BookDetail | null> {
-  const olid = openLibraryOlid(id);
-  if (isOpenLibraryEditionOlid(olid)) {
-    return getOpenLibraryEditionById(olid, options);
+  try {
+    const olid = openLibraryOlid(id);
+    if (isOpenLibraryEditionOlid(olid)) {
+      return await getOpenLibraryEditionById(olid, options);
+    }
+
+    const workId = olid;
+    const response = await fetchOpenLibrary(
+      `https://openlibrary.org/works/${workId}.json`,
+      { revalidate: 3600, timeoutMs: options?.timeoutMs }
+    );
+
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      console.error("[book-detail]", id, `Open Library API error: ${response.status}`);
+      return null;
+    }
+
+    const data: OpenLibraryWork = await parseUtf8Json(response);
+    const title = cleanTitle(data.title);
+    if (!title.trim()) return null;
+
+    let authors = ["Unknown author"];
+    try {
+      const authorNames = await Promise.all(
+        (data.authors ?? []).slice(0, 3).map((entry) =>
+          fetchAuthorName(entry.author?.key, 400)
+        )
+      );
+      const cleaned = cleanAuthors(
+        authorNames.filter((name): name is string => Boolean(name))
+      );
+      if (cleaned.length > 0) authors = cleaned;
+    } catch (error) {
+      console.error(
+        "[book-detail]",
+        id,
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
+    return {
+      id: toOpenLibraryId(workId),
+      title,
+      authors,
+      description: parseOpenLibraryDescription(data.description),
+      coverUrl: openLibraryCoverUrl(data.covers?.[0]),
+      genres: [],
+      publishedYear: parsePublishedYear(data.first_publish_date),
+      firstPublishYear: parsePublishedYear(data.first_publish_date),
+      source: "openlibrary",
+      publisher: null,
+      pageCount: null,
+      language: null,
+      isbn: null,
+    };
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      id,
+      error instanceof Error ? error.message : String(error)
+    );
+    return null;
   }
-
-  const workId = olid;
-  const response = await fetchOpenLibrary(
-    `https://openlibrary.org/works/${workId}.json`,
-    { revalidate: 3600, timeoutMs: options?.timeoutMs }
-  );
-
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(`Open Library API error: ${response.status}`);
-  }
-
-  const data: OpenLibraryWork = await response.json();
-  const title = cleanTitle(data.title);
-  if (!title.trim()) return null;
-
-  const authorNames = await Promise.all(
-    (data.authors ?? []).map((entry) => fetchAuthorName(entry.author?.key))
-  );
-
-  return {
-    id: toOpenLibraryId(workId),
-    title,
-    authors: cleanAuthors(
-      authorNames.filter((name): name is string => Boolean(name))
-    ),
-    description: parseOpenLibraryDescription(data.description),
-    coverUrl: openLibraryCoverUrl(data.covers?.[0]),
-    genres: [],
-    publishedYear: parsePublishedYear(data.first_publish_date),
-    firstPublishYear: parsePublishedYear(data.first_publish_date),
-    source: "openlibrary",
-    publisher: null,
-    pageCount: null,
-    language: null,
-    isbn: null,
-  };
 }
 
 /**
@@ -433,7 +482,7 @@ export async function getOpenLibraryWorkBlurb(
     );
     if (!response.ok) return null;
 
-    const data: OpenLibraryWork = await response.json();
+    const data: OpenLibraryWork = await parseUtf8Json(response);
     return {
       description: parseOpenLibraryDescription(data.description),
       coverUrl: openLibraryCoverUrl(data.covers?.[0]),
@@ -472,7 +521,7 @@ export async function getOpenLibraryBookByIsbn(
     );
     if (!response.ok) return null;
 
-    const data: OpenLibrarySearchResponse = await response.json();
+    const data: OpenLibrarySearchResponse = await parseUtf8Json(response);
     const books = parseOpenLibrarySearchResponse(data);
     const best = books[0];
     if (!best) return null;

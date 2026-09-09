@@ -8,6 +8,7 @@ import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { loadBookDetail, searchBooks } from "@/lib/books";
 import { pickEarliestYear, pickPublishedYear } from "@/lib/book-utils";
+import { sourceFromBookSlug } from "@/lib/book-cache";
 import {
   applyFirstPublishYearHint,
   booksShareWork,
@@ -31,9 +32,11 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getCachedUser } from "@/lib/supabase/server";
 import { ArrowLeft, ScrollText } from "lucide-react";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import type { ContentRating } from "@/types";
+import type { BookDetail } from "@/types/book";
 
 type BookDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -45,6 +48,39 @@ function browseBackHref(searchQuery: string): string {
   return searchQuery
     ? `/browse?q=${encodeURIComponent(searchQuery)}`
     : "/browse";
+}
+
+function minimalTome(id: string, title: string): BookDetail {
+  return {
+    id,
+    title,
+    authors: ["Unknown author"],
+    coverUrl: null,
+    description: null,
+    genres: [],
+    publishedYear: null,
+    source: sourceFromBookSlug(id),
+    publisher: null,
+    pageCount: null,
+    language: null,
+    isbn: null,
+  };
+}
+
+function isPrefetchRequest(): boolean {
+  try {
+    const h = headers();
+    if (h.get("next-router-prefetch")) return true;
+    const purpose = (h.get("purpose") ?? h.get("sec-purpose") ?? "").toLowerCase();
+    return purpose.includes("prefetch");
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      "prefetch",
+      error instanceof Error ? error.message : String(error)
+    );
+    return false;
+  }
 }
 
 function detailBackHref(searchQuery: string, from?: string): {
@@ -126,7 +162,7 @@ export async function generateMetadata({
   try {
     const { book } = await loadBookDetail(id, {
       searchHint: q?.trim() || hint?.trim() || undefined,
-      enrichHardcover: true,
+      enrichHardcover: false,
     });
     if (!book) {
       return { title: "Tome Unopened | LorePath" };
@@ -137,7 +173,12 @@ export async function generateMetadata({
         book.description?.slice(0, 160) ??
         `Ratings and details for ${book.title}`,
     };
-  } catch {
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      id,
+      error instanceof Error ? error.message : String(error)
+    );
     return { title: "Book | LorePath" };
   }
 }
@@ -208,6 +249,11 @@ async function loadViewerState(
       id: bookExternalId,
       message: error instanceof Error ? error.message : String(error),
     });
+    console.error(
+      "[book-detail]",
+      bookExternalId,
+      error instanceof Error ? error.message : String(error)
+    );
     return ANONYMOUS_VIEWER;
   }
 }
@@ -228,33 +274,46 @@ export default async function BookDetailPage({
   try {
     const detail = await loadBookDetail(id, {
       searchHint: searchQuery || hint?.trim() || undefined,
-      enrichHardcover: true,
+      enrichHardcover: !isPrefetchRequest(),
     });
     book = detail.book;
     failures = detail.failures;
     transient = detail.transient;
     archivesBusy = detail.archivesBusy;
   } catch (error) {
-    console.error("[books/[id]] loadBookDetail threw:", {
+    console.error(
+      "[book-detail]",
       id,
-      message: error instanceof Error ? error.message : String(error),
-    });
+      error instanceof Error ? error.message : String(error)
+    );
   }
 
-  // TomeUnavailable / transient only when no catalog returned a title.
-  if (!book?.title?.trim()) {
-    console.error("[books/[id]] tome unavailable:", {
-      id,
-      q: searchQuery || null,
-      reason: transient ? "busy" : "missing",
-      reasons: summarizeFailures(failures),
-    });
-    return (
-      <TomeUnavailable
-        searchQuery={searchQuery}
-        reason={transient ? "busy" : "missing"}
-      />
-    );
+  // TomeUnavailable only when there is no route id and no title at all.
+  if (!book) {
+    const fallbackTitle = (searchQuery || hint?.trim() || "").trim();
+    if (id.trim()) {
+      book = minimalTome(id, fallbackTitle || "Untitled tome");
+      archivesBusy = true;
+    } else {
+      console.error("[books/[id]] tome unavailable:", {
+        id,
+        q: searchQuery || null,
+        reason: transient ? "busy" : "missing",
+        reasons: summarizeFailures(failures),
+      });
+      return (
+        <TomeUnavailable
+          searchQuery={searchQuery}
+          reason={transient ? "busy" : "missing"}
+        />
+      );
+    }
+  } else if (!book.title?.trim()) {
+    book = {
+      ...book,
+      title: (searchQuery || hint?.trim() || "Untitled tome").trim(),
+    };
+    archivesBusy = true;
   }
 
   const cachedSiblings =
@@ -267,23 +326,33 @@ export default async function BookDetailPage({
     cachedSiblings.find((entry) => entry.id === book.id) ??
     cachedSiblings.find((entry) => booksShareWork(entry, book)) ??
     null;
-  const hydrated = applyFirstPublishYearHint(
-    applyKnownWorkFields({
-      ...book,
-      firstEditionId: book.firstEditionId || sibling?.firstEditionId || null,
-      firstPublishYear: pickEarliestYear(
-        book.firstPublishYear,
-        sibling?.firstPublishYear
-      ),
-      latestEditionYear:
-        book.latestEditionYear ?? sibling?.latestEditionYear ?? null,
-      latestEditionId: book.latestEditionId || sibling?.latestEditionId || null,
-      workEditions: book.workEditions?.length
-        ? book.workEditions
-        : sibling?.workEditions,
-    }),
-    fy
-  );
+  let hydrated = book;
+  try {
+    hydrated = applyFirstPublishYearHint(
+      applyKnownWorkFields({
+        ...book,
+        firstEditionId: book.firstEditionId || sibling?.firstEditionId || null,
+        firstPublishYear: pickEarliestYear(
+          book.firstPublishYear,
+          sibling?.firstPublishYear
+        ),
+        latestEditionYear:
+          book.latestEditionYear ?? sibling?.latestEditionYear ?? null,
+        latestEditionId: book.latestEditionId || sibling?.latestEditionId || null,
+        workEditions: book.workEditions?.length
+          ? book.workEditions
+          : sibling?.workEditions,
+      }),
+      fy
+    );
+  } catch (error) {
+    console.error(
+      "[book-detail]",
+      id,
+      error instanceof Error ? error.message : String(error)
+    );
+    hydrated = book;
+  }
   const firstEditionId = hydrated.firstEditionId?.trim() || hydrated.id;
   const cachedLatest = resolveLatestEditionTarget(hydrated, cachedSiblings);
   const cachedDistinct = distinctLatestEdition({
