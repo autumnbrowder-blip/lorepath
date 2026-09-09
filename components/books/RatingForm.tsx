@@ -10,6 +10,7 @@ import {
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
 import type { CommunityRatingsSummary } from "@/lib/ratings";
+import { JUST_RATED_SLUGS_STORAGE_KEY } from "@/lib/user-rated-identity";
 import { createClient, fetchWithAuthRetry } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { ContentRating } from "@/types";
@@ -18,7 +19,6 @@ import {
   CheckCircle2,
   Loader2,
   PenLine,
-  ScrollText,
   Send,
 } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -134,8 +134,6 @@ export function RatingForm({
   const confirmedRef = useRef<ContentRating | null>(initialRatings);
   /** True after the user moves a slider; blocks late GET hydrates from clobbering edits. */
   const dirtyRef = useRef(false);
-  /** Distinguishes first inscription vs rewriting marks in success copy. */
-  const wasUpdatingRef = useRef(initialRatings != null);
   /** Status container; scrolled into view when a save succeeds. */
   const statusRef = useRef<HTMLDivElement | null>(null);
   /** Save-error alert — scrolled and focused so it cannot be missed. */
@@ -214,8 +212,10 @@ export function RatingForm({
   }
 
   // Hydrate from server when a saved rating exists. Do not wipe just-saved
-  // values if SSR briefly returns null after router.refresh().
+  // values if SSR briefly returns null after router.refresh(), and never
+  // clobber in-progress slider edits.
   useEffect(() => {
+    if (dirtyRef.current) return;
     if (initialRatings != null) {
       applyConfirmedRating(initialRatings);
       return;
@@ -239,7 +239,6 @@ export function RatingForm({
       setError(SIGN_IN_TO_INSCRIBE);
       return;
     }
-    wasUpdatingRef.current = hasExistingRating;
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -270,8 +269,18 @@ export function RatingForm({
         return;
       }
 
-      // Keep the sliders on the values just submitted — never reset to 0.
-      applyConfirmedRating(submitted);
+      // Keep sliders on the submitted numbers. Prefer the POST echo when it
+      // matches; never snap back to 0 after a successful save.
+      const echoed = data.userRating;
+      applyConfirmedRating(
+        echoed &&
+          !(
+            ratingsEqual(echoed, DEFAULT_RATINGS) &&
+            !ratingsEqual(submitted, DEFAULT_RATINGS)
+          )
+          ? echoed
+          : submitted
+      );
 
       if (data.communityRatings) {
         applyCommunityRatings(data.communityRatings);
@@ -284,14 +293,14 @@ export function RatingForm({
 
       // Let browse cards show Inscribed immediately after return (same tab).
       try {
-        const prev = sessionStorage.getItem("lorepath-just-rated-slugs");
+        const prev = sessionStorage.getItem(JUST_RATED_SLUGS_STORAGE_KEY);
         const list = prev ? (JSON.parse(prev) as unknown) : [];
         const slugs = Array.isArray(list)
           ? list.filter((value): value is string => typeof value === "string")
           : [];
         if (!slugs.includes(bookId)) slugs.push(bookId);
         sessionStorage.setItem(
-          "lorepath-just-rated-slugs",
+          JUST_RATED_SLUGS_STORAGE_KEY,
           JSON.stringify(slugs)
         );
       } catch {
@@ -323,7 +332,7 @@ export function RatingForm({
     <section
       aria-labelledby="rate-book-heading"
       className={`ornate-plaque preference-codex-box-shell rating-form-panel animate-fade-in-up${
-        canRate ? " rating-form-panel--inscribed" : ""
+        hasExistingRating ? " rating-form-panel--inscribed" : ""
       }`}
       style={{ animationDelay: "150ms" }}
     >
@@ -342,12 +351,12 @@ export function RatingForm({
               className="font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg"
             >
               {hasExistingRating
-                ? "Update Your Rating"
+                ? "You have already inscribed this tome"
                 : "Inscribe Your Rating"}
             </h2>
             <p className="font-heading text-sm nav-dragon-gold">
               {hasExistingRating
-                ? "Revise your marks — changes will rewrite the prior inscription"
+                ? "Revise the marks you left on this tome"
                 : "Mark this tome across each content category"}
             </p>
           </div>
@@ -370,19 +379,7 @@ export function RatingForm({
                   <div className="alert-success">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#f0d78a]" />
                     <p className="font-heading text-sm nav-dragon-gold">
-                      {wasUpdatingRef.current
-                        ? "Your marks have been rewritten in the tome."
-                        : "Your marks have been recorded in the tome."}
-                    </p>
-                  </div>
-                ) : hasExistingRating ? (
-                  <div className="flex h-full items-start gap-2 rounded-sm border border-gold-600/45 bg-[#0c1f19]/75 px-3 py-2">
-                    <ScrollText
-                      className="mt-0.5 h-4 w-4 shrink-0 text-[#e2c06a]"
-                      aria-hidden="true"
-                    />
-                    <p className="font-heading text-sm leading-snug nav-dragon-gold">
-                      Your marks are in this tome
+                      Your marks have been recorded in the tome.
                     </p>
                   </div>
                 ) : null}
@@ -432,7 +429,7 @@ export function RatingForm({
                   ) : (
                     <Send className="h-4 w-4" />
                   )}
-                  {hasExistingRating ? "Update Rating" : "Submit Rating"}
+                  {hasExistingRating ? "Update your marks" : "Submit Rating"}
                 </button>
               </form>
             </>

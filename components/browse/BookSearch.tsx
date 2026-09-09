@@ -13,9 +13,15 @@ import {
   repairSearchQuery,
 } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
+import {
+  createRatedBookLookup,
+  JUST_RATED_SLUGS_STORAGE_KEY,
+  normalizeExternalBookId,
+  type UserRatedIdentity,
+} from "@/lib/user-rated-identity";
 import type { BookSummary } from "@/types/book";
 import { AlertCircle, Loader2, Search } from "lucide-react";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type SearchPagePayload = {
@@ -26,6 +32,18 @@ type SearchPagePayload = {
   query?: string;
   warning?: string | null;
 };
+
+function readJustRatedSlugs(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(JUST_RATED_SLUGS_STORAGE_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(list)) return [];
+    return list.filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+}
 
 function mergeSearchResults(
   existing: BookSummary[],
@@ -52,8 +70,13 @@ type BookSearchProps = {
   /** Prefetched NYT lists — display-only; does not affect search. */
   bestsellers?: BookSummary[];
   bestsellersError?: string | null;
-  /** SSR auth hint for the signup prompt only — never loads ratings. */
+  /** SSR auth hint. Rated identities are passed separately from the page. */
   isLoggedIn?: boolean;
+  /**
+   * Signed-in user's rated works (one server query). Empty when signed out.
+   * Used for Inscribed badges — not a per-card ratings fetch.
+   */
+  ratedIdentities?: UserRatedIdentity[];
 };
 
 export function BookSearch({
@@ -62,6 +85,7 @@ export function BookSearch({
   bestsellers = [],
   bestsellersError = null,
   isLoggedIn = false,
+  ratedIdentities = [],
 }: BookSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
@@ -81,6 +105,46 @@ export function BookSearch({
   const abortRef = useRef<AbortController | null>(null);
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
   const searchRequestIdRef = useRef(0);
+  const [justRatedSlugs, setJustRatedSlugs] = useState<string[]>([]);
+
+  const inscribedLookup = useMemo(
+    () => createRatedBookLookup(isLoggedIn ? ratedIdentities : []),
+    [isLoggedIn, ratedIdentities]
+  );
+  const justRatedSet = useMemo(
+    () =>
+      new Set(
+        (isLoggedIn ? justRatedSlugs : []).map((slug) =>
+          normalizeExternalBookId(slug)
+        )
+      ),
+    [isLoggedIn, justRatedSlugs]
+  );
+
+  function isInscribed(book: BookSummary): boolean {
+    if (!isLoggedIn) return false;
+    if (inscribedLookup.has(book)) return true;
+    return justRatedSet.has(normalizeExternalBookId(book.id));
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setJustRatedSlugs([]);
+      return;
+    }
+    setJustRatedSlugs(readJustRatedSlugs());
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        setJustRatedSlugs(readJustRatedSlugs());
+      }
+    }
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [isLoggedIn]);
 
   async function fetchSearchPage(
     searchQuery: string,
@@ -350,6 +414,7 @@ export function BookSearch({
             <BestsellersSection
               books={bestsellers}
               error={bestsellersError}
+              isInscribed={isLoggedIn ? isInscribed : undefined}
             />
           ) : null}
 
@@ -419,6 +484,7 @@ export function BookSearch({
                     key={book.id}
                     book={book}
                     searchQuery={resultsQuery}
+                    hasUserRating={isInscribed(book)}
                     priority={index < 3}
                   />
                 ))}

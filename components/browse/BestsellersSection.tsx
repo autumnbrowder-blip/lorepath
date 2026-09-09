@@ -6,11 +6,14 @@ import { ScrollText } from "lucide-react";
 type BestsellersSectionProps = {
   books: BookSummary[];
   error?: string | null;
+  /** Signed-in Inscribed check from the batched rated-ids set. */
+  isInscribed?: (book: BookSummary) => boolean;
 };
 
 export function BestsellersSection({
   books,
   error = null,
+  isInscribed,
 }: BestsellersSectionProps) {
   if (!books.length && !error) return null;
 
@@ -44,6 +47,7 @@ export function BestsellersSection({
             <BookCard
               key={book.id}
               book={book}
+              hasUserRating={isInscribed?.(book) === true}
               priority={index < 3}
             />
           ))}

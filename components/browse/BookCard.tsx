@@ -45,7 +45,7 @@ function displayTitle(title: string): string {
 
 /**
  * Browse / search result card — dark forest-green plaque over the library.
- * When hasUserRating is true, shows Inscribed above Open the Tome.
+ * When hasUserRating is true, shows a small Inscribed overlay on the cover.
  */
 export function BookCard({
   book,
@@ -87,6 +87,17 @@ export function BookCard({
           sizes="72px"
           priority={priority}
         />
+        {showInscribed ? (
+          <div
+            className="lp-book-card-inscribed"
+            role="status"
+            data-testid="tome-inscribed"
+            aria-label="Inscribed — you have rated this tome"
+          >
+            <Feather className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+            <span>Inscribed</span>
+          </div>
+        ) : null}
         <span className="lp-book-card-plate-corners" aria-hidden="true" />
       </Link>
 
@@ -142,17 +153,6 @@ export function BookCard({
         ) : null}
 
         <div className="lp-book-card-actions">
-          {showInscribed ? (
-            <div
-              className="lp-book-card-inscribed"
-              role="status"
-              data-testid="tome-inscribed"
-              aria-label="Inscribed — you have rated this tome"
-            >
-              <Feather className="h-3 w-3 shrink-0" aria-hidden="true" />
-              <span>Inscribed</span>
-            </div>
-          ) : null}
           <Link
             href={tomeHref}
             prefetch={false}

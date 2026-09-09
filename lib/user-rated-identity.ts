@@ -6,6 +6,9 @@ import {
 } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 
+/** Session key written after a successful save so Browse can badge immediately. */
+export const JUST_RATED_SLUGS_STORAGE_KEY = "lorepath-just-rated-slugs";
+
 /**
  * One work the signed-in user has rated.
  * `slug` is the external id stored on `books.slug` at rating time (route id).
