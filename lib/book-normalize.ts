@@ -1,4 +1,4 @@
-import { repairMojibake } from "@/lib/book-utils";
+import { isPlaceholderDescription, PLACEHOLDER_DESCRIPTION, repairMojibake } from "@/lib/book-utils";
 import type { BookDetail } from "@/types/book";
 
 /**
@@ -54,13 +54,17 @@ function toFiniteNumber(value: unknown): number | null {
 /** Coerce a resolved detail record into something React can always render. */
 export function normalizeBookDetailForDisplay(book: BookDetail): BookDetail {
   const authors = toDisplayTextList(book.authors);
+  const description = toDisplayText(book.description);
 
   return {
     ...book,
     title: toDisplayText(book.title) ?? "Untitled",
     authors: authors.length > 0 ? authors : ["Unknown author"],
     genres: toDisplayTextList(book.genres),
-    description: toDisplayText(book.description),
+    description:
+      description && !isPlaceholderDescription(description)
+        ? description
+        : PLACEHOLDER_DESCRIPTION,
     coverUrl: toDisplayText(book.coverUrl),
     publisher: toDisplayText(book.publisher),
     language: toDisplayText(book.language),

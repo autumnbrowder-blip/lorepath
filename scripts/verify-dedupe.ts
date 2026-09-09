@@ -469,7 +469,7 @@ check("Google reprint is the visible Dune card", olVsGoogle[0]?.id, "google-dune
 check(
   "visible cover is the Google reprint cover",
   olVsGoogle[0]?.coverUrl,
-  "https://books.google.com/books/content?id=dune-cover"
+  "https://books.google.com/books/content?id=dune-cover&zoom=1"
 );
 check("first published year stays 1965", olVsGoogle[0]?.firstPublishYear, 1965);
 check(
@@ -790,14 +790,14 @@ check(
 );
 check("visible Dune source is hardcover", hcVsSpanish[0]?.source, "hardcover");
 check(
-  "Hardcover description wins over OL",
+  "OL description wins over leftover Hardcover copy",
   hcVsSpanish[0]?.description,
-  "Hardcover English synopsis of Arrakis and the spice."
+  "Open Library work-level record using first_publish_year as the year."
 );
 check(
-  "Hardcover cover wins over OL",
+  "OL cover wins over leftover Hardcover CDN",
   hcVsSpanish[0]?.coverUrl,
-  "https://assets.hardcover.app/covers/dune.jpg"
+  "https://covers.openlibrary.org/b/id/11481354-M.jpg"
 );
 check(
   "leftover Hardcover source does not vote on tags",
@@ -849,6 +849,7 @@ check(
 check(
   "merged Dune keeps a real description from a live catalog",
   Boolean(hcVsGoogle[0]?.description?.trim()) &&
+    hcVsGoogle[0]?.description !== "No synopsis in the archives yet." &&
     hcVsGoogle[0]?.description !== "No description available.",
   true
 );

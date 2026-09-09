@@ -10,6 +10,7 @@ import {
   parsePublishedYear,
   repairSearchQuery,
 } from "@/lib/book-utils";
+import { normalizeGoogleCoverUrl } from "@/lib/cover-resolve";
 import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   GENRE_PAGE_SIZE,
@@ -64,7 +65,7 @@ function getGoogleBooksApiKey(): string | null {
 
 function normalizeCoverUrl(url: string | undefined): string | null {
   if (!url) return null;
-  return url.replace("http://", "https://");
+  return normalizeGoogleCoverUrl(url);
 }
 
 function getIsbn(identifiers?: { type: string; identifier: string }[]): string | null {

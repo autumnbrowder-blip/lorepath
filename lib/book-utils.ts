@@ -173,10 +173,10 @@ export function stripHtml(html: string): string {
 }
 
 /** Stub shown only when a book survives with no synopsis from any source. */
-export const PLACEHOLDER_DESCRIPTION = "No description available.";
+export const PLACEHOLDER_DESCRIPTION = "No synopsis in the archives yet.";
 
 const PLACEHOLDER_DESCRIPTION_PATTERN =
-  /^(n\/?a|none|null|undefined|unknown|tbd|-+|\.+|no\s+(description|synopsis|summary|blurb)(\s+(is\s+)?(available|provided|found))?|(description|synopsis|summary)\s+(is\s+)?(not\s+available|unavailable|coming\s+soon|to\s+follow))\.?$/i;
+  /^(n\/?a|none|null|undefined|unknown|tbd|-+|\.+|no\s+(description|synopsis|summary|blurb)(\s+(is\s+)?(available|provided|found))?(\s+in\s+the\s+archives(\s+yet)?)?|(description|synopsis|summary)\s+(is\s+)?(not\s+available|unavailable|coming\s+soon|to\s+follow)|no\s+synopsis\s+in\s+the\s+archives\s+yet|no\s+description\s+available(\s+for\s+this\s+book)?)(\.)?$/i;
 
 /**
  * Provider filler that means "we have nothing" — never store or display it as

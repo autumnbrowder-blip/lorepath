@@ -13,6 +13,7 @@ import {
   pickEarliestYear,
   pickPublishedYear,
 } from "@/lib/book-utils";
+import { preferCoverUrl } from "@/lib/cover-resolve";
 import { getGoogleBookByIsbn } from "@/lib/google-books";
 import { parseUtf8Json } from "@/lib/utf8-json";
 import {
@@ -141,7 +142,7 @@ export function mergeBookDetails(
       base.genres.length > 0
         ? base.genres
         : supplement.genres ?? base.genres,
-    coverUrl: base.coverUrl?.trim() || supplement.coverUrl?.trim() || null,
+    coverUrl: preferCoverUrl(base.coverUrl, supplement.coverUrl),
     publishedYear,
     firstPublishYear,
     latestEditionYear,
@@ -619,8 +620,7 @@ export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
   // Re-assert known original + latest years after other merges.
   enriched = await enrichKnownEditionMetadata(enriched);
 
-  // Hardcover runs in loadBookDetail via enrichFromHardcover after this
-  // returns, so a 1.8s Hardcover timeout cannot starve OL enrichment or
-  // decide whether the tome page exists.
+  // Hardcover is off unless HARDCOVER_ENABLED=true; Google/OL fill covers
+  // and descriptions. This enricher must not wait on Hardcover.
   return { ...enriched, id: book.id };
 }

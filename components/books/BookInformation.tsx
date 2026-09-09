@@ -4,7 +4,7 @@ import { BookMetadataItem } from "@/components/books/BookMetadataItem";
 import { CodexBoxOrnament } from "@/components/preferences/CodexBoxOrnament";
 import { GenreTag } from "@/components/theme/GenreTag";
 import { getIsbnUrl } from "@/lib/book-links";
-import { resolvePublicationYears } from "@/lib/book-utils";
+import { resolvePublicationYears, PLACEHOLDER_DESCRIPTION } from "@/lib/book-utils";
 import {
   distinctLatestEdition,
   firstPublishedHref,
@@ -126,7 +126,7 @@ export function BookInformation({
   const descriptionBlock = (
     <div className="ornate-plaque preference-codex-box preference-codex-box--compact relative">
       <CodexBoxOrnament />
-      {book.description ? (
+          {book.description && book.description !== PLACEHOLDER_DESCRIPTION ? (
         <div className="relative z-[3] px-1">
           <h3 className="tome-title mb-2 font-heading text-base font-medium tracking-normal nav-dragon-gold sm:text-lg">
             About this book
@@ -137,7 +137,7 @@ export function BookInformation({
         </div>
       ) : (
         <p className="tome-body relative z-[3] px-1 text-center font-heading text-base italic nav-dragon-gold">
-          No description available for this book.
+          {PLACEHOLDER_DESCRIPTION}
         </p>
       )}
     </div>

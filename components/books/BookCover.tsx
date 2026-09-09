@@ -2,6 +2,7 @@
 
 import {
   BOOK_COVER_PLACEHOLDER,
+  coverSourceFromUrl,
   getCoverCandidates,
 } from "@/lib/cover-resolve";
 import type { BookSummary } from "@/types/book";
@@ -24,8 +25,9 @@ type BookCoverProps = {
 
 /**
  * Shared cover image with fallback chain:
- * provider → Open Library ISBN → Open Library OLID → parchment placeholder →
+ * Google thumbnail (zoom=1) → Open Library ISBN → parchment placeholder →
  * inline “Ancient volume” (if even the local asset fails).
+ * Never waits on Hardcover.
  */
 export function BookCover({
   book,
@@ -56,6 +58,10 @@ export function BookCover({
   const src =
     candidates[Math.min(index, candidates.length - 1)] ?? BOOK_COVER_PLACEHOLDER;
   const isPlaceholder = src === BOOK_COVER_PLACEHOLDER;
+
+  useEffect(() => {
+    console.info(`[covers] source=${coverSourceFromUrl(src)}`);
+  }, [src]);
 
   if (exhausted) {
     return (

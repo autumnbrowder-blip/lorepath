@@ -93,12 +93,11 @@ const TAG_SPECIFICITY: Record<CanonicalTag, number> = {
 /** Default cap — enough room for specific genres without flooding the UI. */
 export const DEFAULT_MAX_TAGS = 5;
 
-/** Only Google Books, ISBNdb, Big Book, and Hardcover may contribute genre votes. */
+/** Google Books, ISBNdb, and Big Book may contribute genre votes. Hardcover does not. */
 const TRUSTED_SOURCES = new Set<BookSource>([
   "google",
   "isbndb",
   "bigbook",
-  "hardcover",
 ]);
 
 const STRICT_TAGS = new Set<CanonicalTag>([
@@ -522,8 +521,8 @@ function isTrustedTagSource(
 }
 
 /**
- * Only trusted sources (Google Books, ISBNdb, Big Book, Hardcover) contribute
- * genre votes. Open Library / Gutendex / NYT never contribute.
+ * Only trusted sources (Google Books, ISBNdb, Big Book) contribute
+ * genre votes. Open Library / Gutendex / NYT / leftover Hardcover never contribute.
  */
 function selectTagEvidence(evidence: GenreEvidence[]): GenreEvidence[] {
   return evidence.filter(

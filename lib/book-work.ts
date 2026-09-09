@@ -128,6 +128,7 @@ function isPlaceholderCoverUrl(url: string): boolean {
   const trimmed = url.trim();
   if (!trimmed) return true;
   if (trimmed === "/images/parchment.jpg") return true;
+  if (/hardcover\.app/i.test(trimmed)) return true;
   return /openlibrary\.org\/b\/id\/-1|cover_unavailable/i.test(trimmed);
 }
 

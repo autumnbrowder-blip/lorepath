@@ -5,8 +5,12 @@ import {
 import { enrichBookDetail } from "@/lib/book-enrichment";
 import { normalizeBookDetailForDisplay } from "@/lib/book-normalize";
 import { withFinalizedTags } from "@/lib/book-tags";
-import { enrichBooksWithCovers } from "@/lib/bookcover";
-import { fillMissingCoverUrl } from "@/lib/cover-resolve";
+import {
+  enrichBooksWithCovers,
+  fillMissingCoverUrl,
+  logCoverSource,
+  resolveCoverSrc,
+} from "@/lib/cover-resolve";
 import {
   isGenreSearchMode,
   normalizeGenreQuery,
@@ -499,8 +503,8 @@ export type GetBookByIdOptions = {
    */
   searchHint?: string;
   /**
-   * Hardcover.app enricher. Only `/books/[id]` (and editions) set this after
-   * the reader opens a tome. Browse, search, ratings, and Link prefetch omit it.
+   * Hardcover.app enricher. No-op unless HARDCOVER_ENABLED=true.
+   * Search, browse, NYT, Load More, and cards never set this.
    */
   enrichHardcover?: boolean;
 };
@@ -638,7 +642,8 @@ export async function loadBookDetail(
   return loadBookDetailCached(
     id,
     options?.searchHint?.trim() || "",
-    options?.enrichHardcover === true
+    options?.enrichHardcover === true &&
+      process.env.HARDCOVER_ENABLED === "true"
   );
 }
 
@@ -792,15 +797,6 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
       logBookDetailError(bookId, error);
     }
 
-    // Hardcover never blocks the page decision. Memory overlay only; live
-    // fetch is fire-and-forget after we already have a title.
-    try {
-      const { overlayHardcoverMemoryCache } = await import("@/lib/hardcover");
-      tagged = overlayHardcoverMemoryCache(tagged);
-    } catch (error) {
-      logBookDetailError(bookId, error);
-    }
-
     if (!isUsableCoreBook(tagged)) {
       tagged = { ...coreTitle, id: bookId };
     }
@@ -812,7 +808,22 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
     }
     recovered = tagged;
 
-    if (enrichHardcover) {
+    logCoverSource(resolveCoverSrc(tagged));
+
+    // Hardcover HTTP is off unless HARDCOVER_ENABLED=true (gated at the
+    // loadBookDetailCached call site). Prefer not importing the module at all.
+    if (enrichHardcover && process.env.HARDCOVER_ENABLED === "true") {
+      try {
+        const { overlayHardcoverMemoryCache } = await import("@/lib/hardcover");
+        tagged = overlayHardcoverMemoryCache(tagged);
+      } catch (error) {
+        logBookDetailError(bookId, error);
+      }
+      if (!isUsableCoreBook(tagged)) {
+        tagged = { ...coreTitle, id: bookId };
+      }
+      recovered = tagged;
+
       void import("@/lib/hardcover")
         .then(({ enrichFromHardcover }) => enrichFromHardcover(tagged))
         .then((enriched) => {
@@ -825,12 +836,18 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
     }
 
     void cacheBookDetail(bookId, tagged).catch((error) => {
+      // Upsert is best-effort. Google/OL already rendered — never throw,
+      // and never treat a cache/RLS miss as "archives are resting".
       logBookDetailError(bookId, error);
     });
 
     const failures = [...coreFailures, ...optionalFailures];
     const archivesBusy =
-      isGoogleBooksBusy() || failures.some((failure) => failure.status === 429);
+      isGoogleBooksBusy() ||
+      failures.some(
+        (failure) =>
+          failure.status === 429 && failure.provider !== "book-cache"
+      );
 
     if (failures.length > 0) {
       console.warn("[getBookById] recovered after provider failures:", {

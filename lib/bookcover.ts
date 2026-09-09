@@ -3,7 +3,7 @@ import type { BookSummary } from "@/types/book";
 
 /**
  * Search-result cover backfill.
- * Uses the shared cover resolver (provider → OL ISBN → OL OLID) with no
+ * Uses the shared cover resolver (Google zoom=1 → OL ISBN → placeholder) with no
  * network calls, so enrichment cannot stall Browse when a provider is slow.
  */
 export async function enrichBooksWithCovers(

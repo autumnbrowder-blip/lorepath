@@ -11,7 +11,6 @@ import {
   isMerchandiseOrCompanion,
   isPlaceholderDescription,
   isTitleOnlyStub,
-  isWeakDescription,
   pickPreferredDuplicate,
   PLACEHOLDER_DESCRIPTION,
   repairMojibake,
@@ -31,11 +30,7 @@ import type { BookSummary } from "@/types/book";
 
 const MISSING_DESCRIPTION_FALLBACK = PLACEHOLDER_DESCRIPTION;
 
-function hasDescription(book: BookSummary): boolean {
-  return Boolean(book.description?.trim()) && !isWeakDescription(book.description);
-}
-
-/** Any real text — the "No description available." stub does not count. */
+/** Any real text — the archives stub does not count. */
 function hasAnyDescription(book: BookSummary): boolean {
   return !isPlaceholderDescription(book.description);
 }
@@ -44,13 +39,10 @@ function hasCover(book: BookSummary): boolean {
   return Boolean(book.coverUrl?.trim());
 }
 
-function hasDescriptionAndCover(book: BookSummary): boolean {
-  return hasDescription(book) && hasCover(book);
-}
-
-/** Eligible for merge — need at least one of description or cover. */
+/** Eligible for a card — title + author is enough even with no synopsis. */
 function hasUsableSearchFields(book: BookSummary): boolean {
-  return hasAnyDescription(book) || hasCover(book);
+  if (isTitleOnlyStub(book)) return false;
+  return hasRealAuthor(book) || hasAnyDescription(book) || hasCover(book);
 }
 
 function withDescriptionFallback(book: BookSummary): BookSummary {
@@ -75,9 +67,8 @@ function isQueryTitleSurvivor(book: BookSummary, query: string): boolean {
 }
 
 /**
- * Prefer complete records. If none survive, fall back to cover-only
- * (with a short description stub), then description-only — never junk with neither.
- * Exact / related title matches for the active query always survive (even thin metadata).
+ * Keep cards that have a real author (or cover / synopsis). Empty description
+ * must not hide the card — title, author, and Open the Tome still render.
  */
 function selectQualityBooks(
   books: BookSummary[],
@@ -87,23 +78,13 @@ function selectQualityBooks(
     ? books.filter((book) => isQueryTitleSurvivor(book, query))
     : [];
 
-  const withBoth = books.filter(hasDescriptionAndCover);
-  if (withBoth.length > 0) {
-    return mergeExactTitleSurvivors(withBoth, exactTitleHits);
+  const usable = books
+    .filter((book) => !isTitleOnlyStub(book))
+    .map(withDescriptionFallback);
+  if (usable.length > 0) {
+    return mergeExactTitleSurvivors(usable, exactTitleHits);
   }
 
-  const withCover = books.filter(hasCover).map(withDescriptionFallback);
-  if (withCover.length > 0) {
-    return mergeExactTitleSurvivors(withCover, exactTitleHits);
-  }
-
-  const withDesc = books.filter(hasAnyDescription);
-  if (withDesc.length > 0) {
-    return mergeExactTitleSurvivors(withDesc, exactTitleHits);
-  }
-
-  // Nothing else survived — still keep exact title hits that are not
-  // title-only stubs, with a stub description if needed.
   return exactTitleHits
     .filter((book) => !isTitleOnlyStub(book))
     .map(withDescriptionFallback);

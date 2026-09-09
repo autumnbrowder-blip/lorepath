@@ -1,3 +1,4 @@
+import { preferCoverUrl } from "@/lib/cover-resolve";
 import { finalizeBookTags } from "@/lib/book-tags";
 import { getLanguageEditionBucket } from "@/lib/book-language";
 import {
@@ -56,6 +57,13 @@ function descriptionScore(value: string | null | undefined): number {
   return Math.min(text.length, 4000);
 }
 
+function descriptionSourceScore(source: BookSource): number {
+  if (source === "google") return 1000;
+  if (source === "openlibrary") return 500;
+  if (source === "hardcover") return 0;
+  return isCommercialSource(source) ? 200 : 50;
+}
+
 function pickBestDescription(
   candidates: Array<{ source: BookSource; description: string | null | undefined }>
 ): string | null {
@@ -63,8 +71,7 @@ function pickBestDescription(
     .map((entry) => ({
       text: entry.description?.trim() ?? "",
       score:
-        descriptionScore(entry.description) +
-        (isCommercialSource(entry.source) ? 200 : 0),
+        descriptionScore(entry.description) + descriptionSourceScore(entry.source),
     }))
     .filter((entry) => entry.text.length > 0)
     .sort((a, b) => b.score - a.score);
@@ -74,23 +81,7 @@ function pickBestDescription(
 function pickBestCover(
   candidates: Array<{ source: BookSource; coverUrl: string | null | undefined }>
 ): string | null {
-  const ranked = candidates
-    .map((entry) => {
-      const url = entry.coverUrl?.trim() ?? "";
-      if (!url) return null;
-      // Prefer https commercial CDN covers over bare OL placeholders when both exist.
-      let score = isCommercialSource(entry.source) ? 10 : 1;
-      if (/books\.google|googleapis|isbndb|cloudfront/i.test(url)) {
-        score += 5;
-      }
-      if (/openlibrary\.org\/b\/id\/-1|cover_unavailable/i.test(url)) {
-        score -= 20;
-      }
-      return { url, score };
-    })
-    .filter((entry): entry is { url: string; score: number } => Boolean(entry))
-    .sort((a, b) => b.score - a.score);
-  return ranked[0]?.url ?? null;
+  return preferCoverUrl(...candidates.map((entry) => entry.coverUrl));
 }
 
 /**

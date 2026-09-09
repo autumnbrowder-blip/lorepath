@@ -12,10 +12,11 @@ import {
 import type { BookDetail, BookSummary } from "@/types/book";
 
 /**
- * Hardcover.app — cached, detail-only enricher.
- * HARDCOVER_API_TOKEN is server-only (never NEXT_PUBLIC_).
- * Search / Load More / browse must never call this module's live fetch.
+ * Hardcover.app — opt-in detail enricher. Default OFF.
+ * Live HTTP to api.hardcover.app runs only when HARDCOVER_ENABLED=true
+ * (and a token is set). Search / Load More / browse must never call this.
  */
+export const HARDCOVER_ENABLED_ENV = "HARDCOVER_ENABLED";
 export const HARDCOVER_API_TOKEN_ENV = "HARDCOVER_API_TOKEN";
 const HARDCOVER_ENDPOINT = "https://api.hardcover.app/v1/graphql";
 const FETCH_TIMEOUT_MS = 1800;
@@ -104,8 +105,13 @@ let quotaCount = 0;
 const memoryCache = new Map<string, HardcoverCacheRecord>();
 const inFlight = new Map<string, Promise<HardcoverCacheRecord | null>>();
 
+/** Default off. Only the exact string "true" enables Hardcover HTTP. */
+export function isHardcoverEnabled(): boolean {
+  return process.env[HARDCOVER_ENABLED_ENV] === "true";
+}
+
 export function isHardcoverConfigured(): boolean {
-  return Boolean(hardcoverBearerToken());
+  return isHardcoverEnabled() && Boolean(hardcoverBearerToken());
 }
 
 export function isHardcoverId(id: string): boolean {
@@ -196,6 +202,7 @@ export function peekHardcoverMemoryCache(
 
 /** Sync memory overlay only — never network, never throws. */
 export function overlayHardcoverMemoryCache(book: BookDetail): BookDetail {
+  if (!isHardcoverEnabled()) return book;
   try {
     const record = peekHardcoverMemoryCache(book.isbn, book.id);
     if (!record) return book;
@@ -383,6 +390,8 @@ async function fetchHardcoverGraphql(
   variables: Record<string, unknown>,
   slug: string
 ): Promise<GraphqlResult> {
+  // HARDCOVER_ENABLED must be exactly "true" or this never talks to Hardcover.
+  if (process.env.HARDCOVER_ENABLED !== "true") return { kind: "miss" };
   const trimmedSlug = slug.trim();
   if (!trimmedSlug) return { kind: "miss" };
   const token = hardcoverBearerToken();
@@ -541,6 +550,9 @@ async function fetchHardcoverBook(
   slug?: string | null
 ): Promise<HardcoverLookup> {
   try {
+    if (process.env.HARDCOVER_ENABLED !== "true") {
+      return { status: "ok", book: null };
+    }
     const bookSlug = slug?.trim() ?? "";
     if (!bookSlug) return { status: "ok", book: null };
     if (!isHardcoverConfigured()) return { status: "ok", book: null };
@@ -669,6 +681,7 @@ async function lookupAndCache(
  */
 export async function enrichFromHardcover(book: BookDetail): Promise<BookDetail> {
   try {
+    if (process.env.HARDCOVER_ENABLED !== "true") return book;
     if (!book.title?.trim()) return book;
     if (!book.id?.trim()) return book;
     if (!isHardcoverConfigured()) return book;
