@@ -4,6 +4,8 @@ import {
   type LanguageEditionBucket,
 } from "@/lib/book-language";
 import {
+  catalogFieldCount,
+  hasRealAuthor,
   isPlaceholderDescription,
   isWeakDescription,
   normalizeAuthorForDedupe,
@@ -192,10 +194,10 @@ function isDisallowedLatest(
 /**
  * Visible search-card / default tome identity.
  *
- * Prefer English when a copy exists; then a real cover; among those,
- * highest publishedYear. Google / ISBNdb beat an Open Library work id.
- * A commercial English edition with no year still beats a newer
- * non-English OL. Spanish / Ukrainian printings never win (e.g. OL50732450M).
+ * Prefer English when a copy exists; then completeness (author, cover,
+ * description, year); then a real cover; among those, highest publishedYear.
+ * Google / ISBNdb beat an Open Library work id. A Google volume with
+ * author+cover always beats an OL stub that only has a title.
  */
 export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
   const aBad = isDisallowedLatest(a);
@@ -214,6 +216,14 @@ export function pickLatestEdition<T extends BookSummary>(a: T, b: T): T {
   // the commercial row has no cover yet — cover/description still merge in.
   if (aOL && bCom) return b;
   if (bOL && aCom) return a;
+
+  const aFields = catalogFieldCount(a);
+  const bFields = catalogFieldCount(b);
+  if (aFields !== bFields) return bFields > aFields ? b : a;
+
+  const aAuthor = hasRealAuthor(a);
+  const bAuthor = hasRealAuthor(b);
+  if (aAuthor !== bAuthor) return bAuthor ? b : a;
 
   const aCover = hasRealCover(a);
   const bCover = hasRealCover(b);

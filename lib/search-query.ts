@@ -185,3 +185,39 @@ export function secondarySearchVariants(
     (variant) => variant.toLowerCase() !== primary.toLowerCase()
   );
 }
+
+/**
+ * Extra Google Books query for a specific title so 2025–2026 releases are
+ * not buried under older partial-title hits. 3+ words or a quoted phrase.
+ * Returns `intitle:"…"` or null (no extra request).
+ */
+export function googleTitlePriorityQuery(input: string): string | null {
+  const raw = cleanSpaces(input);
+  if (!raw) return null;
+  if (/intitle:/i.test(raw)) return null;
+  if (isAuthorQuery(raw)) return null;
+
+  const quoted =
+    raw.match(/["“]([^"”]+)["”]/)?.[1]?.trim() ||
+    raw.match(/'([^']+)'/)?.[1]?.trim() ||
+    null;
+
+  let title: string | null = quoted;
+  if (!title) {
+    const normalized = normalizeSearchQuery(raw);
+    if (normalized.kind === "isbn" || normalized.kind === "author") {
+      return null;
+    }
+    const candidate =
+      normalized.kind === "title_author"
+        ? normalized.title
+        : normalized.title ?? raw;
+    const words = (candidate ?? "").split(/\s+/).filter(Boolean);
+    if (words.length < 3) return null;
+    title = candidate;
+  }
+
+  const cleaned = (title ?? "").replace(/["“”']/g, "").trim();
+  if (!cleaned) return null;
+  return `intitle:"${cleaned}"`;
+}

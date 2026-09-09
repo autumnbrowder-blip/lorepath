@@ -1,4 +1,5 @@
 import { BookCard } from "@/components/browse/BookCard";
+import { isTitleOnlyStub } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 import { ScrollText } from "lucide-react";
 
@@ -39,7 +40,7 @@ export function BestsellersSection({
         </div>
       ) : (
         <div className="tome-card-grid">
-          {books.map((book, index) => (
+          {books.filter((book) => !isTitleOnlyStub(book)).map((book, index) => (
             <BookCard
               key={book.id}
               book={book}

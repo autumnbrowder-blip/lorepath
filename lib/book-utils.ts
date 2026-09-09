@@ -86,6 +86,45 @@ export function hasRealDescription(
   );
 }
 
+/** True when the record names a real person, not the catalog filler. */
+export function hasRealAuthor(
+  book: Pick<BookSummary, "authors">
+): boolean {
+  return book.authors.some(
+    (author) => author.trim() && author.toLowerCase() !== "unknown author"
+  );
+}
+
+/**
+ * How many of {author, cover, description, year} this record actually has.
+ * Used so a full Google volume beats an Open Library title-only stub.
+ */
+export function catalogFieldCount(book: BookSummary): number {
+  let count = 0;
+  if (hasRealAuthor(book)) count += 1;
+  if (book.coverUrl?.trim()) count += 1;
+  if (!isPlaceholderDescription(book.description)) count += 1;
+  if (
+    normalizePublishedYear(book.publishedYear) != null ||
+    normalizePublishedYear(book.firstPublishYear) != null
+  ) {
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Title with no author, cover, or synopsis — never render this as a BookCard.
+ * "Unknown author" counts as empty. A year alone is not enough.
+ */
+export function isTitleOnlyStub(book: BookSummary): boolean {
+  return (
+    !hasRealAuthor(book) &&
+    !book.coverUrl?.trim() &&
+    isPlaceholderDescription(book.description)
+  );
+}
+
 export function cleanTitle(title?: string | null): string {
   return title?.replace(/\s+/g, " ").trim() || "Untitled";
 }
@@ -342,6 +381,8 @@ export function normalizeTitleForDedupe(title: string): string {
 
   const editionFluff = [
     /\ba\s+novel\b/g,
+    /\bbook\s+club(?:\s+edition)?\b/g,
+    /\breese'?s?\s+book\s+club\b/g,
     /\bthe\s+novel\b/g,
     /\bdeluxe\s+limited\s+edition\b/g,
     /\bdeluxe\s+edition\b/g,
@@ -584,10 +625,12 @@ export type PickPreferredOptions = {
 /**
  * Keep the stronger record when duplicates collide. Priority, in order:
  * 1. book that already has ratings in our database
- * 2. stronger description (real blurb beats stub/empty)
- * 3. has a cover image
- * 4. more complete metadata (page count, genres, ISBN, author, source)
- * 5. known publication year (any year beats unknown)
+ * 2. more of {author, cover, description, year} — never keep a title-only
+ *    stub over a full Google record
+ * 3. modern commercial catalog (Google / ISBNdb) over a thin Open Library row
+ * 4. stronger description (real blurb beats stub/empty)
+ * 5. has a cover image
+ * 6. more complete leftover metadata (page count, genres, ISBN, source)
  * Ties fall back to a stable id comparison so results are deterministic.
  *
  * Note: newest edition year does NOT win identity — years are merged as
@@ -604,6 +647,10 @@ export function pickPreferredDuplicate<T extends BookSummary>(
     const bRated = ratedIds.has(b.id);
     if (aRated !== bRated) return aRated ? a : b;
   }
+
+  const aFields = catalogFieldCount(a);
+  const bFields = catalogFieldCount(b);
+  if (aFields !== bFields) return bFields > aFields ? b : a;
 
   // Modern commercial catalogs beat thin Open Library identities.
   const aYear = a.publishedYear ?? a.firstPublishYear;
@@ -622,7 +669,9 @@ export function pickPreferredDuplicate<T extends BookSummary>(
       const other = aCom ? b : a;
       if (
         other.source === "openlibrary" &&
-        (hasRealDescription(preferred) || preferred.coverUrl?.trim())
+        (hasRealAuthor(preferred) ||
+          hasRealDescription(preferred) ||
+          preferred.coverUrl?.trim())
       ) {
         return preferred;
       }
@@ -970,6 +1019,8 @@ const CANONICAL_TITLE_AUTHORS: Array<{ title: string; authors: string[] }> = [
   { title: "between two fires", authors: ["christopher buehlman"] },
   { title: "fourth wing", authors: ["rebecca yarros"] },
   { title: "tender is the flesh", authors: ["agustina bazterrica"] },
+  { title: "big little truths", authors: ["liane moriarty"] },
+  { title: "whistler", authors: ["ann patchett"] },
 ];
 
 function escapeRegExp(value: string): string {
@@ -983,6 +1034,37 @@ export function titleRelatesToQuery(title: string, query: string): boolean {
   if (!t || !q) return false;
   if (t === q) return true;
   return new RegExp(`(?:^| )${escapeRegExp(q)}(?: |$)`).test(t);
+}
+
+function titleHasWholeQueryToken(title: string, tokens: string[]): boolean {
+  const t = normalizeForMatch(title);
+  if (!t || tokens.length === 0) return false;
+  return tokens.some((token) =>
+    new RegExp(`(?:^| )${escapeRegExp(token)}(?: |$)`).test(t)
+  );
+}
+
+/**
+ * Keep a browse card when the query is an exact / related title, or a
+ * title+author string such as "whistler patchett" where the title is a
+ * whole word and every token lands in title or author.
+ */
+export function browseCardMatchesQuery(
+  book: BookSummary,
+  query: string
+): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+  if (isExactTitleMatch(trimmed, book.title)) return true;
+  if (titleRelatesToQuery(book.title, trimmed)) return true;
+
+  const q = normalizeForMatch(trimmed);
+  const tokens = q.split(" ").filter((token) => token.length >= 2);
+  if (tokens.length < 2) return false;
+  if (!titleHasWholeQueryToken(book.title, tokens)) return false;
+
+  const haystack = `${normalizeForMatch(book.title)} ${normalizeForMatch(book.authors.join(" "))}`;
+  return tokens.every((token) => haystack.includes(token));
 }
 
 function authorLooksCanonical(book: BookSummary, authors: string[]): boolean {
@@ -1031,7 +1113,7 @@ export function rankBrowseSearchResults(
   for (const book of books) {
     if (isExactTitleMatch(trimmed, book.title)) {
       exact.push(book);
-    } else if (titleRelatesToQuery(book.title, trimmed)) {
+    } else if (browseCardMatchesQuery(book, trimmed)) {
       related.push(book);
     }
   }
@@ -1047,19 +1129,18 @@ export function rankBrowseSearchResults(
   return [...exact, ...related];
 }
 
-/** Page-1 junk: no cover and no synopsis, merch, empty stubs, or fake authors. */
+/** Page-1 junk: title-only stubs, merch, empty records, or fake authors. */
 export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
   const filtered = books.filter((book) => {
+    if (isTitleOnlyStub(book)) return false;
     if (isMerchandiseOrCompanion(book) || isLowQualityBook(book)) return false;
     if (isJunkCatalogAuthor(book.authors)) return false;
     const cover = Boolean(book.coverUrl?.trim());
     const description = Boolean(book.description?.trim()) &&
       !isPlaceholderDescription(book.description);
-    // Open Library first_publish_year is enough to keep a real hit when
-    // Google 429s and the search doc has no cover / first_sentence.
     const hasYear =
       book.publishedYear != null || book.firstPublishYear != null;
-    if (!cover && !description && !hasYear) return false;
+    if (!cover && !description && !hasYear && !hasRealAuthor(book)) return false;
     return true;
   });
   return dropNonCanonicalKnownTitles(filtered);

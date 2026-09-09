@@ -295,7 +295,15 @@ async function fetchGoogleSearch(
 export async function searchGoogleBooks(
   query: string,
   page = 1,
-  options?: SearchBooksOptions & { langRestrict?: string; pageSize?: number }
+  options?: SearchBooksOptions & {
+    langRestrict?: string;
+    pageSize?: number;
+    /**
+     * When false, a 429 still returns [] but does not close Google for the
+     * rest of the process (used for the extra intitle search).
+     */
+    tripRateLimitCircuit?: boolean;
+  }
 ): Promise<GoogleBooksPageResult> {
   if (isGoogleSearchCircuitOpen()) {
     return {
@@ -359,7 +367,9 @@ export async function searchGoogleBooks(
     );
 
     if (error instanceof RateLimitError) {
-      openGoogle429Circuit();
+      if (options?.tripRateLimitCircuit !== false) {
+        openGoogle429Circuit();
+      }
       console.error(
         "[searchGoogleBooks] Rate limited (429). Returning empty page.",
         { query, page, mode: options?.mode, ...providerError }

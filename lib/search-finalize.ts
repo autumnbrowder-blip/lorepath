@@ -9,6 +9,7 @@ import {
   isExactTitleMatch,
   isMerchandiseOrCompanion,
   isPlaceholderDescription,
+  isTitleOnlyStub,
   isWeakDescription,
   pickPreferredDuplicate,
   PLACEHOLDER_DESCRIPTION,
@@ -82,8 +83,11 @@ function selectQualityBooks(
     return mergeExactTitleSurvivors(withDesc, exactTitleHits);
   }
 
-  // Nothing else survived — still keep exact title hits with a stub description.
-  return exactTitleHits.map(withDescriptionFallback);
+  // Nothing else survived — still keep exact title hits that are not
+  // title-only stubs, with a stub description if needed.
+  return exactTitleHits
+    .filter((book) => !isTitleOnlyStub(book))
+    .map(withDescriptionFallback);
 }
 
 function mergeExactTitleSurvivors(
@@ -95,7 +99,10 @@ function mergeExactTitleSurvivors(
   const keys = new Set(selected.map((book) => getBookDedupeKey(book)));
   const extras = exactTitleHits
     .filter(
-      (book) => !ids.has(book.id) && !keys.has(getBookDedupeKey(book))
+      (book) =>
+        !ids.has(book.id) &&
+        !keys.has(getBookDedupeKey(book)) &&
+        !isTitleOnlyStub(book)
     )
     .map(withDescriptionFallback);
   return extras.length > 0 ? [...selected, ...extras] : selected;
@@ -360,7 +367,9 @@ export function finalizeSearchBooks(
     const protectedHit =
       (ratedIds?.has(book.id) ?? false) || protectedIds.has(book.id);
     if (protectedHit) return true;
-    if (query && isExactTitleMatch(query, book.title)) return true;
+    if (query && isExactTitleMatch(query, book.title)) {
+      return !isTitleOnlyStub(book);
+    }
     if (isMerchandiseOrCompanion(book)) return false;
     return hasUsableSearchFields(book);
   });
@@ -379,8 +388,11 @@ export function finalizeSearchBooks(
 
   // A search that found real records must never come back empty; enrichment
   // may still be pending for these, so keep them with a stub description.
+  // Title-only stubs (no author, cover, or description) stay dropped.
   if (qualitySelected.length === 0 && merged.length > 0) {
-    qualitySelected = merged.map(withDescriptionFallback);
+    qualitySelected = merged
+      .filter((book) => !isTitleOnlyStub(book))
+      .map(withDescriptionFallback);
   }
 
   const { books: withProtected, forcedCount } = forceProtectedBooks(
@@ -391,7 +403,11 @@ export function finalizeSearchBooks(
 
   const result = sortByPublishedYearDesc(
     dropNonEnglishWhenEnglishExists(withProtected)
-  ).map(applyKnownWorkFields);
+  )
+    .map(applyKnownWorkFields)
+    .filter(
+      (book) => !isTitleOnlyStub(book) || protectedIds.has(book.id)
+    );
   const removedByDedupe = removedByIsbn + removedByTitleAuthor;
 
   if (debug) {

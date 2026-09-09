@@ -1,7 +1,9 @@
 import { finalizeBookTags } from "@/lib/book-tags";
 import { getLanguageEditionBucket } from "@/lib/book-language";
 import {
+  catalogFieldCount,
   getBookDedupeKey,
+  hasRealAuthor,
   hasRealDescription,
   isWeakDescription,
   pickEarliestYear,
@@ -226,11 +228,20 @@ export function mergeBookPair(
       const other = aCommercial ? b : a;
       if (
         other.source === "openlibrary" &&
-        (hasRealDescription(commercial) || commercial.coverUrl?.trim())
+        (hasRealAuthor(commercial) ||
+          hasRealDescription(commercial) ||
+          commercial.coverUrl?.trim())
       ) {
         return mergePreferredBookFields(commercial, a, b);
       }
     }
+  }
+
+  const aFields = catalogFieldCount(a);
+  const bFields = catalogFieldCount(b);
+  if (aFields !== bFields) {
+    const richer = aFields > bFields ? a : b;
+    return mergePreferredBookFields(richer, a, b);
   }
 
   const primary =

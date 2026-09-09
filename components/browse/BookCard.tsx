@@ -2,7 +2,7 @@ import { AuthorLinks } from "@/components/books/AuthorLinks";
 import { BookCover } from "@/components/books/BookCover";
 import { FirstPublishedYearLink } from "@/components/books/FirstPublishedYearLink";
 import { getGenreBrowseUrl } from "@/lib/book-links";
-import { resolvePublicationYears } from "@/lib/book-utils";
+import { isTitleOnlyStub, resolvePublicationYears } from "@/lib/book-utils";
 import {
   distinctLatestEdition,
   latestEditionHref,
@@ -49,6 +49,8 @@ export function BookCard({
   hasUserRating = false,
   priority = false,
 }: BookCardProps) {
+  if (isTitleOnlyStub(book)) return null;
+
   const q = searchQuery?.trim() ?? "";
   const stamped = applyKnownWorkFields(book);
   const { displayYear, firstPublishYear, latestEditionYear } =

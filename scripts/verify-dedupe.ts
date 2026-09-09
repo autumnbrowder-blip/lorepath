@@ -17,11 +17,13 @@ import {
   dropBrowseJunk,
   getBookDedupeKey,
   isJunkCatalogAuthor,
+  isTitleOnlyStub,
   normalizeAuthorForDedupe,
   normalizeTitleForDedupe,
   pickPreferredDuplicate,
   rankBrowseSearchResults,
 } from "../lib/book-utils";
+import { googleTitlePriorityQuery } from "../lib/search-query";
 import { applyKnownWorkFields } from "../lib/known-editions";
 import type { BookSummary } from "../types/book";
 
@@ -95,10 +97,14 @@ check(
   getBookDedupeKey(wrenB)
 );
 
-console.log("2. Winner priority (rated > description > cover > year > metadata)");
+console.log("2. Winner priority (rated > completeness > description > cover > metadata)");
 const noDesc = book({ id: "a", coverUrl: "x.jpg", publishedYear: 2024 });
 const withDesc = book({ id: "b", description: "A story." });
-check("description wins over cover+year", pickPreferredDuplicate(noDesc, withDesc).id, "b");
+check(
+  "more complete fields (cover+year) beat description-only",
+  pickPreferredDuplicate(noDesc, withDesc).id,
+  "a"
+);
 
 const descOnly = book({ id: "c", description: "A story." });
 const descCover = book({ id: "d", description: "A story.", coverUrl: "y.jpg" });
@@ -106,7 +112,11 @@ check("cover breaks description tie", pickPreferredDuplicate(descOnly, descCover
 
 const older = book({ id: "e", description: "d", coverUrl: "c", publishedYear: 2023 });
 const newer = book({ id: "f", description: "d", coverUrl: "c", publishedYear: 2024 });
-check("newer year breaks cover tie", pickPreferredDuplicate(older, newer).id, "f");
+check(
+  "equal completeness does not prefer newer year for identity",
+  pickPreferredDuplicate(older, newer).id,
+  "e"
+);
 
 const sparse = book({ id: "g", description: "d", coverUrl: "c", publishedYear: 2024 });
 const rich = book({
@@ -1082,6 +1092,121 @@ const duneFamilyShelf = dropBrowseJunk([
   }),
 ]);
 check("Frank and Brian Herbert Dune both survive junk filter", duneFamilyShelf.length, 2);
+
+console.log("12. New-release stubs vs complete Google records");
+const olWhistlerStub = book({
+  id: "ol-OL99999999W",
+  title: "Whistler",
+  authors: ["Unknown author"],
+  source: "openlibrary",
+  publishedYear: 2026,
+});
+const googleWhistler = book({
+  id: "google-whistler-patchett",
+  title: "Whistler",
+  authors: ["Ann Patchett"],
+  coverUrl: "https://books.google.com/books/content?id=whistler-cover",
+  description:
+    "A novel by Ann Patchett following a mysterious visitor and the town that meets her.",
+  publishedYear: 2026,
+});
+const whistlerMerged = finalizeSearchBooks([olWhistlerStub, googleWhistler]);
+check("Whistler OL stub + Google collapse to one card", whistlerMerged.length, 1);
+check("Google volume is the visible Whistler card", whistlerMerged[0]?.id, "google-whistler-patchett");
+check("Whistler author is Ann Patchett", whistlerMerged[0]?.authors[0], "Ann Patchett");
+check(
+  "Whistler keeps the Google cover",
+  whistlerMerged[0]?.coverUrl,
+  "https://books.google.com/books/content?id=whistler-cover"
+);
+check(
+  "title-only Whistler stub is dropped when it is the only hit",
+  finalizeSearchBooks([olWhistlerStub], { query: "Whistler" }).length,
+  0
+);
+check("isTitleOnlyStub detects unknown-author year-only row", isTitleOnlyStub(olWhistlerStub), true);
+check("isTitleOnlyStub is false for complete Google Whistler", isTitleOnlyStub(googleWhistler), false);
+
+const olTruthsStub = book({
+  id: "ol-OL88888888W",
+  title: "Big Little Truths",
+  authors: ["Unknown author"],
+  source: "openlibrary",
+});
+const googleTruths = book({
+  id: "google-big-little-truths",
+  title: "Big Little Truths",
+  authors: ["Liane Moriarty"],
+  coverUrl: "https://books.google.com/books/content?id=blt-cover",
+  description:
+    "Liane Moriarty returns with a novel of secrets, marriage, and the stories we tell.",
+  publishedYear: 2026,
+});
+const truthsMerged = finalizeSearchBooks([olTruthsStub, googleTruths], {
+  query: "big little truths",
+});
+check("Big Little Truths prefers the Google record", truthsMerged[0]?.id, "google-big-little-truths");
+check("Big Little Truths author is Liane Moriarty", truthsMerged[0]?.authors[0], "Liane Moriarty");
+
+check(
+  "intitle query for a 3-word title",
+  googleTitlePriorityQuery("big little truths"),
+  'intitle:"big little truths"'
+);
+check(
+  "quoted two-word title still gets intitle",
+  googleTitlePriorityQuery('"whistler patchett"'),
+  'intitle:"whistler patchett"'
+);
+check("single-word dune does not add intitle", googleTitlePriorityQuery("dune"), null);
+
+const rankedWhistler = rankBrowseSearchResults(
+  [
+    googleWhistler,
+    book({
+      id: "google-other-whistler",
+      title: "The Whistler",
+      authors: ["John Grisham"],
+      coverUrl: "https://covers.example/grisham.jpg",
+      description: "A different novel that shares a similar title.",
+      publishedYear: 2016,
+    }),
+  ],
+  "whistler patchett"
+);
+check(
+  "q=whistler patchett keeps Ann Patchett",
+  rankedWhistler.some((b) => b.authors[0] === "Ann Patchett"),
+  true
+);
+
+const rankedDuneAuthor = rankBrowseSearchResults(
+  [
+    book({
+      id: "google-dune-frank",
+      title: "Dune",
+      authors: ["Frank Herbert"],
+      coverUrl: "https://covers.example/dune.jpg",
+      description: "The original desert-planet epic of politics and spice.",
+      publishedYear: 1965,
+    }),
+    book({
+      id: "google-aescendune",
+      title: "Aescendune",
+      authors: ["Someone Else"],
+      coverUrl: "https://covers.example/aes.jpg",
+      description: "An unrelated historical novel whose title contains dune.",
+      publishedYear: 1870,
+    }),
+  ],
+  "dune"
+);
+check("q=dune still returns Frank Herbert", rankedDuneAuthor[0]?.authors[0], "Frank Herbert");
+check(
+  "q=dune drops Aescendune substring hit",
+  rankedDuneAuthor.some((b) => b.id === "google-aescendune"),
+  false
+);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

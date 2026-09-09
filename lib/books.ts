@@ -66,9 +66,11 @@ import {
 import {
   bookMatchesSearchQuery,
   dropBrowseJunk,
+  isTitleOnlyStub,
   rankBrowseSearchResults,
   rankSearchResults,
 } from "@/lib/book-utils";
+import { googleTitlePriorityQuery } from "@/lib/search-query";
 import { unstable_noStore as noStore } from "next/cache";
 import type {
   BookDetail,
@@ -197,59 +199,88 @@ async function fetchSearchPageUncached(
 ): Promise<CachedSearchPage> {
   const includeIsbndb = hasIsbndbApiKey();
   const includeGutendex = genreMode || pageNumber === 1;
+  const titlePriorityQuery =
+    !genreMode && pageNumber === 1
+      ? googleTitlePriorityQuery(searchQuery)
+      : null;
 
   // Attach allSettled immediately so optional 2s timeouts are never unhandled
-  // while Open Library (required) is still running.
-  const [openLibrarySettled, googleSettled, gutendexSettled, isbndbSettled] =
-    await Promise.allSettled([
-      withTimeout(
-        searchOpenLibrary(searchQuery, pageNumber, searchOptions),
-        OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
-        "openlibrary search"
-      ),
-      withTimeout(
-        searchGoogleBooks(searchQuery, pageNumber, searchOptions),
-        OPTIONAL_SEARCH_TIMEOUT_MS,
-        "google search"
-      ),
-      includeGutendex
-        ? withTimeout(
-            searchGutendex(searchQuery, pageNumber, searchOptions),
-            OPTIONAL_SEARCH_TIMEOUT_MS,
-            "gutendex search"
-          )
-        : Promise.resolve(emptyPage()),
-      includeIsbndb
-        ? withTimeout(
-            searchIsbndb(searchQuery, pageNumber, searchOptions),
-            OPTIONAL_SEARCH_TIMEOUT_MS,
-            "isbndb search"
-          )
-        : Promise.resolve(emptyPage()),
-    ]);
+  // while Open Library (required) is still running. Hardcover stays off.
+  const [
+    openLibrarySettled,
+    googleSettled,
+    googleTitleSettled,
+    gutendexSettled,
+    isbndbSettled,
+  ] = await Promise.allSettled([
+    withTimeout(
+      searchOpenLibrary(searchQuery, pageNumber, searchOptions),
+      OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
+      "openlibrary search"
+    ),
+    withTimeout(
+      searchGoogleBooks(searchQuery, pageNumber, searchOptions),
+      OPTIONAL_SEARCH_TIMEOUT_MS,
+      "google search"
+    ),
+    titlePriorityQuery
+      ? withTimeout(
+          searchGoogleBooks(titlePriorityQuery, pageNumber, {
+            ...searchOptions,
+            tripRateLimitCircuit: false,
+          }),
+          OPTIONAL_SEARCH_TIMEOUT_MS,
+          "google title-priority search"
+        )
+      : Promise.resolve(emptyGooglePage()),
+    includeGutendex
+      ? withTimeout(
+          searchGutendex(searchQuery, pageNumber, searchOptions),
+          OPTIONAL_SEARCH_TIMEOUT_MS,
+          "gutendex search"
+        )
+      : Promise.resolve(emptyPage()),
+    includeIsbndb
+      ? withTimeout(
+          searchIsbndb(searchQuery, pageNumber, searchOptions),
+          OPTIONAL_SEARCH_TIMEOUT_MS,
+          "isbndb search"
+        )
+      : Promise.resolve(emptyPage()),
+  ]);
 
   const openLibraryResult = readSettledPage(
     "Open Library",
     openLibrarySettled
   );
   const googleResult = readSettledGoogle(googleSettled);
+  const googleTitleResult = titlePriorityQuery
+    ? readSettledGoogle(googleTitleSettled)
+    : emptyGooglePage();
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
   const isbndbResult = includeIsbndb
     ? readSettledPage("ISBNdb", isbndbSettled)
     : emptyPage();
 
   const openLibraryBooks = openLibraryResult.books;
-  const googleBooks = googleResult.books;
+  const googleBooks = [
+    ...googleResult.books,
+    ...googleTitleResult.books,
+  ];
   const gutendexBooks = gutendexResult.books;
   const isbndbBooks = isbndbResult.books;
+  const googleRawCount =
+    (googleResult.rawCount ?? 0) + (googleTitleResult.rawCount ?? 0);
+  const googleError = googleResult.error ?? googleTitleResult.error;
 
-  if (googleResult.error) {
+  if (googleError) {
     console.error("[searchBooks] Google Books provider error:", {
       query: searchQuery,
       page: pageNumber,
       mode: genreMode ? "genre" : "text",
-      googleError: googleResult.error,
-      googleRawCount: googleResult.rawCount,
+      googleError,
+      googleRawCount,
+      titlePriorityQuery,
     });
   }
 
@@ -260,8 +291,9 @@ async function fetchSearchPageUncached(
       mode: genreMode ? "genre" : "text",
       openlibrary: openLibraryBooks.length,
       google: googleBooks.length,
-      googleRawCount: googleResult.rawCount,
-      googleError: googleResult.error,
+      googleRawCount,
+      googleError,
+      titlePriorityQuery,
       gutendex: gutendexBooks.length,
       isbndb: includeIsbndb ? isbndbBooks.length : "skipped",
       totalRaw:
@@ -275,12 +307,13 @@ async function fetchSearchPageUncached(
     });
   }
 
-  // OL first so title+author merge prefers the required catalog.
+  // Google first so a complete commercial record is in the merge pool before
+  // an Open Library title-only stub of the same work.
   const rawCombined = [
-    ...openLibraryBooks,
     ...googleBooks,
-    ...gutendexBooks,
     ...isbndbBooks,
+    ...openLibraryBooks,
+    ...gutendexBooks,
   ];
   const providerHitCount = rawCombined.length;
 
@@ -292,7 +325,7 @@ async function fetchSearchPageUncached(
   });
   books = await enrichBooksWithCovers(books);
   const afterFinalize = books;
-  books = dropBrowseJunk(books);
+  books = dropBrowseJunk(books).filter((book) => !isTitleOnlyStub(book));
 
   if (genreMode) {
     books = preferMatchingGenreTags(books, searchQuery);
@@ -302,6 +335,7 @@ async function fetchSearchPageUncached(
 
   if (books.length === 0 && providerHitCount > 0) {
     const matching = (afterFinalize.length > 0 ? afterFinalize : rawCombined)
+      .filter((book) => !isTitleOnlyStub(book))
       .filter((book) =>
         genreMode ? true : bookMatchesSearchQuery(book, searchQuery)
       );
@@ -315,6 +349,7 @@ async function fetchSearchPageUncached(
   const attempted = [
     openLibrarySettled,
     googleSettled,
+    ...(titlePriorityQuery ? [googleTitleSettled] : []),
     ...(includeGutendex ? [gutendexSettled] : []),
     ...(includeIsbndb ? [isbndbSettled] : []),
   ];
@@ -343,8 +378,8 @@ async function fetchSearchPageUncached(
     source: "multi",
     page: pageNumber,
     hasMore,
-    googleError: googleResult.error,
-    googleRawCount: googleResult.rawCount,
+    googleError,
+    googleRawCount,
     allSourcesTimedOut,
   };
 }

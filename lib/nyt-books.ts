@@ -2,14 +2,22 @@ import {
   cleanAuthors,
   cleanDescription,
   cleanTitle,
+  hasRealAuthor,
+  isTitleOnlyStub,
   parsePublishedYear,
 } from "@/lib/book-utils";
 import { finalizeBookTags } from "@/lib/book-tags";
+import { mergePreferredBookFields } from "@/lib/book-merge";
+import {
+  getGoogleBookByIsbn,
+  searchGoogleBooks,
+} from "@/lib/google-books";
 import { PAGE_FETCH_TIMEOUT_MS, withTimeout } from "@/lib/provider-resilience";
 import type { BookDetail, BookSummary } from "@/types/book";
 
 const NYT_ID_PREFIX = "nyt-";
 const NYT_CACHE_TTL_MS = 60 * 60 * 1000;
+const NYT_ENRICH_TIMEOUT_MS = 2000;
 
 let nytBestsellersCache: {
   expiresAt: number;
@@ -183,6 +191,115 @@ async function fetchNytList(
   }
 }
 
+function nytNeedsEnrichment(book: BookSummary): boolean {
+  return !hasRealAuthor(book) || !book.coverUrl?.trim();
+}
+
+function googleSummaryFromDetail(
+  detail: Awaited<ReturnType<typeof getGoogleBookByIsbn>>
+): BookSummary | null {
+  if (!detail) return null;
+  return {
+    id: detail.id,
+    title: detail.title,
+    authors: detail.authors,
+    coverUrl: detail.coverUrl,
+    description: detail.description,
+    genres: detail.genres,
+    publishedYear: detail.publishedYear,
+    firstPublishYear: detail.firstPublishYear ?? null,
+    source: detail.source,
+    isbn: detail.isbn,
+    pageCount: detail.pageCount,
+  };
+}
+
+async function googleMatchForNyt(
+  book: BookSummary
+): Promise<BookSummary | null> {
+  const isbn = isbnFromNytId(book.id);
+  if (isbn) {
+    try {
+      const byIsbn = await withTimeout(
+        getGoogleBookByIsbn(isbn),
+        NYT_ENRICH_TIMEOUT_MS,
+        "nyt-google-isbn"
+      );
+      const summary = googleSummaryFromDetail(byIsbn);
+      if (summary && (hasRealAuthor(summary) || summary.coverUrl?.trim())) {
+        return summary;
+      }
+    } catch {
+      // Soft-fail — title search still runs.
+    }
+  }
+
+  const title = book.title.replace(/"/g, "").trim();
+  if (!title) return null;
+  const author = hasRealAuthor(book)
+    ? book.authors.find(
+        (name) => name.trim() && name.toLowerCase() !== "unknown author"
+      )
+    : null;
+  const query = author
+    ? `intitle:"${title}" inauthor:"${author.replace(/"/g, "")}"`
+    : `intitle:"${title}"`;
+
+  try {
+    const page = await withTimeout(
+      searchGoogleBooks(query, 1),
+      NYT_ENRICH_TIMEOUT_MS,
+      "nyt-google-title"
+    );
+    const match =
+      page.books.find(
+        (candidate) =>
+          candidate.title.trim().toLowerCase() === title.toLowerCase() &&
+          (hasRealAuthor(candidate) || candidate.coverUrl?.trim())
+      ) ??
+      page.books.find(
+        (candidate) => hasRealAuthor(candidate) || candidate.coverUrl?.trim()
+      );
+    return match ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function enrichOneNytBook(book: BookSummary): Promise<BookSummary> {
+  if (!nytNeedsEnrichment(book)) return book;
+  const google = await googleMatchForNyt(book);
+  if (!google) return book;
+  return {
+    ...mergePreferredBookFields(book, book, google),
+    id: book.id,
+    source: book.source,
+  };
+}
+
+async function enrichNytBestsellers(
+  books: BookSummary[]
+): Promise<BookSummary[]> {
+  const indexes = books
+    .map((book, index) => ({ book, index }))
+    .filter(({ book }) => nytNeedsEnrichment(book));
+  if (indexes.length === 0) {
+    return books.filter((book) => !isTitleOnlyStub(book));
+  }
+
+  const settled = await Promise.allSettled(
+    indexes.map(({ book }) => enrichOneNytBook(book))
+  );
+  const next = [...books];
+  indexes.forEach((item, i) => {
+    const result = settled[i];
+    if (result?.status === "fulfilled") {
+      next[item.index] = result.value;
+    }
+  });
+  return next.filter((book) => !isTitleOnlyStub(book));
+}
+
 /**
  * Fetch hardcover fiction + trade paperback fiction NYT lists,
  * merge, and dedupe by id (ISBN-based when available).
@@ -206,7 +323,7 @@ export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
       Promise.all(
         NYT_BESTSELLER_LISTS.map((list) => fetchNytList(list.url, list.label))
       ),
-      PAGE_FETCH_TIMEOUT_MS,
+      Math.max(1000, PAGE_FETCH_TIMEOUT_MS - NYT_ENRICH_TIMEOUT_MS),
       "nyt-bestsellers"
     );
 
@@ -234,7 +351,8 @@ export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
       return empty;
     }
 
-    const value: NytBestsellersResult = { books };
+    const enriched = await enrichNytBestsellers(books);
+    const value: NytBestsellersResult = { books: enriched };
     nytBestsellersCache = {
       expiresAt: now + NYT_CACHE_TTL_MS,
       value,

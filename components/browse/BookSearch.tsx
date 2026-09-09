@@ -8,6 +8,7 @@ import { queryHint, track } from "@/lib/analytics";
 import {
   bookMatchesSearchQuery,
   dropBrowseJunk,
+  isTitleOnlyStub,
   rankBrowseSearchResults,
 } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
@@ -38,7 +39,7 @@ function mergeSearchResults(
     query: query.trim() || undefined,
     debug: false,
   });
-  const cleaned = dropBrowseJunk(merged);
+  const cleaned = dropBrowseJunk(merged).filter((book) => !isTitleOnlyStub(book));
   return query.trim() ? rankBrowseSearchResults(cleaned, query) : cleaned;
 }
 
@@ -168,9 +169,9 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = (data.books ?? []).filter((book: BookSummary) =>
-        bookMatchesSearchQuery(book, trimmed)
-      );
+      const incoming = (data.books ?? [])
+        .filter((book: BookSummary) => !isTitleOnlyStub(book))
+        .filter((book: BookSummary) => bookMatchesSearchQuery(book, trimmed));
 
       setBooks(incoming);
       setResultsQuery(trimmed);
@@ -218,9 +219,9 @@ export function BookSearch({
       );
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = (data.books ?? []).filter((book: BookSummary) =>
-        bookMatchesSearchQuery(book, trimmed)
-      );
+      const incoming = (data.books ?? [])
+        .filter((book: BookSummary) => !isTitleOnlyStub(book))
+        .filter((book: BookSummary) => bookMatchesSearchQuery(book, trimmed));
 
       setBooks((current) => mergeSearchResults(current, incoming, trimmed));
       setPage(data.page ?? nextPage);
