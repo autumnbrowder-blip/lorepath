@@ -127,6 +127,24 @@ export const KNOWN_WORK_EDITIONS: KnownWorkEditions[] = [
     isbns: ["9781250857453", "9781250857460"],
     googlePhrase: 'intitle:"Ruthless Vows" inauthor:Ross',
   },
+  {
+    matchTitle: "Aristotle and Dante Discover the Secrets of the Universe",
+    authorHint: "Benjamin Alire Sáenz",
+    firstPublishYear: 2012,
+    latestEditionYear: 2014,
+    isbns: ["9781442408920", "9781442408937", "9781442408944"],
+    googlePhrase:
+      'intitle:"Aristotle and Dante Discover the Secrets of the Universe" inauthor:Saenz',
+  },
+  {
+    matchTitle: "Aristotle and Dante Dive Into the Waters of the World",
+    authorHint: "Benjamin Alire Sáenz",
+    firstPublishYear: 2021,
+    latestEditionYear: 2021,
+    isbns: ["9781534496194", "9781534496200", "9781534496217"],
+    googlePhrase:
+      'intitle:"Aristotle and Dante Dive Into the Waters of the World" inauthor:Saenz',
+  },
 ];
 
 function normalizeWorkId(id: string | null | undefined): string {
@@ -185,23 +203,39 @@ export function findKnownWorkEditions(
 }
 
 /**
- * Match a user search query to a known work (title-only or title+author).
+ * Match a user search query to known works (title-only or title+author).
+ * A 3+ word prefix matches longer catalog titles so "aristotle and dante"
+ * recovers both Universe and Waters.
  */
-export function knownWorkMatchesQuery(query: string): KnownWorkEditions | null {
+export function knownWorksMatchingQuery(query: string): KnownWorkEditions[] {
   const normalized = normalizeTitleForDedupe(query);
-  if (!normalized) return null;
+  if (!normalized) return [];
+  const queryWords = normalized.split(" ").filter(Boolean).length;
+  const hits: KnownWorkEditions[] = [];
 
   for (const entry of KNOWN_WORK_EDITIONS) {
     for (const title of titlesFor(entry)) {
       const titleKey = normalizeTitleForDedupe(title);
       if (!titleKey) continue;
-      if (normalized === titleKey) return entry;
-      // "Tender Is the Flesh Agustina Bazterrica"
-      if (normalized.startsWith(`${titleKey} `)) return entry;
-      if (normalized.includes(titleKey) && titleKey.length >= 8) return entry;
+      const exact = normalized === titleKey;
+      const queryHasTitle =
+        normalized.startsWith(`${titleKey} `) ||
+        (titleKey.length >= 8 && normalized.includes(titleKey));
+      const titleHasQuery =
+        queryWords >= 3 && titleKey.startsWith(`${normalized} `);
+      if (!exact && !queryHasTitle && !titleHasQuery) continue;
+      hits.push(entry);
+      break;
     }
   }
-  return null;
+  return hits;
+}
+
+/**
+ * Match a user search query to a known work (title-only or title+author).
+ */
+export function knownWorkMatchesQuery(query: string): KnownWorkEditions | null {
+  return knownWorksMatchingQuery(query)[0] ?? null;
 }
 
 /** Popular reprint ISBNs only (skip older edition ISBNs used for identity). */

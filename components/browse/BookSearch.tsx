@@ -10,6 +10,7 @@ import {
   dropBrowseJunk,
   isTitleOnlyStub,
   rankBrowseSearchResults,
+  repairSearchQuery,
 } from "@/lib/book-utils";
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import type { BookSummary } from "@/types/book";
@@ -89,7 +90,7 @@ export function BookSearch({
     abortRef.current = controller;
 
     const params = new URLSearchParams({
-      q: searchQuery,
+      q: repairSearchQuery(searchQuery),
       page: String(pageNumber),
     });
     if (mode === "genre") {
@@ -110,7 +111,8 @@ export function BookSearch({
     }
     const echoed =
       typeof data.query === "string" ? data.query.trim().toLowerCase() : "";
-    if (echoed !== searchQuery.trim().toLowerCase()) {
+    const requested = repairSearchQuery(searchQuery).toLowerCase();
+    if (echoed && echoed !== requested && repairSearchQuery(echoed).toLowerCase() !== requested) {
       console.warn("[BookSearch] dropping mismatched search payload", {
         requested: searchQuery,
         echoed: data.query,
@@ -142,7 +144,7 @@ export function BookSearch({
     syncUrl = true,
     mode: "text" | "genre" = "text"
   ) {
-    const trimmed = searchQuery.trim();
+    const trimmed = repairSearchQuery(searchQuery);
     if (!trimmed) return;
 
     const requestId = ++searchRequestIdRef.current;
@@ -203,7 +205,7 @@ export function BookSearch({
   }
 
   async function handleLoadMore() {
-    const trimmed = resultsQuery.trim();
+    const trimmed = repairSearchQuery(resultsQuery);
     if (!trimmed || loadingMore || loading || !hasMore) return;
 
     const nextPage = page + 1;

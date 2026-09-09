@@ -14,6 +14,7 @@ import {
   pickPublishedYear,
 } from "@/lib/book-utils";
 import { getGoogleBookByIsbn } from "@/lib/google-books";
+import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   applyKnownWorkFields,
   findKnownWorkEditions,
@@ -197,7 +198,7 @@ export async function fetchOpenLibraryByIsbn(
 
   if (!response.ok) return null;
 
-  const data: Record<string, OpenLibraryIsbnEntry> = await response.json();
+  const data: Record<string, OpenLibraryIsbnEntry> = await parseUtf8Json(response);
   const entry = data[`ISBN:${digits}`];
   if (!entry) return null;
 
@@ -225,7 +226,7 @@ export async function fetchOpenLibraryByTitleAuthor(
 
   if (!response.ok) return null;
 
-  const data: { docs?: OpenLibrarySearchDoc[] } = await response.json();
+  const data: { docs?: OpenLibrarySearchDoc[] } = await parseUtf8Json(response);
   const doc = data.docs?.[0];
   if (!doc) return null;
 
@@ -262,7 +263,7 @@ export async function fetchOpenLibraryEditionForWork(
 
   if (!response.ok) return null;
 
-  const data: { entries?: OpenLibraryEdition[] } = await response.json();
+  const data: { entries?: OpenLibraryEdition[] } = await parseUtf8Json(response);
   const entries = data.entries ?? [];
   if (entries.length === 0) return null;
 
@@ -346,7 +347,7 @@ export async function fetchOpenLibraryWorkEditions(
     }
     if (!response?.ok) return null;
 
-    const data: { entries?: OpenLibraryEdition[] } = await response.json();
+    const data: { entries?: OpenLibraryEdition[] } = await parseUtf8Json(response);
     const entries = data.entries ?? [];
     const workTitleKey = options?.title
       ? getBookTitleDedupeKey({ title: options.title })

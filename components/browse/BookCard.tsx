@@ -2,7 +2,11 @@ import { AuthorLinks } from "@/components/books/AuthorLinks";
 import { BookCover } from "@/components/books/BookCover";
 import { FirstPublishedYearLink } from "@/components/books/FirstPublishedYearLink";
 import { getGenreBrowseUrl } from "@/lib/book-links";
-import { isTitleOnlyStub, resolvePublicationYears } from "@/lib/book-utils";
+import {
+  isTitleOnlyStub,
+  repairMojibake,
+  resolvePublicationYears,
+} from "@/lib/book-utils";
 import {
   distinctLatestEdition,
   latestEditionHref,
@@ -51,7 +55,7 @@ export function BookCard({
 }: BookCardProps) {
   if (isTitleOnlyStub(book)) return null;
 
-  const q = searchQuery?.trim() ?? "";
+  const q = repairMojibake(searchQuery?.trim() ?? "").trim();
   const stamped = applyKnownWorkFields(book);
   const { displayYear, firstPublishYear, latestEditionYear } =
     resolvePublicationYears(stamped);
@@ -65,7 +69,8 @@ export function BookCard({
   // Cover / title / Open the Tome → latest English edition (this card's id).
   const tomeHref = latestEditionHref(stamped.id, q);
   const showInscribed = hasUserRating;
-  const title = displayTitle(book.title);
+  const title = displayTitle(repairMojibake(book.title));
+  const authors = book.authors.map((author) => repairMojibake(author));
 
   return (
     <article className="ornate-plaque lp-book-card">
@@ -92,7 +97,7 @@ export function BookCard({
           </Link>
         </h2>
         <p className="tome-author lp-book-card-author">
-          <AuthorLinks authors={book.authors} />
+          <AuthorLinks authors={authors} />
           {firstYear ? (
             <span className="lp-book-card-year">
               {" · "}

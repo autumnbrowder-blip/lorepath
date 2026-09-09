@@ -6,6 +6,7 @@ import {
   getBookDedupeKey,
   getBookIsbnKey,
   getBookWorkDedupeKey,
+  hasRealAuthor,
   isExactTitleMatch,
   isMerchandiseOrCompanion,
   isPlaceholderDescription,
@@ -13,7 +14,9 @@ import {
   isWeakDescription,
   pickPreferredDuplicate,
   PLACEHOLDER_DESCRIPTION,
+  repairMojibake,
   sortByPublishedYearDesc,
+  titleRelatesToQuery,
   type PickPreferredOptions,
 } from "@/lib/book-utils";
 import {
@@ -55,17 +58,33 @@ function withDescriptionFallback(book: BookSummary): BookSummary {
   return { ...book, description: MISSING_DESCRIPTION_FALLBACK };
 }
 
+function repairBookText<T extends BookSummary>(book: T): T {
+  return {
+    ...book,
+    title: repairMojibake(book.title),
+    authors: book.authors.map((author) => repairMojibake(author)),
+    description: book.description ? repairMojibake(book.description) : book.description,
+  };
+}
+
+function isQueryTitleSurvivor(book: BookSummary, query: string): boolean {
+  if (isExactTitleMatch(query, book.title)) return true;
+  // Prefix hits like "Aristotle and Dante Discover…" for q=aristotle and dante
+  // must not lose to an unrelated complete record in selectQualityBooks.
+  return titleRelatesToQuery(book.title, query) && hasRealAuthor(book);
+}
+
 /**
  * Prefer complete records. If none survive, fall back to cover-only
  * (with a short description stub), then description-only — never junk with neither.
- * Exact title matches for the active query always survive (even thin metadata).
+ * Exact / related title matches for the active query always survive (even thin metadata).
  */
 function selectQualityBooks(
   books: BookSummary[],
   query?: string
 ): BookSummary[] {
   const exactTitleHits = query
-    ? books.filter((book) => isExactTitleMatch(query, book.title))
+    ? books.filter((book) => isQueryTitleSurvivor(book, query))
     : [];
 
   const withBoth = books.filter(hasDescriptionAndCover);
@@ -363,11 +382,11 @@ export function finalizeSearchBooks(
 
   const inputCount = books.length;
   const query = options?.query?.trim() || undefined;
-  const candidates = books.filter((book) => {
+  const candidates = books.map(repairBookText).filter((book) => {
     const protectedHit =
       (ratedIds?.has(book.id) ?? false) || protectedIds.has(book.id);
     if (protectedHit) return true;
-    if (query && isExactTitleMatch(query, book.title)) {
+    if (query && isQueryTitleSurvivor(book, query)) {
       return !isTitleOnlyStub(book);
     }
     if (isMerchandiseOrCompanion(book)) return false;

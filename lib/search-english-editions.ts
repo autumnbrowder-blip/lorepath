@@ -14,6 +14,7 @@ import {
   parsePublishedYear,
 } from "@/lib/book-utils";
 import { searchGoogleBooks } from "@/lib/google-books";
+import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   findKnownWorkEditions,
   knownWorkCatalogSeed,
@@ -199,7 +200,7 @@ async function findEnglishViaOpenLibraryWorkThin(
   );
   if (!response.ok) return null;
 
-  const data: { entries?: OpenLibraryEditionEntry[] } = await response.json();
+  const data: { entries?: OpenLibraryEditionEntry[] } = await parseUtf8Json(response);
   const entry = (data.entries ?? []).find((candidate) =>
     (candidate.languages ?? []).some((language) =>
       /\/languages\/eng$/i.test(language.key)

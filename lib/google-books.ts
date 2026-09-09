@@ -8,7 +8,9 @@ import {
   isLowQualityBook,
   keepProviderSubjects,
   parsePublishedYear,
+  repairSearchQuery,
 } from "@/lib/book-utils";
+import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   GENRE_PAGE_SIZE,
   isGenreSearchMode,
@@ -91,7 +93,7 @@ async function readGoogleErrorBody(
   response: Response
 ): Promise<string | null> {
   try {
-    const body = (await response.json()) as {
+    const body = (await parseUtf8Json(response)) as {
       error?: { message?: string; status?: string };
     };
     return body.error?.message?.trim() || null;
@@ -247,11 +249,13 @@ async function fetchGoogleSearch(
     options?.pageSize ?? (genreMode ? GENRE_PAGE_SIZE : GOOGLE_PAGE_SIZE)
   );
 
-  const searchQuery = genreMode
-    ? toGoogleSubjectQuery(query)
-    : isAuthorQuery(query)
-      ? formatAuthorSearchQuery(query)
-      : query;
+  const searchQuery = repairSearchQuery(
+    genreMode
+      ? toGoogleSubjectQuery(query)
+      : isAuthorQuery(query)
+        ? formatAuthorSearchQuery(query)
+        : query
+  );
 
   const startIndex = Math.max(0, (page - 1) * pageSize);
   const params = new URLSearchParams({
@@ -285,7 +289,7 @@ async function fetchGoogleSearch(
     throw error;
   }
 
-  const data: GoogleBooksSearchResponse = await response.json();
+  const data: GoogleBooksSearchResponse = await parseUtf8Json(response);
   const rawCount = data.items?.length ?? 0;
   const books = parseGoogleBooksResponse(data);
   return {
@@ -434,7 +438,7 @@ export async function getGoogleBookById(
     );
   }
 
-  const data: GoogleBooksVolumeResponse = await response.json();
+  const data: GoogleBooksVolumeResponse = await parseUtf8Json(response);
   return parseGoogleBookDetail(data);
 }
 
@@ -470,7 +474,7 @@ export async function getGoogleBookByIsbn(
     );
   }
 
-  const data: GoogleBooksSearchResponse = await response.json();
+  const data: GoogleBooksSearchResponse = await parseUtf8Json(response);
   const volume = data.items?.[0];
   if (!volume) return null;
 

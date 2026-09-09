@@ -1,3 +1,4 @@
+import { repairMojibake } from "@/lib/book-utils";
 import type { BookDetail } from "@/types/book";
 
 /**
@@ -9,7 +10,7 @@ import type { BookDetail } from "@/types/book";
  */
 export function toDisplayText(value: unknown): string | null {
   if (typeof value === "string") {
-    return value.trim() || null;
+    return repairMojibake(value).trim() || null;
   }
   if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);

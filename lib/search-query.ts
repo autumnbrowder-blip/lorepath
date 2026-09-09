@@ -1,4 +1,4 @@
-import { isAuthorQuery, normalizeTitleForDedupe } from "@/lib/book-utils";
+import { isAuthorQuery, normalizeTitleForDedupe, repairSearchQuery } from "@/lib/book-utils";
 
 export type SearchQueryKind =
   | "isbn"
@@ -84,7 +84,7 @@ function extractIsbn(raw: string): string | null {
  * Title+author never replaces title-only; both are issued when detected.
  */
 export function normalizeSearchQuery(input: string): NormalizedSearchQuery {
-  const raw = cleanSpaces(input);
+  const raw = cleanSpaces(repairSearchQuery(input));
   if (!raw) {
     return {
       raw: "",
@@ -192,7 +192,7 @@ export function secondarySearchVariants(
  * Returns `intitle:"…"` or null (no extra request).
  */
 export function googleTitlePriorityQuery(input: string): string | null {
-  const raw = cleanSpaces(input);
+  const raw = cleanSpaces(repairSearchQuery(input));
   if (!raw) return null;
   if (/intitle:/i.test(raw)) return null;
   if (isAuthorQuery(raw)) return null;

@@ -13,6 +13,7 @@ import {
   resolveLatestEditionTarget,
 } from "../lib/book-work";
 import {
+  cleanTitle,
   dedupeBooks,
   dropBrowseJunk,
   getBookDedupeKey,
@@ -22,6 +23,7 @@ import {
   normalizeTitleForDedupe,
   pickPreferredDuplicate,
   rankBrowseSearchResults,
+  repairMojibake,
 } from "../lib/book-utils";
 import { googleTitlePriorityQuery } from "../lib/search-query";
 import { applyKnownWorkFields } from "../lib/known-editions";
@@ -1205,6 +1207,120 @@ check("q=dune still returns Frank Herbert", rankedDuneAuthor[0]?.authors[0], "Fr
 check(
   "q=dune drops Aescendune substring hit",
   rankedDuneAuthor.some((b) => b.id === "google-aescendune"),
+  false
+);
+
+console.log("13. Title encoding repair + Aristotle and Dante");
+check(
+  "em dash mojibake",
+  repairMojibake("Aristotle and Danteâ€\""),
+  "Aristotle and Dante—"
+);
+check(
+  "apostrophe mojibake",
+  repairMojibake("Danteâ€™s"),
+  "Dante\u2019s"
+);
+check(
+  "cleanTitle repairs leftover â€",
+  cleanTitle("Aristotle and Danteâ€ |"),
+  "Aristotle and Dante"
+);
+check(
+  "mojibake title matches clean em dash for dedupe",
+  normalizeTitleForDedupe("Aristotle and Danteâ€\""),
+  normalizeTitleForDedupe("Aristotle and Dante—")
+);
+
+const saenzUniverse = book({
+  id: "google-saenz-universe",
+  title: "Aristotle and Dante Discover the Secrets of the Universe",
+  authors: ["Benjamin Alire Sáenz"],
+  coverUrl: "https://covers.example/universe.jpg",
+  description: null,
+  publishedYear: 2012,
+  source: "google",
+});
+const saenzWaters = book({
+  id: "google-saenz-waters",
+  title: "Aristotle and Dante Dive Into the Waters of the World",
+  authors: ["Benjamin Alire Sáenz"],
+  coverUrl: "https://covers.example/waters.jpg",
+  description: "The sequel continues their story in El Paso.",
+  publishedYear: 2021,
+  source: "google",
+});
+const aristotlePoetics = book({
+  id: "google-poetics",
+  title: "Aristotle: Poetics",
+  authors: ["Aristotle"],
+  coverUrl: "https://covers.example/poetics.jpg",
+  description:
+    "A complete academic edition of the Poetics with commentary that would otherwise win the cover+description quality filter.",
+  publishedYear: 1997,
+  source: "google",
+});
+const saenzFinalized = finalizeSearchBooks(
+  [aristotlePoetics, saenzUniverse, saenzWaters],
+  { query: "aristotle and dante" }
+);
+const saenzRanked = rankBrowseSearchResults(
+  dropBrowseJunk(saenzFinalized),
+  "aristotle and dante"
+);
+check(
+  "Sáenz Universe survives quality filter",
+  saenzFinalized.some((b) => b.id === "google-saenz-universe"),
+  true
+);
+check(
+  "Sáenz Waters survives quality filter",
+  saenzFinalized.some((b) => b.id === "google-saenz-waters"),
+  true
+);
+check(
+  "Sáenz books keep authors",
+  saenzRanked
+    .filter((b) => /s[aá]enz/i.test(b.authors.join(" ")))
+    .every((b) => b.authors[0] !== "Unknown author"),
+  true
+);
+check(
+  "q=aristotle and dante ranks Sáenz first",
+  /s[aá]enz/i.test(saenzRanked[0]?.authors.join(" ") ?? ""),
+  true
+);
+check(
+  "both Sáenz novels are in first results",
+  saenzRanked.filter((b) => /s[aá]enz/i.test(b.authors.join(" "))).length >= 2,
+  true
+);
+
+const duneStillRanks = rankBrowseSearchResults(
+  [
+    book({
+      id: "google-dune-main",
+      title: "Dune",
+      authors: ["Frank Herbert"],
+      coverUrl: "https://covers.example/dune.jpg",
+      description: "The original desert-planet epic of politics and spice.",
+      publishedYear: 1965,
+    }),
+    book({
+      id: "google-fourth-wing",
+      title: "Fourth Wing",
+      authors: ["Rebecca Yarros"],
+      coverUrl: "https://covers.example/fw.jpg",
+      description: "A dragon war college.",
+      publishedYear: 2023,
+    }),
+  ],
+  "dune"
+);
+check("dune ranking still prefers Frank Herbert", duneStillRanks[0]?.id, "google-dune-main");
+check(
+  "fourth wing is not mixed into q=dune",
+  duneStillRanks.some((b) => b.id === "google-fourth-wing"),
   false
 );
 

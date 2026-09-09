@@ -1,12 +1,12 @@
 import { getGoogleBookByIsbn, searchGoogleBooks } from "@/lib/google-books";
 import {
   knownWorkCatalogSeed,
-  knownWorkMatchesQuery,
+  knownWorksMatchingQuery,
   type KnownWorkEditions,
 } from "@/lib/known-editions";
 import { getOpenLibraryBookByIsbn, searchOpenLibrary } from "@/lib/open-library";
 import { withTimeout } from "@/lib/provider-resilience";
-import { isExactTitleMatch } from "@/lib/book-utils";
+import { isExactTitleMatch, titleRelatesToQuery } from "@/lib/book-utils";
 import type { BookDetail, BookSummary } from "@/types/book";
 
 function detailToSummary(detail: BookDetail): BookSummary {
@@ -94,6 +94,83 @@ function hasPreferredEnglishTitle(
   return books.some((book) => isExactTitleMatch(entry.matchTitle, book.title));
 }
 
+async function recoverOneKnownWork(
+  known: KnownWorkEditions,
+  existing: BookSummary[],
+  recovered: BookSummary[],
+  push: (book: BookSummary | null | undefined) => void
+): Promise<void> {
+  const pool = [...existing, ...recovered];
+  const needsEnglish = !hasPreferredEnglishTitle(pool, known);
+  const needsOriginal =
+    Boolean(known.originalLanguage) &&
+    !pool.some(
+      (book) =>
+        (known.altTitles ?? []).some((alt) =>
+          isExactTitleMatch(alt, book.title)
+        ) || book.editionLabel === "original"
+    );
+
+  if (needsEnglish || needsOriginal || existing.length === 0) {
+    const englishIsbns = known.isbns.slice(0, 2);
+    const originalIsbns = (known.originalLanguageIsbns ?? []).slice(0, 1);
+
+    const settled = await Promise.allSettled([
+      softGooglePhrase(known.googlePhrase),
+      softOlTitle(known.matchTitle),
+      ...(known.altTitles ?? []).slice(0, 1).map((title) => softOlTitle(title)),
+      ...englishIsbns.map(async (isbn) => ({
+        book: (await softGoogleIsbn(isbn)) ?? (await softOlIsbn(isbn)),
+        kind: "english" as const,
+      })),
+      ...originalIsbns.map(async (isbn) => ({
+        book: (await softGoogleIsbn(isbn)) ?? (await softOlIsbn(isbn)),
+        kind: "original" as const,
+      })),
+    ]);
+
+    for (const result of settled) {
+      if (result.status !== "fulfilled") continue;
+      const value = result.value;
+      if (Array.isArray(value)) {
+        for (const book of value) {
+          if (matchesKnownTitle(book, known)) push(book);
+        }
+      } else if (value && "book" in value && value.book) {
+        push({
+          ...value.book,
+          language:
+            value.kind === "original"
+              ? value.book.language || known.originalLanguage || "es"
+              : value.book.language || "en",
+          editionLabel:
+            value.kind === "original"
+              ? "original"
+              : known.originalLanguage
+                ? "english"
+                : value.book.editionLabel,
+        });
+      }
+    }
+  }
+
+  if (!hasPreferredEnglishTitle([...existing, ...recovered], known)) {
+    push(knownWorkCatalogSeed(known, "english"));
+  }
+  if (
+    known.originalLanguage &&
+    !([...existing, ...recovered] as BookSummary[]).some(
+      (book) =>
+        book.editionLabel === "original" ||
+        (known.altTitles ?? []).some((alt) =>
+          isExactTitleMatch(alt, book.title)
+        )
+    )
+  ) {
+    push(knownWorkCatalogSeed(known, "original"));
+  }
+}
+
 /**
  * Guaranteed recovery for popular titles. Ensures English editions of known
  * translated works appear even when Google is 429'd and only a foreign-language
@@ -107,7 +184,7 @@ export async function recoverPopularTitleHits(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const known = knownWorkMatchesQuery(trimmed);
+  const knownWorks = knownWorksMatchingQuery(trimmed).slice(0, 2);
   const recovered: BookSummary[] = [];
   const seen = new Set(existing.map((book) => book.id));
 
@@ -118,80 +195,12 @@ export async function recoverPopularTitleHits(
     recovered.push(book);
   }
 
-  if (known) {
-    const needsEnglish = !hasPreferredEnglishTitle(
-      [...existing, ...recovered],
-      known
-    );
-    const needsOriginal =
-      Boolean(known.originalLanguage) &&
-      !existing.some(
-        (book) =>
-          (known.altTitles ?? []).some((alt) =>
-            isExactTitleMatch(alt, book.title)
-          ) || book.editionLabel === "original"
-      );
-
-    // Live lookups first (best metadata), then catalog seeds as guarantees.
-    if (needsEnglish || needsOriginal || existing.length === 0) {
-      const englishIsbns = known.isbns.slice(0, 2);
-      const originalIsbns = (known.originalLanguageIsbns ?? []).slice(0, 1);
-
-      const settled = await Promise.allSettled([
-        softGooglePhrase(known.googlePhrase),
-        softOlTitle(known.matchTitle),
-        ...(known.altTitles ?? []).slice(0, 1).map((title) => softOlTitle(title)),
-        ...englishIsbns.map(async (isbn) => ({
-          book: (await softGoogleIsbn(isbn)) ?? (await softOlIsbn(isbn)),
-          kind: "english" as const,
-        })),
-        ...originalIsbns.map(async (isbn) => ({
-          book: (await softGoogleIsbn(isbn)) ?? (await softOlIsbn(isbn)),
-          kind: "original" as const,
-        })),
-      ]);
-
-      for (const result of settled) {
-        if (result.status !== "fulfilled") continue;
-        const value = result.value;
-        if (Array.isArray(value)) {
-          for (const book of value) {
-            if (matchesKnownTitle(book, known)) push(book);
-          }
-        } else if (value && "book" in value && value.book) {
-          push({
-            ...value.book,
-            language:
-              value.kind === "original"
-                ? value.book.language || known.originalLanguage || "es"
-                : value.book.language || "en",
-            editionLabel:
-              value.kind === "original"
-                ? "original"
-                : known.originalLanguage
-                  ? "english"
-                  : value.book.editionLabel,
-          });
-        }
-      }
-    }
-
-    // Catalog seeds — never optional for known works missing English/original.
-    if (!hasPreferredEnglishTitle([...existing, ...recovered], known)) {
-      push(knownWorkCatalogSeed(known, "english"));
-    }
-    if (
-      known.originalLanguage &&
-      !([...existing, ...recovered] as BookSummary[]).some(
-        (book) =>
-          book.editionLabel === "original" ||
-          (known.altTitles ?? []).some((alt) =>
-            isExactTitleMatch(alt, book.title)
-          )
+  if (knownWorks.length > 0) {
+    await Promise.all(
+      knownWorks.map((known) =>
+        recoverOneKnownWork(known, existing, recovered, push)
       )
-    ) {
-      push(knownWorkCatalogSeed(known, "original"));
-    }
+    );
   } else if (existing.length === 0 && trimmed.split(/\s+/).length >= 2) {
     const plain = trimmed.replace(/"/g, "");
     const settled = await Promise.allSettled([
@@ -201,7 +210,12 @@ export async function recoverPopularTitleHits(
     for (const result of settled) {
       if (result.status !== "fulfilled") continue;
       for (const book of result.value) {
-        if (isExactTitleMatch(plain, book.title)) push(book);
+        if (
+          isExactTitleMatch(plain, book.title) ||
+          titleRelatesToQuery(book.title, plain)
+        ) {
+          push(book);
+        }
       }
     }
   }
@@ -209,7 +223,7 @@ export async function recoverPopularTitleHits(
   if (options?.debug) {
     console.info("[searchRecovery]", {
       query: trimmed,
-      known: known?.matchTitle ?? null,
+      known: knownWorks.map((entry) => entry.matchTitle),
       recovered: recovered.length,
       titles: recovered.slice(0, 6).map((book) => ({
         t: book.title,

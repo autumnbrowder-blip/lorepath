@@ -2,6 +2,127 @@ import { getLanguageEditionBucket } from "@/lib/book-language";
 import { cleanRawSubjects, normalizeBookTags } from "@/lib/book-tags";
 import type { BookSource, BookSummary } from "@/types/book";
 
+/**
+ * Map a Unicode code point back to a Windows-1252 byte so we can reverse
+ * the classic "UTF-8 bytes decoded as cp1252" mojibake.
+ */
+function cp1252Byte(code: number): number | null {
+  if (code <= 0xff) return code;
+  switch (code) {
+    case 0x20ac:
+      return 0x80; // €
+    case 0x201a:
+      return 0x82; // ‚
+    case 0x0192:
+      return 0x83; // ƒ
+    case 0x201e:
+      return 0x84; // „
+    case 0x2026:
+      return 0x85; // …
+    case 0x2020:
+      return 0x86; // †
+    case 0x2021:
+      return 0x87; // ‡
+    case 0x02c6:
+      return 0x88; // ˆ
+    case 0x2030:
+      return 0x89; // ‰
+    case 0x0160:
+      return 0x8a; // Š
+    case 0x2039:
+      return 0x8b; // ‹
+    case 0x0152:
+      return 0x8c; // Œ
+    case 0x017d:
+      return 0x8e; // Ž
+    case 0x2018:
+      return 0x91; // ‘
+    case 0x2019:
+      return 0x92; // ’
+    case 0x201c:
+      return 0x93; // “
+    case 0x201d:
+      return 0x94; // ”
+    case 0x2022:
+      return 0x95; // •
+    case 0x2013:
+      return 0x96; // –
+    case 0x2014:
+      return 0x97; // —
+    case 0x02dc:
+      return 0x98; // ˜
+    case 0x2122:
+      return 0x99; // ™
+    case 0x0161:
+      return 0x9a; // š
+    case 0x203a:
+      return 0x9b; // ›
+    case 0x0153:
+      return 0x9c; // œ
+    case 0x017e:
+      return 0x9e; // ž
+    case 0x0178:
+      return 0x9f; // Ÿ
+    default:
+      return null;
+  }
+}
+
+function tryDecodeCp1252AsUtf8(text: string): string | null {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    const mapped = cp1252Byte(text.charCodeAt(i));
+    if (mapped == null) return null;
+    bytes[i] = mapped;
+  }
+  try {
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return decoded === text ? null : decoded;
+  } catch {
+    return null;
+  }
+}
+
+const MOJIBAKE_MARKER = /â€|Ã.|Â|\uFFFD/;
+
+/**
+ * Repair cp1252-as-UTF-8 mojibake in catalog strings.
+ * Example: "Aristotle and Danteâ€"" → "Aristotle and Dante—"
+ */
+export function repairMojibake(text: string): string {
+  if (!text || !MOJIBAKE_MARKER.test(text)) {
+    return text.replace(/\uFFFD/g, "");
+  }
+
+  let next = tryDecodeCp1252AsUtf8(text) ?? text;
+
+  // Typical leftovers when the byte sequence was truncated or typed as ASCII.
+  next = next
+    .replace(/â€”/g, "—")
+    .replace(/â€“/g, "–")
+    .replace(/â€™/g, "'")
+    .replace(/â€˜/g, "'")
+    .replace(/â€œ/g, "\u201C")
+    .replace(/â€\u009d/g, "\u201D")
+    .replace(/â€\uFFFD/g, "\u201D")
+    .replace(/â€/g, "\u201D")
+    .replace(/â€["”]/g, "—")
+    .replace(/Â/g, "")
+    .replace(/â€+/g, "")
+    .replace(/\uFFFD/g, "")
+    .replace(/[\u0080-\u009F]/g, "")
+    .replace(/\s*\|+\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return next;
+}
+
+/** Repair encoding then collapse whitespace — used for search `q=` as well. */
+export function repairSearchQuery(query: string): string {
+  return repairMojibake(query).replace(/\s+/g, " ").trim();
+}
+
 export function dedupeStrings(items: string[]): string[] {
   const seen = new Set<string>();
 
@@ -18,7 +139,9 @@ export function dedupeStrings(items: string[]): string[] {
 
 export function cleanAuthors(authors: string[]): string[] {
   const cleaned = dedupeStrings(
-    authors.map((author) => author.replace(/\s+/g, " ").trim())
+    authors.map((author) =>
+      repairMojibake(author).replace(/\s+/g, " ").trim()
+    )
   );
   return cleaned.length > 0 ? cleaned : ["Unknown author"];
 }
@@ -69,7 +192,7 @@ export function isPlaceholderDescription(
 
 export function cleanDescription(description?: string | null): string | null {
   if (!description) return null;
-  const cleaned = stripHtml(description);
+  const cleaned = repairMojibake(stripHtml(description));
   if (!cleaned) return null;
   // Drop provider placeholders at the parse boundary so downstream code can
   // treat "has a description" as "has real text".
@@ -126,7 +249,7 @@ export function isTitleOnlyStub(book: BookSummary): boolean {
 }
 
 export function cleanTitle(title?: string | null): string {
-  return title?.replace(/\s+/g, " ").trim() || "Untitled";
+  return repairSearchQuery(title ?? "") || "Untitled";
 }
 
 /** Detect queries that look like an author name (e.g. "John Gwynne"). */
@@ -338,7 +461,7 @@ function foldDiacritics(text: string): string {
  * then drop a leading article ("The Wren…" === "Wren…").
  */
 export function normalizeTitleForDedupe(title: string): string {
-  let text = foldDiacritics(title).toLowerCase().trim();
+  let text = foldDiacritics(repairMojibake(title)).toLowerCase().trim();
 
   // Drop parenthetical / bracketed edition notes
   text = text.replace(/\([^)]*\)/g, " ");
@@ -442,7 +565,7 @@ export function normalizeTitleForDedupe(title: string): string {
  * punctuation, case.
  */
 export function normalizeAuthorForDedupe(author: string): string {
-  let text = foldDiacritics(author).toLowerCase().trim();
+  let text = foldDiacritics(repairMojibake(author)).toLowerCase().trim();
   if (!text || text === "unknown author") return "";
 
   if (text.includes(",")) {
@@ -766,7 +889,7 @@ export function buildAlternateSearchQueries(raw: string): string[] {
 }
 
 function normalizeForMatch(text: string): string {
-  return text
+  return repairMojibake(text)
     .toLowerCase()
     .replace(/\b3\b/g, "three")
     .replace(/[^a-z0-9]+/g, " ")
@@ -900,6 +1023,26 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
     score += 40;
   }
   if (
+    /aristotle and dante discover the secrets of the universe/i.test(
+      book.title
+    ) &&
+    queryLooksLikeTitle(query, "aristotle and dante")
+  ) {
+    score += 45;
+  }
+  if (
+    /aristotle and dante dive into the waters/i.test(book.title) &&
+    queryLooksLikeTitle(query, "aristotle and dante")
+  ) {
+    score += 45;
+  }
+  if (
+    /s[aá]enz/i.test(book.authors.join(" ")) &&
+    queryLooksLikeTitle(query, "aristotle and dante")
+  ) {
+    score += 35;
+  }
+  if (
     /^between two fires$/i.test(book.title.trim()) &&
     queryLooksLikeTitle(query, "between two fires")
   ) {
@@ -1021,6 +1164,14 @@ const CANONICAL_TITLE_AUTHORS: Array<{ title: string; authors: string[] }> = [
   { title: "tender is the flesh", authors: ["agustina bazterrica"] },
   { title: "big little truths", authors: ["liane moriarty"] },
   { title: "whistler", authors: ["ann patchett"] },
+  {
+    title: "aristotle and dante discover the secrets of the universe",
+    authors: ["benjamin alire saenz"],
+  },
+  {
+    title: "aristotle and dante dive into the waters of the world",
+    authors: ["benjamin alire saenz"],
+  },
 ];
 
 function escapeRegExp(value: string): string {
@@ -1080,8 +1231,13 @@ function authorLooksCanonical(book: BookSummary, authors: string[]): boolean {
 function isCanonicalAuthorForQuery(book: BookSummary, query: string): boolean {
   const q = normalizeTitleForDedupe(query);
   const title = normalizeTitleForDedupe(book.title);
+  const queryWords = q.split(" ").filter(Boolean).length;
   return CANONICAL_TITLE_AUTHORS.some((entry) => {
-    if (q !== entry.title && title !== entry.title) return false;
+    const exact = q === entry.title || title === entry.title;
+    const prefix =
+      queryWords >= 3 &&
+      (entry.title.startsWith(`${q} `) || title.startsWith(`${q} `));
+    if (!exact && !prefix) return false;
     return authorLooksCanonical(book, entry.authors);
   });
 }
@@ -1124,7 +1280,12 @@ export function rankBrowseSearchResults(
     if (aCanon !== bCanon) return aCanon ? -1 : 1;
     return comparePublishedYearDesc(a, b);
   });
-  related.sort(comparePublishedYearDesc);
+  related.sort((a, b) => {
+    const aCanon = isCanonicalAuthorForQuery(a, trimmed);
+    const bCanon = isCanonicalAuthorForQuery(b, trimmed);
+    if (aCanon !== bCanon) return aCanon ? -1 : 1;
+    return comparePublishedYearDesc(a, b);
+  });
 
   return [...exact, ...related];
 }

@@ -1,4 +1,5 @@
 import { searchBooks } from "@/lib/books";
+import { repairSearchQuery } from "@/lib/book-utils";
 import { isGenreSearchMode } from "@/lib/genre-search";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -22,7 +23,8 @@ const NO_STORE_HEADERS = {
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const query = searchParams.get("q")?.trim() ?? "";
+  const rawQuery = searchParams.get("q")?.trim() ?? "";
+  const query = repairSearchQuery(rawQuery);
   const modeParam = searchParams.get("mode");
   const pageParam = Number(searchParams.get("page") ?? "1");
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
