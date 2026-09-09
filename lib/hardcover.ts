@@ -23,7 +23,7 @@ const HARDCOVER_ID_PREFIX = "hardcover-";
 /** Hard cap is 5000; skip at 4500 so one Netlify instance cannot burn the day. */
 const HARDCOVER_DAILY_CAP = 5000;
 const HARDCOVER_DAILY_SKIP_AT = 4500;
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type HardcoverSearchError = {
   reason:
@@ -76,13 +76,16 @@ const BOOK_SELECTION = `
   cached_contributors
 `;
 
-const ISBN_QUERY = `query HardcoverByIsbn($isbn13: String, $isbn10: String) {
-  byIsbn13: editions(where: { isbn_13: { _eq: $isbn13 } }, limit: 1) {
+const ISBN13_QUERY = `query HardcoverByIsbn13($isbn: String!) {
+  editions(where: { isbn_13: { _eq: $isbn } }, limit: 1) {
     isbn_13
     isbn_10
     book { ${BOOK_SELECTION} }
   }
-  byIsbn10: editions(where: { isbn_10: { _eq: $isbn10 } }, limit: 1) {
+}`;
+
+const ISBN10_QUERY = `query HardcoverByIsbn10($isbn: String!) {
+  editions(where: { isbn_10: { _eq: $isbn } }, limit: 1) {
     isbn_13
     isbn_10
     book { ${BOOK_SELECTION} }
@@ -131,7 +134,7 @@ export function takeHardcoverQuotaSlot(): boolean {
   }
 
   if (quotaCount >= HARDCOVER_DAILY_SKIP_AT) {
-    console.info("[hardcover] skipped", {
+    console.info("hardcover_skipped_quota", {
       day,
       count: quotaCount,
       skipAt: HARDCOVER_DAILY_SKIP_AT,
@@ -161,6 +164,15 @@ function hardcoverCacheKey(isbn?: string | null, slug?: string | null): string |
 function cacheFresh(entry: HardcoverCacheRecord | null | undefined): boolean {
   if (!entry) return false;
   return Date.now() - entry.cachedAt < CACHE_TTL_MS;
+}
+
+/** Cover + description + ≥2 tags already present — do not spend a Hardcover call. */
+function alreadyCompleteFromGoogle(book: BookDetail): boolean {
+  const hasCover = Boolean(book.coverUrl?.trim());
+  const hasDescription =
+    Boolean(book.description?.trim()) && !isWeakDescription(book.description);
+  const tagCount = book.genres.filter((tag) => Boolean(tag?.trim())).length;
+  return hasCover && hasDescription && tagCount >= 2;
 }
 
 export function peekHardcoverMemoryCache(
@@ -332,16 +344,27 @@ function recordToCache(book: HardcoverBook | null): HardcoverCacheRecord {
   };
 }
 
+type GraphqlResult =
+  | { kind: "ok"; payload: unknown; status: number }
+  | { kind: "quota" }
+  | { kind: "miss" };
+
 /**
  * The only live HTTP to api.hardcover.app. Never used by searchHardcover.
+ * Increments the UTC daily counter before fetch; at 4500 returns quota without HTTP.
  */
 async function fetchHardcoverGraphql(
   query: string,
-  variables: Record<string, unknown>
-): Promise<{ payload: unknown; status: number } | null> {
+  variables: Record<string, unknown>,
+  slug: string
+): Promise<GraphqlResult> {
+  const trimmedSlug = slug.trim();
+  if (!trimmedSlug) return { kind: "miss" };
   const token = hardcoverBearerToken();
-  if (!token) return null;
-  if (!takeHardcoverQuotaSlot()) return null;
+  if (!token) return { kind: "miss" };
+  if (!takeHardcoverQuotaSlot()) return { kind: "quota" };
+
+  console.info(`[hardcover] slug=${trimmedSlug} reason=cache_miss`);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -361,7 +384,7 @@ async function fetchHardcoverGraphql(
     const status = response.status;
     if (status === 401 || status === 403 || status >= 500) {
       console.error("[hardcover] enrich skipped:", { status });
-      return null;
+      return { kind: "miss" };
     }
 
     let payload: unknown = null;
@@ -376,7 +399,7 @@ async function fetchHardcoverGraphql(
         status,
         message: graphqlErrorMessage(payload) ?? response.statusText,
       });
-      return null;
+      return { kind: "miss" };
     }
 
     const graphqlMessage = graphqlErrorMessage(payload);
@@ -385,10 +408,10 @@ async function fetchHardcoverGraphql(
         status,
         message: graphqlMessage,
       });
-      return null;
+      return { kind: "miss" };
     }
 
-    return { payload, status };
+    return { kind: "ok", payload, status };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const timedOut =
@@ -398,7 +421,7 @@ async function fetchHardcoverGraphql(
       reason: timedOut ? "timeout" : "network",
       message,
     });
-    return null;
+    return { kind: "miss" };
   } finally {
     clearTimeout(timeout);
   }
@@ -414,11 +437,10 @@ function isbn13And10(isbn: string): { isbn13: string | null; isbn10: string | nu
 function bookFromEditionPayload(payload: unknown): HardcoverBook | null {
   const data = (payload as {
     data?: {
-      byIsbn13?: { isbn_13?: string; isbn_10?: string; book?: Record<string, unknown> }[];
-      byIsbn10?: { isbn_13?: string; isbn_10?: string; book?: Record<string, unknown> }[];
+      editions?: { isbn_13?: string; isbn_10?: string; book?: Record<string, unknown> }[];
     };
   })?.data;
-  const edition = data?.byIsbn13?.[0] ?? data?.byIsbn10?.[0];
+  const edition = data?.editions?.[0];
   if (!edition?.book) return null;
   const isbns = [edition.isbn_13, edition.isbn_10].filter(
     (value): value is string => Boolean(value)
@@ -468,45 +490,72 @@ function bookFromTitlePayload(
   );
 }
 
+type HardcoverLookup =
+  | { status: "ok"; book: HardcoverBook | null }
+  | { status: "quota" };
+
+function lookupFromGraphql(
+  result: GraphqlResult,
+  book: HardcoverBook | null
+): HardcoverLookup {
+  if (result.kind === "quota") return { status: "quota" };
+  if (result.kind === "miss") return { status: "ok", book: null };
+  return { status: "ok", book };
+}
+
 /**
- * Live single-book lookup: ISBN first, else title+author. One GraphQL call.
- * Never throws — 401/403/5xx/timeout/quota → null.
+ * Live single-book lookup: ISBN XOR title+author. Never both.
+ * If ISBN is the one query, title+author is not fired even on a miss.
+ * Requires a book slug — no slug means no HTTP.
+ * Never throws — 401/403/5xx/timeout/quota → empty / quota.
  */
-export async function fetchHardcoverBook(
+async function fetchHardcoverBook(
   title: string,
   authors: string[] = [],
-  isbn?: string | null
-): Promise<HardcoverBook | null> {
+  isbn?: string | null,
+  slug?: string | null
+): Promise<HardcoverLookup> {
   try {
-    if (!isHardcoverConfigured()) return null;
+    const bookSlug = slug?.trim() ?? "";
+    if (!bookSlug) return { status: "ok", book: null };
+    if (!isHardcoverConfigured()) return { status: "ok", book: null };
 
     const isbnDigits = bookIsbnKey(isbn);
     if (isbnDigits) {
       const { isbn13, isbn10 } = isbn13And10(isbnDigits);
-      const result = await fetchHardcoverGraphql(ISBN_QUERY, {
-        isbn13: isbn13 ?? "0000000000000",
-        isbn10: isbn10 ?? "0000000000",
-      });
-      if (!result) return null;
-      return bookFromEditionPayload(result.payload);
+      const isbnValue = isbn13 ?? isbn10;
+      if (!isbnValue) return { status: "ok", book: null };
+      const result = await fetchHardcoverGraphql(
+        isbn13 ? ISBN13_QUERY : ISBN10_QUERY,
+        { isbn: isbnValue },
+        bookSlug
+      );
+      const book =
+        result.kind === "ok" ? bookFromEditionPayload(result.payload) : null;
+      return lookupFromGraphql(result, book);
     }
 
     const author = authors.find(
       (name) => name && name.toLowerCase() !== "unknown author"
     );
     const query = (author ? `${title} ${author}` : title).replace(/\s+/g, " ").trim();
-    if (!query) return null;
+    if (!query) return { status: "ok", book: null };
 
-    const result = await fetchHardcoverGraphql(TITLE_QUERY, {
-      query: query.slice(0, 150),
-    });
-    if (!result) return null;
-    return bookFromTitlePayload(result.payload, title, authors);
+    const result = await fetchHardcoverGraphql(
+      TITLE_QUERY,
+      { query: query.slice(0, 150) },
+      bookSlug
+    );
+    const book =
+      result.kind === "ok"
+        ? bookFromTitlePayload(result.payload, title, authors)
+        : null;
+    return lookupFromGraphql(result, book);
   } catch (error) {
     console.error("[hardcover] enrich skipped:", {
       message: error instanceof Error ? error.message : String(error),
     });
-    return null;
+    return { status: "ok", book: null };
   }
 }
 
@@ -565,8 +614,15 @@ async function lookupAndCache(
   book: BookDetail,
   key: string
 ): Promise<HardcoverCacheRecord | null> {
-  const fetched = await fetchHardcoverBook(book.title, book.authors, book.isbn);
-  const record = recordToCache(fetched);
+  const fetched = await fetchHardcoverBook(
+    book.title,
+    book.authors,
+    book.isbn,
+    book.id
+  );
+  if (fetched.status === "quota") return null;
+
+  const record = recordToCache(fetched.book);
   memoryCache.set(key, record);
 
   if (!record.empty) {
@@ -589,6 +645,7 @@ async function lookupAndCache(
 export async function enrichFromHardcover(book: BookDetail): Promise<BookDetail> {
   try {
     if (!book.title?.trim()) return book;
+    if (!book.id?.trim()) return book;
     if (!isHardcoverConfigured()) return book;
 
     const key = hardcoverCacheKey(book.isbn, book.id);
@@ -596,6 +653,8 @@ export async function enrichFromHardcover(book: BookDetail): Promise<BookDetail>
 
     const cached = await readMemoryOrRowCache(key, book.id, bookIsbnKey(book.isbn));
     if (cached) return applyHardcoverCache(book, cached);
+
+    if (alreadyCompleteFromGoogle(book)) return book;
 
     const pending = inFlight.get(key);
     if (pending) {

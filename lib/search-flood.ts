@@ -158,8 +158,10 @@ export async function fetchSearchProviderFlood(input: {
     if (page.timedOut) {
       timedOutProviders.push(page.source);
     }
-    sourceCounts[page.source] =
-      (sourceCounts[page.source] ?? 0) + page.books.length;
+    if (page.source !== "hardcover") {
+      sourceCounts[page.source] =
+        (sourceCounts[page.source] ?? 0) + page.books.length;
+    }
     if (page.hasMore) hasMore = true;
     if (page.source === "google") {
       if (page.error) googleError = page.error;
@@ -295,7 +297,9 @@ export async function fetchSearchProviderFlood(input: {
         if (seenIds.has(book.id)) continue;
         seenIds.add(book.id);
         prepend.push(book);
-        sourceCounts[book.source] = (sourceCounts[book.source] ?? 0) + 1;
+        if (book.source !== "hardcover") {
+          sourceCounts[book.source] = (sourceCounts[book.source] ?? 0) + 1;
+        }
       }
       if (prepend.length > 0) {
         books.unshift(...prepend);

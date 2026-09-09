@@ -111,6 +111,7 @@ function SuggestionCard({ book }: { book: BookSummary }) {
         )}
         <Link
           href={bookHref(book.id)}
+          prefetch={false}
           className="btn-primary mt-auto w-full justify-center px-3 py-2.5 text-[11px] tracking-[0.12em] sm:w-auto sm:self-start"
         >
           <Feather className="h-3.5 w-3.5" aria-hidden="true" />
@@ -377,6 +378,7 @@ export function FirstRatingScreen({
               <li key={book.id}>
                 <Link
                   href={bookHref(book.id, query)}
+                  prefetch={false}
                   className="preference-codex-box relative flex items-center gap-3 !p-3 transition hover:brightness-110"
                 >
                   <div className="relative z-[3] h-16 w-12 shrink-0 overflow-hidden rounded-sm border border-gold-600/40">

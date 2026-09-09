@@ -126,6 +126,7 @@ export async function generateMetadata({
   try {
     const { book } = await loadBookDetail(id, {
       searchHint: q?.trim() || hint?.trim() || undefined,
+      enrichHardcover: true,
     });
     if (!book) {
       return { title: "Tome Unopened | LorePath" };
@@ -227,6 +228,7 @@ export default async function BookDetailPage({
   try {
     const detail = await loadBookDetail(id, {
       searchHint: searchQuery || hint?.trim() || undefined,
+      enrichHardcover: true,
     });
     book = detail.book;
     failures = detail.failures;

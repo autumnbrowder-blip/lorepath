@@ -37,6 +37,7 @@ export default async function BookEditionsPage({
 
   const { book } = await loadBookDetail(id, {
     searchHint: hint?.trim() || undefined,
+    enrichHardcover: true,
   });
 
   if (!book) {
@@ -130,6 +131,7 @@ export default async function BookEditionsPage({
                         </p>
                         <Link
                           href={`/books/${encodeURIComponent(edition.id)}?hint=${encodeURIComponent(edition.title)}`}
+                          prefetch={false}
                           className="preference-codex-box--nav relative mt-3 inline-flex min-h-9 w-auto justify-center px-3 py-2"
                         >
                           <span className="relative z-[1] nav-dragon-gold">

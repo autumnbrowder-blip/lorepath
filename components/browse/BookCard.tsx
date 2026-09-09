@@ -71,6 +71,7 @@ export function BookCard({
     <article className="ornate-plaque lp-book-card">
       <Link
         href={tomeHref}
+        prefetch={false}
         className="lp-book-card-plate no-underline"
         aria-label={`Open ${title}`}
       >
@@ -86,7 +87,7 @@ export function BookCard({
 
       <div className="lp-book-card-body">
         <h2 className="tome-title lp-book-card-title">
-          <Link href={tomeHref} className="lp-book-card-title no-underline">
+          <Link href={tomeHref} prefetch={false} className="lp-book-card-title no-underline">
             {title}
           </Link>
         </h2>
@@ -110,6 +111,7 @@ export function BookCard({
               {" · "}
               <Link
                 href={latestEditionHref(latest.id, q)}
+                prefetch={false}
                 className="lp-book-card-year-link"
                 title="Open the latest English edition"
               >
@@ -148,6 +150,7 @@ export function BookCard({
           ) : null}
           <Link
             href={tomeHref}
+            prefetch={false}
             className="lp-book-card-open match-score-badge match-score-badge--excellent relative inline-flex h-9 w-auto items-center justify-center px-4 no-underline"
             data-testid="open-the-tome"
           >

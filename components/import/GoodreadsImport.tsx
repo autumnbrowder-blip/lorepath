@@ -597,6 +597,7 @@ function ImportBookCard({ item }: { item: MatchedImportBook }) {
             </p>
             <Link
               href={bookHref(item.book.id)}
+              prefetch={false}
               className="btn-primary w-full min-h-[2.5rem] justify-center px-3 py-2 text-[11px] tracking-[0.12em] sm:w-auto sm:self-start"
             >
               <Feather className="h-3.5 w-3.5" aria-hidden="true" />

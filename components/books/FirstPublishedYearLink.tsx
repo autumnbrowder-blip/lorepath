@@ -26,6 +26,7 @@ export function FirstPublishedYearLink({
   return (
     <Link
       href={firstPublishedHref(target, searchQuery ?? "", year)}
+      prefetch={false}
       className={`lp-first-published-link ${className}`.trim()}
       title="Open the first published edition"
     >

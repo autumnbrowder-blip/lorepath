@@ -23,11 +23,6 @@ import {
   type GoogleBooksPageResult,
 } from "@/lib/google-books";
 import {
-  enrichFromHardcover,
-  isHardcoverId,
-  peekHardcoverMemoryCache,
-} from "@/lib/hardcover";
-import {
   enrichBookDetailWithIsbndb,
   fetchIsbndbByIsbn,
   hasIsbndbApiKey,
@@ -77,6 +72,7 @@ import {
 } from "@/lib/book-utils";
 import { googleTitlePriorityQuery } from "@/lib/search-query";
 import { unstable_noStore as noStore } from "next/cache";
+import { headers } from "next/headers";
 import type {
   BookDetail,
   BookSearchResult,
@@ -114,6 +110,23 @@ const SEARCH_SOURCES: BookSource[] = [
   "gutendex",
   "isbndb",
 ];
+
+/** Leftover hardcover-* route ids only — never fetches Hardcover. */
+function isHardcoverId(id: string): boolean {
+  return id.startsWith("hardcover-");
+}
+
+/** Next.js Link prefetch of /books/[id] must not spend Hardcover quota. */
+function isRouterPrefetch(): boolean {
+  try {
+    const h = headers();
+    if (h.get("next-router-prefetch")) return true;
+    const purpose = (h.get("purpose") ?? h.get("sec-purpose") ?? "").toLowerCase();
+    return purpose.includes("prefetch");
+  } catch {
+    return false;
+  }
+}
 
 function cloneSummaries(books: BookSummary[]): BookSummary[] {
   return books.map((book) => ({ ...book }));
@@ -459,6 +472,11 @@ export type GetBookByIdOptions = {
    * transient error), we search providers with this query and pick the best match.
    */
   searchHint?: string;
+  /**
+   * Hardcover.app enricher. Only `/books/[id]` (and editions) set this after
+   * the reader opens a tome. Browse, search, ratings, and Link prefetch omit it.
+   */
+  enrichHardcover?: boolean;
 };
 
 export type BookDetailResult = {
@@ -574,9 +592,21 @@ async function loadCoreBook(
  * thrown. Core Google / OL / NYT data loads first; Hardcover and cache are
  * best-effort and can never blank a tome that already has a title.
  */
-export const loadBookDetail = cache(async function loadBookDetail(
+export async function loadBookDetail(
   id: string,
   options?: GetBookByIdOptions
+): Promise<BookDetailResult> {
+  return loadBookDetailCached(
+    id,
+    options?.searchHint?.trim() || "",
+    options?.enrichHardcover === true
+  );
+}
+
+const loadBookDetailCached = cache(async function loadBookDetailCached(
+  id: string,
+  searchHintRaw: string,
+  enrichHardcover: boolean
 ): Promise<BookDetailResult> {
   const empty: BookDetailResult = {
     book: null,
@@ -590,7 +620,7 @@ export const loadBookDetail = cache(async function loadBookDetail(
     const bookId = decodeBookRouteId(id);
     if (!bookId) return empty;
 
-    const searchHint = options?.searchHint?.trim() || undefined;
+    const searchHint = searchHintRaw || undefined;
     const coreFailures: ProviderFailure[] = [];
     const optionalFailures: ProviderFailure[] = [];
     const onCoreFailure = (failure: ProviderFailure) => coreFailures.push(failure);
@@ -704,14 +734,19 @@ export const loadBookDetail = cache(async function loadBookDetail(
       });
     }
 
-    // 3) Hardcover is detail-only. Timeout / 401 / quota never take the page down.
-    try {
-      tagged = await enrichFromHardcover(tagged);
-    } catch (error) {
-      console.error("[getBookById] hardcover enrich skipped:", {
-        id: bookId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+    // 3) Hardcover is detail-only, and only when the tome page asked for it.
+    // Prefetch / ratings / browse / search never set enrichHardcover.
+    const allowHardcover = enrichHardcover && !isRouterPrefetch();
+    if (allowHardcover) {
+      try {
+        const { enrichFromHardcover } = await import("@/lib/hardcover");
+        tagged = await enrichFromHardcover(tagged);
+      } catch (error) {
+        console.error("[getBookById] hardcover enrich skipped:", {
+          id: bookId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     if (!isUsableCoreBook(tagged)) {
@@ -723,6 +758,8 @@ export const loadBookDetail = cache(async function loadBookDetail(
 
     void cacheBookDetail(bookId, tagged)
       .then(async () => {
+        if (!allowHardcover) return;
+        const { peekHardcoverMemoryCache } = await import("@/lib/hardcover");
         const record = peekHardcoverMemoryCache(tagged.isbn, bookId);
         if (record && !record.empty) {
           await persistHardcoverCache(bookId, bookIsbnKey(tagged.isbn), record);

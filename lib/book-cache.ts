@@ -289,7 +289,7 @@ export async function cacheBookDetail(
 }
 
 const HARDCOVER_CACHED_AT_COLUMN = "hardcover_cached_at";
-const HARDCOVER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const HARDCOVER_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type HardcoverRowCache = {
   title: string | null;
@@ -315,7 +315,7 @@ function isHardcoverColumnMissing(message: string): boolean {
 }
 
 /**
- * Read a 24h Hardcover overlay from the existing books row.
+ * Read a 7-day Hardcover overlay from the existing books row.
  * Missing column / 57014 / any error → null (caller uses memory cache or API).
  */
 export async function readHardcoverRowCache(
