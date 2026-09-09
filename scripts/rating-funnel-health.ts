@@ -174,12 +174,16 @@ async function main() {
         pacing: 3,
       }),
     });
+    const payload =
+      res.json && typeof res.json === "object"
+        ? (res.json as { error?: unknown; message?: unknown })
+        : null;
     const errMsg =
-      res.json &&
-      typeof res.json === "object" &&
-      typeof (res.json as { error?: unknown }).error === "string"
-        ? (res.json as { error: string }).error
-        : "";
+      typeof payload?.message === "string"
+        ? payload.message
+        : typeof payload?.error === "string"
+          ? payload.error
+          : "";
     const ok =
       res.status === 401 &&
       /signed in|sign in|unauthorized/i.test(errMsg || res.body);
@@ -241,7 +245,7 @@ async function main() {
       rank: 1,
       severity: "CRITICAL",
       title: "Missing SUPABASE_SERVICE_ROLE_KEY in production",
-      why: "submitUserRating writes via service role after JWT verify. Without the key, every save fails after signup.",
+      why: "Books row upsert on rating save uses the service role. Without the key, new books cannot be inserted and the ratings write never starts.",
     },
     {
       rank: 2,

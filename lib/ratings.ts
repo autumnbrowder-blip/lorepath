@@ -21,6 +21,7 @@ import {
 import {
   isColumnMarkedMissing,
   isNonRetryableDataApiError,
+  isPermissionDeniedError,
   markColumnMissing,
   noteMissingColumnFromError,
 } from "@/lib/supabase/schema-cache";
@@ -47,14 +48,11 @@ const LEGACY_RATING_SELECT =
 const RATINGS_SQL_HINT =
   "Run supabase/migrations/20260716_fix_ratings_production.sql in the Supabase SQL Editor, then try again.";
 
-const RLS_HINT =
-  "Those marks could not be recorded. Stay on this page and try again. If it fails twice, sign in again.";
-
 const GRANT_HINT =
   `Could not save rating (permission denied on ratings/books). ${RATINGS_SQL_HINT}`;
 
 const FK_HINT =
-  "Could not save rating because no profile exists for your account (foreign key). Sign out and back in, or open /profile once, then try again.";
+  "Could not save rating because no profile exists for your account (foreign key). Open /profile once, then try again.";
 
 const ROMANCE_HINT =
   "Your database is missing the romance column on ratings. Run supabase/migrations/20260716_add_romance_category.sql (or 20260716_fix_ratings_production.sql) in the Supabase SQL Editor, then try again.";
@@ -294,27 +292,39 @@ function isGrantError(message: string): boolean {
   );
 }
 
-function isRlsError(message: string): boolean {
-  return (
-    /row-level security/i.test(message) ||
-    /violates row-level security/i.test(message) ||
-    /42501/.test(message) ||
-    (/permission denied/i.test(message) && !isGrantError(message))
-  );
-}
+type SupabaseLikeError = {
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
 
-function formatRatingError(message: string): string {
-  if (isMissingRomanceColumn(message)) return ROMANCE_HINT;
-  if (isForeignKeyError(message)) return FK_HINT;
-  if (isGrantError(message)) return GRANT_HINT;
-  if (isRlsError(message)) return RLS_HINT;
-  return message || "Failed to save rating. Please try again.";
+function describeSupabaseError(error: SupabaseLikeError): {
+  message: string;
+  code: string | null;
+} {
+  const parts = [error.message, error.details, error.hint].filter(
+    (part): part is string => typeof part === "string" && part.trim().length > 0
+  );
+  const raw = parts.join(" — ") || "Database request failed.";
+  const code = error.code?.trim() || null;
+
+  if (isMissingRomanceColumn(raw)) {
+    return { message: `${raw} ${ROMANCE_HINT}`, code };
+  }
+  if (isForeignKeyError(raw)) {
+    return { message: `${raw} ${FK_HINT}`, code };
+  }
+  if (isGrantError(raw)) {
+    return { message: `${raw} ${GRANT_HINT}`, code };
+  }
+  return { message: raw, code };
 }
 
 async function ensureProfileExists(
   supabase: SupabaseClient,
   userId: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; code: string | null }> {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("id")
@@ -322,7 +332,8 @@ async function ensureProfileExists(
     .maybeSingle();
 
   if (profileError) {
-    return { ok: false, error: formatRatingError(profileError.message) };
+    const described = describeSupabaseError(profileError);
+    return { ok: false, error: described.message, code: described.code };
   }
 
   if (profile) return { ok: true };
@@ -332,7 +343,8 @@ async function ensureProfileExists(
       .from("profiles")
       .upsert({ id: userId }, { onConflict: "id" });
     if (error) {
-      return { ok: false, error: formatRatingError(error.message) };
+      const described = describeSupabaseError(error);
+      return { ok: false, error: described.message, code: described.code };
     }
     return { ok: true };
   }
@@ -346,16 +358,28 @@ async function ensureProfileExists(
 
   if (upsertError) {
     noteMissingColumnFromError("profiles", "avatar_key", upsertError.message);
-    return { ok: false, error: formatRatingError(upsertError.message) };
+    const described = describeSupabaseError(upsertError);
+    return { ok: false, error: described.message, code: described.code };
   }
 
   return { ok: true };
 }
 
+/**
+ * Resolve (or create) the `books` row via the service-role client.
+ * Never writes books with the user JWT — that hits 42501 RLS on insert.
+ */
 async function ensureBookRecord(
-  supabase: SupabaseClient,
   externalId: string
-): Promise<{ bookDbId: string } | { error: string }> {
+): Promise<
+  { bookDbId: string } | { error: string; code: string | null }
+> {
+  const admin = createServiceRoleClient();
+  if ("error" in admin) {
+    return { error: admin.error, code: "missing_service_role" };
+  }
+
+  const supabase = admin.supabase;
   const existing = await findBookIdBySlugOrIsbn(supabase, {
     slug: externalId,
   });
@@ -365,12 +389,13 @@ async function ensureBookRecord(
 
   const book = await getBookById(externalId);
   if (!book) {
-    return { error: "Book not found." };
+    return { error: "Book not found.", code: "book_not_found" };
   }
 
   const result = await ensureBookRow(supabase, externalId, book);
   if ("error" in result) {
-    return { error: formatRatingError(result.error) };
+    const described = describeSupabaseError({ message: result.error });
+    return { error: described.message, code: described.code };
   }
   return result;
 }
@@ -1009,31 +1034,55 @@ type SubmitRatingOptions = {
   verifiedUserId?: string;
 };
 
-const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
+export type SubmitRatingSuccess = {
+  success: true;
+  userRating: ContentRating;
+  communityRatings: CommunityRatingsSummary;
+  sessionUserId: string;
+};
+
+export type SubmitRatingFailure = {
+  success: false;
+  error: string;
+  code: string | null;
+  sessionUserId: string | null;
+  /** JWT / RLS failures that may succeed after refreshSession() once. */
+  authRetryable: boolean;
+};
+
+function ratingFail(
+  error: string,
+  extra?: {
+    code?: string | null;
+    sessionUserId?: string | null;
+    authRetryable?: boolean;
+  }
+): SubmitRatingFailure {
+  return {
+    success: false,
+    error,
+    code: extra?.code ?? null,
+    sessionUserId: extra?.sessionUserId ?? null,
+    authRetryable: extra?.authRetryable ?? false,
+  };
+}
 
 /**
  * Persist a per-user rating. Column is `rated_by` (not `user_id`).
- * Never inserts when the session user is null. rated_by is always the
- * verified auth user id (auth.uid()), never a client-supplied id.
+ * Books row is upserted with the service-role client; ratings upsert uses
+ * the user JWT so auth.uid() matches rated_by.
  */
 export async function submitUserRating(
   bookExternalId: string,
   ratings: ContentRating,
   options?: SubmitRatingOptions
-): Promise<
-  | {
-      success: true;
-      userRating: ContentRating;
-      communityRatings: CommunityRatingsSummary;
-    }
-  | { success: false; error: string }
-> {
+): Promise<SubmitRatingSuccess | SubmitRatingFailure> {
   if (!isSupabaseConfigured()) {
-    return { success: false, error: "Supabase is not configured." };
+    return ratingFail("Supabase is not configured.", {
+      code: "supabase_unconfigured",
+    });
   }
 
-  // 1) Session user from the route (getUser) or a JWT/cookie verify.
-  //    Never start the insert if this is null.
   let sessionUserId: string | null = options?.verifiedUserId?.trim() || null;
   let accessToken = options?.accessToken?.trim() || "";
   if (!sessionUserId) {
@@ -1041,54 +1090,81 @@ export async function submitUserRating(
       accessToken: options?.accessToken,
     });
     if ("error" in auth) {
-      return { success: false, error: SIGN_IN_TO_INSCRIBE };
+      return ratingFail(auth.error, {
+        code: auth.code ?? "no_user",
+        authRetryable: true,
+      });
     }
     sessionUserId = auth.user.id;
     accessToken = auth.accessToken;
   }
 
   if (!sessionUserId) {
-    return { success: false, error: SIGN_IN_TO_INSCRIBE };
+    return ratingFail("No authenticated user on this request.", {
+      code: "no_user",
+      authRetryable: true,
+    });
   }
 
   if (options?.expectedUserId && options.expectedUserId !== sessionUserId) {
-    return {
-      success: false,
-      error: "Signed-in user does not match the rating being saved.",
-    };
+    return ratingFail("Signed-in user does not match the rating being saved.", {
+      code: "user_mismatch",
+      sessionUserId,
+    });
+  }
+
+  if (!accessToken) {
+    return ratingFail(
+      "Signed in but no access token was available for the ratings write.",
+      {
+        code: "missing_access_token",
+        sessionUserId,
+        authRetryable: true,
+      }
+    );
   }
 
   if (isColumnMarkedMissing("ratings", "romance")) {
-    return { success: false, error: ROMANCE_HINT };
+    return ratingFail(ROMANCE_HINT, {
+      code: "missing_romance_column",
+      sessionUserId,
+    });
   }
 
-  // 2) Write client: service role after getUser() (server-only), else the
-  //    user JWT so PostgREST auth.uid() matches rated_by. Never anon-only.
+  const jwtClient = createJwtPostgrestClient(accessToken);
+  if ("error" in jwtClient) {
+    return ratingFail(jwtClient.error, {
+      code: "missing_access_token",
+      sessionUserId,
+      authRetryable: true,
+    });
+  }
+  const userClient = jwtClient.supabase;
+
   const admin = createServiceRoleClient();
-  let supabase: SupabaseClient | null =
-    !("error" in admin) ? admin.supabase : null;
-  if (!supabase && accessToken) {
-    const jwtClient = createJwtPostgrestClient(accessToken);
-    if (!("error" in jwtClient)) {
-      supabase = jwtClient.supabase;
-    }
-  }
-  if (!supabase) {
-    return { success: false, error: SIGN_IN_TO_INSCRIBE };
-  }
+  const profileClient = !("error" in admin) ? admin.supabase : userClient;
 
-  const profileResult = await ensureProfileExists(supabase, sessionUserId);
+  const profileResult = await ensureProfileExists(profileClient, sessionUserId);
   if (!profileResult.ok) {
-    return { success: false, error: profileResult.error };
+    return ratingFail(profileResult.error, {
+      code: profileResult.code,
+      sessionUserId,
+      authRetryable: isPermissionDeniedError(
+        profileResult.error,
+        profileResult.code ?? undefined
+      ),
+    });
   }
 
-  const bookResult = await ensureBookRecord(supabase, bookExternalId);
+  const bookResult = await ensureBookRecord(bookExternalId);
   if ("error" in bookResult) {
-    return { success: false, error: bookResult.error };
+    return ratingFail(bookResult.error, {
+      code: bookResult.code,
+      sessionUserId,
+    });
   }
 
-  // Always include romance — do not strip it on schema errors (that made saves
-  // appear to succeed while Romance never persisted).
+  // Form keys map to schema columns: spice → sexual_content, themes → ideology.
   const row = {
     book_id: bookResult.bookDbId,
     rated_by: sessionUserId,
@@ -1100,45 +1176,56 @@ export async function submitUserRating(
     pacing: ratings.pacing,
   };
 
-  // Unique (book_id, rated_by). rated_by is always the verified auth user id
-  // (the same id as auth.uid() from getUser()). Never insert without that id.
-  const { error } = await supabase
+  // Unique constraint ratings_user_book_unique (book_id, rated_by).
+  const { error } = await userClient
     .from("ratings")
     .upsert(row, { onConflict: "book_id,rated_by" });
 
   if (error) {
     noteMissingColumnFromError("ratings", "romance", error.message);
     noteMissingColumnFromError("ratings", "spice_level", error.message);
-    return { success: false, error: formatRatingError(error.message) };
+    const described = describeSupabaseError(error);
+    return ratingFail(described.message, {
+      code: described.code,
+      sessionUserId,
+      authRetryable: isPermissionDeniedError(error.message, error.code),
+    });
   }
 
-  // Confirm the row, then re-fetch community averages on the same write client.
   const readBack = await fetchUserRatingRow(
-    supabase,
+    userClient,
     bookResult.bookDbId,
     sessionUserId
   );
 
   if (!readBack.data) {
-    return {
-      success: false,
-      error:
-        "Rating write did not persist (row missing on read-back). Sign out and back in, then try again.",
-    };
+    return ratingFail(
+      readBack.error
+        ? `Rating write did not persist on read-back: ${readBack.error}`
+        : "Rating write did not persist (row missing on read-back).",
+      {
+        code: "readback_missing",
+        sessionUserId,
+        authRetryable: Boolean(
+          readBack.error && isPermissionDeniedError(readBack.error)
+        ),
+      }
+    );
   }
 
   const expected = normalizeUserRating(ratings);
   const userRating = readBack.data;
 
-  // If the romance column is missing, read-back defaults Romance to 0 and looks
-  // "saved." Fail loudly instead of silently dropping the user's mark.
   if (userRating.romance !== expected.romance) {
     markColumnMissing("ratings", "romance");
-    return { success: false, error: ROMANCE_HINT };
+    return ratingFail(ROMANCE_HINT, {
+      code: "missing_romance_column",
+      sessionUserId,
+    });
   }
 
   const allRatings = await fetchAllRatingsForBook(
-    supabase,
+    userClient,
     bookResult.bookDbId
   );
   const communityRatings = summarizeCommunityRatings(
@@ -1149,5 +1236,5 @@ export async function submitUserRating(
   revalidatePath("/rated");
   revalidatePath("/stats");
 
-  return { success: true, userRating, communityRatings };
+  return { success: true, userRating, communityRatings, sessionUserId };
 }

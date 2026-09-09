@@ -25,8 +25,39 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
-const RATING_SAVE_ERROR =
-  "Those marks could not be recorded. Stay on this page and try again. If it fails twice, sign in again.";
+
+type RatingSavePayload = {
+  ok?: boolean;
+  status?: number;
+  code?: string | null;
+  message?: string;
+  error?: string;
+  communityRatings?: CommunityRatingsSummary;
+  userRating?: ContentRating;
+  averages?: CommunityRatingsSummary["averages"];
+  count?: number;
+};
+
+function bannerFromRatingResponse(
+  response: Response,
+  data: RatingSavePayload
+): string {
+  const message =
+    (typeof data.message === "string" && data.message.trim()) ||
+    (typeof data.error === "string" && data.error.trim()) ||
+    "";
+  const status = data.status ?? response.status;
+  const code =
+    typeof data.code === "string" && data.code.trim() ? data.code.trim() : "";
+  if (message) {
+    const extras = [code, status ? `HTTP ${status}` : ""].filter(
+      (part) => part && !message.includes(part)
+    );
+    return extras.length ? `${message} (${extras.join(", ")})` : message;
+  }
+  if (status === 401) return SIGN_IN_TO_INSCRIBE;
+  return "Those marks could not be recorded. Stay on this page and try again.";
+}
 
 type RatingFormProps = {
   bookId: string;
@@ -226,27 +257,16 @@ export function RatingForm({
         body: JSON.stringify(submitted),
       });
 
-      let data: {
-        error?: string;
-        communityRatings?: CommunityRatingsSummary;
-        userRating?: ContentRating;
-        averages?: CommunityRatingsSummary["averages"];
-        count?: number;
-      } = {};
+      let data: RatingSavePayload = {};
       try {
-        data = (await response.json()) as typeof data;
+        data = (await response.json()) as RatingSavePayload;
       } catch {
-        setError(RATING_SAVE_ERROR);
+        setError(bannerFromRatingResponse(response, {}));
         return;
       }
 
-      if (response.status === 401) {
-        setError(SIGN_IN_TO_INSCRIBE);
-        return;
-      }
-
-      if (!response.ok) {
-        setError(RATING_SAVE_ERROR);
+      if (!response.ok || data.ok === false) {
+        setError(bannerFromRatingResponse(response, data));
         return;
       }
 
@@ -255,28 +275,11 @@ export function RatingForm({
 
       if (data.communityRatings) {
         applyCommunityRatings(data.communityRatings);
-      }
-
-      try {
-        const refresh = await fetchWithAuthRetry(`/api/books/${bookId}/ratings`, {
-          credentials: "include",
-          cache: "no-store",
+      } else if (typeof data.count === "number") {
+        applyCommunityRatings({
+          averages: data.averages ?? null,
+          count: data.count,
         });
-        // One read after a successful save — never retry on 401.
-        if (refresh.status !== 401 && refresh.ok) {
-          const next = (await refresh.json()) as {
-            averages?: CommunityRatingsSummary["averages"];
-            count?: number;
-          };
-          if (typeof next.count === "number" && next.count > 0) {
-            applyCommunityRatings({
-              averages: next.averages ?? null,
-              count: next.count,
-            });
-          }
-        }
-      } catch {
-        // Community refresh is best-effort; the save already succeeded.
       }
 
       // Let browse cards show Inscribed immediately after return (same tab).
@@ -305,8 +308,12 @@ export function RatingForm({
         return;
       }
       router.refresh();
-    } catch {
-      setError(RATING_SAVE_ERROR);
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Those marks could not be recorded. Stay on this page and try again."
+      );
     } finally {
       setLoading(false);
     }

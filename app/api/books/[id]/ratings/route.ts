@@ -2,12 +2,14 @@ import {
   getCommunityRatings,
   getUserRatingForBook,
   submitUserRating,
+  type CommunityRatingsSummary,
 } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createAuthenticatedClient,
   createClient,
   getBearerToken,
+  hasRequestAuthCookie,
 } from "@/lib/supabase/server";
 import { withTimeout } from "@/lib/provider-resilience";
 import type { ContentRating } from "@/types";
@@ -26,6 +28,25 @@ const RATING_KEYS: (keyof ContentRating)[] = [
   "pacing",
 ];
 
+const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
+
+export type RatingSaveResponse = {
+  ok: boolean;
+  status: number;
+  code: string | null;
+  message: string;
+  sessionUserId: string | null;
+  communityRatings?: CommunityRatingsSummary;
+  userRating?: ContentRating;
+};
+
+function ratingJson(payload: RatingSaveResponse) {
+  return NextResponse.json(payload, {
+    status: payload.status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 function isValidRating(value: unknown): value is ContentRating {
   if (!value || typeof value !== "object") return false;
 
@@ -33,6 +54,34 @@ function isValidRating(value: unknown): value is ContentRating {
     const rating = (value as ContentRating)[key];
     return typeof rating === "number" && rating >= 0 && rating <= 5;
   });
+}
+
+function failureStatus(code: string | null, message: string): number {
+  if (code === "supabase_unconfigured" || /not configured/i.test(message)) {
+    return 503;
+  }
+  if (code === "book_not_found" || /book not found/i.test(message)) {
+    return 404;
+  }
+  if (
+    code === "no_user" ||
+    code === "invalid_token" ||
+    /sign in to inscribe/i.test(message)
+  ) {
+    return 401;
+  }
+  if (
+    code === "42501" ||
+    code === "PGRST301" ||
+    code === "user_mismatch" ||
+    /row-level security/i.test(message)
+  ) {
+    return 403;
+  }
+  if (code === "missing_romance_column" || /each rating must be/i.test(message)) {
+    return 400;
+  }
+  return 500;
 }
 
 export async function GET(
@@ -103,10 +152,6 @@ export async function GET(
   }
 }
 
-const SIGN_IN_TO_INSCRIBE = "Sign in to inscribe";
-const RATING_SAVE_ERROR =
-  "Those marks could not be recorded. Stay on this page and try again. If it fails twice, sign in again.";
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -114,65 +159,164 @@ export async function POST(
   const { id: bookExternalId } = await params;
 
   if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      { error: "Supabase is not configured." },
-      { status: 503 }
-    );
+    return ratingJson({
+      ok: false,
+      status: 503,
+      code: "supabase_unconfigured",
+      message: "Supabase is not configured.",
+      sessionUserId: null,
+    });
   }
 
-  // Cookie session via createServerClient; Bearer is optional extra.
-  const supabase = await createClient();
+  const cookieClient = await createClient();
   const bearer = getBearerToken(request);
-  let user = bearer
-    ? (await supabase.auth.getUser(bearer)).data.user
-    : null;
-  let accessToken = bearer;
-  if (!user) {
-    user = (await supabase.auth.getUser()).data.user;
+  const hasCookie = await hasRequestAuthCookie();
+  const hadSessionHint = hasCookie || Boolean(bearer);
+
+  let authCode: string | null = null;
+  let authMessage: string | null = null;
+  let refreshed = false;
+
+  async function loadUser() {
+    if (bearer) {
+      const { data, error } = await cookieClient.auth.getUser(bearer);
+      if (error) {
+        authCode = error.code ?? authCode;
+        authMessage = error.message;
+      }
+      if (data.user) return data.user;
+    }
+    const { data, error } = await cookieClient.auth.getUser();
+    if (error) {
+      authCode = error.code ?? authCode;
+      authMessage = error.message;
+    }
+    return data.user;
   }
+
+  let user = await loadUser();
+  let accessToken = bearer;
+
   if (user && !accessToken) {
     accessToken =
-      (await supabase.auth.getSession()).data.session?.access_token ?? null;
+      (await cookieClient.auth.getSession()).data.session?.access_token ?? null;
+  }
+
+  // Cookie/Bearer present: never tell them to sign in again. Refresh once.
+  if (!user && hadSessionHint) {
+    refreshed = true;
+    const { data, error } = await cookieClient.auth.refreshSession();
+    if (error) {
+      authCode = error.code ?? authCode;
+      authMessage = error.message;
+    }
+    user = data.user ?? (await cookieClient.auth.getUser()).data.user;
+    accessToken = data.session?.access_token ?? accessToken;
   }
 
   if (!user) {
-    return NextResponse.json({ error: SIGN_IN_TO_INSCRIBE }, { status: 401 });
+    if (!hadSessionHint) {
+      return ratingJson({
+        ok: false,
+        status: 401,
+        code: authCode ?? "no_user",
+        message: SIGN_IN_TO_INSCRIBE,
+        sessionUserId: null,
+      });
+    }
+    return ratingJson({
+      ok: false,
+      status: 401,
+      code: authCode ?? "session_refresh_failed",
+      message:
+        authMessage ||
+        "A session cookie was present but getUser() and refreshSession() could not verify the user.",
+      sessionUserId: null,
+    });
+  }
+
+  if (!accessToken) {
+    accessToken =
+      (await cookieClient.auth.getSession()).data.session?.access_token ?? null;
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid request body." },
-      { status: 400 }
-    );
+    return ratingJson({
+      ok: false,
+      status: 400,
+      code: "invalid_body",
+      message: "Invalid request body.",
+      sessionUserId: user.id,
+    });
   }
 
   if (!isValidRating(body)) {
-    return NextResponse.json(
-      { error: "Each rating must be a number between 0 and 5." },
-      { status: 400 }
-    );
+    return ratingJson({
+      ok: false,
+      status: 400,
+      code: "invalid_ratings",
+      message: "Each rating must be a number between 0 and 5.",
+      sessionUserId: user.id,
+    });
   }
 
-  const result = await submitUserRating(bookExternalId, body, {
-    expectedUserId: user.id,
-    accessToken,
-    verifiedUserId: user.id,
-  });
+  const ratings: ContentRating = {
+    sexual_content: body.sexual_content,
+    romance: body.romance,
+    lgbt: body.lgbt,
+    horror: body.horror,
+    ideology: body.ideology,
+    pacing: body.pacing,
+  };
+
+  async function attempt() {
+    return submitUserRating(bookExternalId, ratings, {
+      expectedUserId: user!.id,
+      accessToken,
+      verifiedUserId: user!.id,
+    });
+  }
+
+  let result = await attempt();
+
+  if (!result.success && result.authRetryable && !refreshed && hadSessionHint) {
+    refreshed = true;
+    const { data, error } = await cookieClient.auth.refreshSession();
+    if (!error && (data.session?.access_token || data.user)) {
+      accessToken = data.session?.access_token ?? accessToken;
+      if (data.user) user = data.user;
+      result = await attempt();
+    } else if (error) {
+      result = {
+        ...result,
+        code: result.code ?? error.code ?? "session_refresh_failed",
+        error: `${result.error} Refresh: ${error.message}`,
+      };
+    }
+  }
 
   if (!result.success) {
-    const isAuth = /sign in to inscribe|not signed in/i.test(result.error);
-    return NextResponse.json(
-      { error: isAuth ? SIGN_IN_TO_INSCRIBE : RATING_SAVE_ERROR },
-      { status: isAuth ? 401 : 500 }
-    );
+    let status = failureStatus(result.code, result.error);
+    // getUser() already succeeded — do not send a sign-in 401.
+    if (status === 401) status = 403;
+    return ratingJson({
+      ok: false,
+      status,
+      code: result.code,
+      message: result.error,
+      sessionUserId: result.sessionUserId ?? user.id,
+    });
   }
 
-  return NextResponse.json({
-    success: true,
+  return ratingJson({
+    ok: true,
+    status: 200,
+    code: null,
     message: "Your marks have been recorded in the tome.",
+    sessionUserId: result.sessionUserId,
     communityRatings: result.communityRatings,
     userRating: result.userRating,
   });
