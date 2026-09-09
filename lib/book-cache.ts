@@ -188,10 +188,10 @@ export async function findBookIdBySlugOrIsbn(
 /**
  * Idempotent books-row write used by rating saves and detail-page cache.
  *
- * 1) Reuse slug match
- * 2) Reuse ISBN match (do not insert a second row)
- * 3) Insert: conflict on isbn when present, else slug
- * 4) On 23505 books_isbn_unique, SELECT the existing ISBN row and use it
+ * Always upsert on slug so we never insert a second row for the same slug
+ * (books_slug_unique). After the write, SELECT id WHERE slug = $slug and
+ * use that id for ratings. On 23505 (e.g. books_isbn_unique), recover the
+ * existing row instead of inserting another.
  */
 export async function ensureBookRow(
   supabase: SupabaseClient,
@@ -203,50 +203,42 @@ export async function ensureBookRow(
     return { error: "Book not found." };
   }
 
-  const row = bookDetailToDbRow(slug, book);
-  const isbn = row.isbn;
-
-  const existing = await findBookIdBySlugOrIsbn(supabase, { slug, isbn });
-  if (existing) {
-    if (isbn) {
-      const { error: slugError } = await supabase
-        .from("books")
-        .update({ slug })
-        .eq("id", existing)
-        .neq("slug", slug);
-      if (slugError && !isUniqueViolation(slugError.message)) {
-        console.error("[book-cache] slug align failed:", slugError.message);
-      }
-    }
-    return { bookDbId: existing };
-  }
-
-  const onConflict = isbn ? "isbn" : "slug";
+  const bookRow = bookDetailToDbRow(slug, book);
   const { error: upsertError } = await supabase
     .from("books")
-    .upsert(row, { onConflict });
+    .upsert(bookRow, { onConflict: "slug" });
+
+  const { data: slugRow } = await supabase
+    .from("books")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (slugRow?.id) {
+    return { bookDbId: slugRow.id };
+  }
 
   if (upsertError) {
-    if (isIsbnUniqueViolation(upsertError.message) && isbn) {
-      const byIsbn = await findBookIdBySlugOrIsbn(supabase, { isbn, slug });
+    if (isIsbnUniqueViolation(upsertError.message) && bookRow.isbn) {
+      const byIsbn = await findBookIdBySlugOrIsbn(supabase, {
+        isbn: bookRow.isbn,
+        slug,
+      });
       if (byIsbn) return { bookDbId: byIsbn };
     }
     if (isUniqueViolation(upsertError.message)) {
-      const recovered = await findBookIdBySlugOrIsbn(supabase, { slug, isbn });
+      const recovered = await findBookIdBySlugOrIsbn(supabase, {
+        slug,
+        isbn: bookRow.isbn,
+      });
       if (recovered) return { bookDbId: recovered };
     }
     return { error: upsertError.message };
   }
 
-  const bookDbId = await findBookIdBySlugOrIsbn(supabase, { slug, isbn });
-  if (!bookDbId) {
-    return {
-      error:
-        "Book row could not be saved or read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
-    };
-  }
-
-  return { bookDbId };
+  return {
+    error:
+      "Book row could not be saved or read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
+  };
 }
 
 /**
