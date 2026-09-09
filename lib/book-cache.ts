@@ -6,10 +6,7 @@ import {
   isNonRetryableDataApiError,
   markColumnMissing,
 } from "@/lib/supabase/schema-cache";
-import {
-  createClient,
-  createServiceRoleClient,
-} from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import type { BookDetail, BookSource } from "@/types/book";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -24,6 +21,18 @@ export type BookDbRow = {
   genre: string | null;
   page_count: number | null;
 };
+
+/**
+ * Production `books` columns that exist without the optional Hardcover
+ * migration. Never include hardcover_cached_at here — that column 42703s
+ * on hosts that have not applied 20260909_books_hardcover_cached_at.
+ */
+const BOOK_READ_COLUMNS =
+  "id, slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count";
+
+function isHardcoverEnabled(): boolean {
+  return process.env.HARDCOVER_ENABLED === "true";
+}
 
 /** Digits-only ISBN suitable for `books.isbn` (null when missing/invalid). */
 export function bookIsbnKey(isbn: string | null | undefined): string | null {
@@ -119,17 +128,18 @@ export function dbBookToDetail(row: BookDbRow): BookDetail | null {
   };
 }
 
-async function resolveCacheClient(): Promise<SupabaseClient | null> {
+/**
+ * Books upserts/reads that write a row MUST use the service-role key.
+ * Never fall back to the anon/user JWT — that hits 42501 RLS on insert.
+ */
+function resolveBooksWriteClient(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null;
-
   const admin = createServiceRoleClient();
-  if (!("error" in admin)) return admin.supabase;
-
-  try {
-    return await createClient();
-  } catch {
+  if ("error" in admin) {
+    console.error("[book-cache] service role unavailable:", admin.error);
     return null;
   }
+  return admin.supabase;
 }
 
 /**
@@ -143,14 +153,12 @@ export async function getCachedBookBySlug(
   if (!trimmed || !isSupabaseConfigured()) return null;
 
   try {
-    const supabase = await resolveCacheClient();
+    const supabase = resolveBooksWriteClient();
     if (!supabase) return null;
 
     const { data, error } = await supabase
       .from("books")
-      .select(
-        "slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count"
-      )
+      .select(BOOK_READ_COLUMNS)
       .eq("slug", trimmed)
       .maybeSingle();
 
@@ -215,13 +223,21 @@ export async function findBookIdBySlugOrIsbn(
  * existing row instead of inserting another.
  */
 export async function ensureBookRow(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   externalId: string,
   book: BookDetail
 ): Promise<{ bookDbId: string } | { error: string }> {
   const slug = externalId.trim();
   if (!slug || !book.title?.trim()) {
     return { error: "Book not found." };
+  }
+
+  const supabase = resolveBooksWriteClient();
+  if (!supabase) {
+    return {
+      error:
+        "Book row could not be saved. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
+    };
   }
 
   const bookRow = bookDetailToDbRow(slug, book);
@@ -275,8 +291,13 @@ export async function cacheBookDetail(
   if (!slug || !book.title?.trim() || !isSupabaseConfigured()) return false;
 
   try {
-    const supabase = await resolveCacheClient();
-    if (!supabase) return false;
+    const supabase = resolveBooksWriteClient();
+    if (!supabase) {
+      console.error(
+        "[book-cache] upsert skipped: SUPABASE_SERVICE_ROLE_KEY is not set"
+      );
+      return false;
+    }
 
     const result = await ensureBookRow(supabase, slug, book);
     if ("error" in result) {
@@ -318,7 +339,8 @@ function isHardcoverColumnMissing(message: string): boolean {
 
 /**
  * Read a 7-day Hardcover overlay from the existing books row.
- * Missing column / 57014 / any error → null (caller uses memory cache or API).
+ * No-op unless HARDCOVER_ENABLED=true (does not select hardcover_cached_at).
+ * Missing column / 57014 / any error → null (caller uses Google/OL).
  */
 export async function readHardcoverRowCache(
   slug: string,
@@ -326,14 +348,14 @@ export async function readHardcoverRowCache(
 ): Promise<HardcoverRowCache | null> {
   const trimmed = slug.trim();
   if (!trimmed || !isSupabaseConfigured()) return null;
+  if (!isHardcoverEnabled()) return null;
   if (isColumnMarkedMissing("books", HARDCOVER_CACHED_AT_COLUMN)) return null;
 
   try {
-    const supabase = await resolveCacheClient();
+    const supabase = resolveBooksWriteClient();
     if (!supabase) return null;
 
-    const select =
-      "slug, isbn, title, cover_image_url, description, published_year, genre, hardcover_cached_at";
+    const select = `${BOOK_READ_COLUMNS}, hardcover_cached_at`;
 
     const { data, error } = await supabase
       .from("books")
@@ -406,9 +428,8 @@ export async function readHardcoverRowCache(
 
 /**
  * Stamp hardcover_cached_at (and winning tags) on an existing books row.
- * Title/cover/description/year are written by cacheBookDetail after merge
- * so a Hardcover blurb cannot overwrite a Google/OL synopsis already on the row.
- * Never inserts. Missing column / 57014 → skip.
+ * No-op unless HARDCOVER_ENABLED=true. Never selects/updates the cache
+ * column when the flag is off. Never inserts. Missing column / 57014 → skip.
  */
 export async function persistHardcoverCache(
   slug: string,
@@ -417,9 +438,10 @@ export async function persistHardcoverCache(
 ): Promise<void> {
   const trimmed = slug.trim();
   if (!trimmed || record.empty || !isSupabaseConfigured()) return;
+  if (!isHardcoverEnabled()) return;
 
   try {
-    const supabase = await resolveCacheClient();
+    const supabase = resolveBooksWriteClient();
     if (!supabase) return;
 
     const fields: Record<string, unknown> = {};
