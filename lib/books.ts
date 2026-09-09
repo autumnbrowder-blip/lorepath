@@ -296,7 +296,7 @@ async function fetchSearchPageUncached(
   const googleRawCount = googleResult.rawCount ?? 0;
   const googleError = googleResult.error;
 
-  if (googleError) {
+  if (googleError && googleError.status !== 429) {
     console.error("[searchBooks] Google Books provider error:", {
       query: searchQuery,
       page: pageNumber,
@@ -307,24 +307,10 @@ async function fetchSearchPageUncached(
     });
   }
 
-  const searchErrors: string[] = [];
-  if (googleError) {
-    searchErrors.push(
-      `google:${googleError.status ?? googleError.message}`
-    );
-  }
-  if (settledFailed(openLibrarySettled)) {
-    searchErrors.push("ol:rejected");
-  }
-  if (includeGutendex && settledFailed(gutendexSettled)) {
-    searchErrors.push("gutendex:rejected");
-  }
-  const google429 = googleError?.status === 429;
-  console.info(
-    google429
-      ? `[search] q=${searchQuery} google=429 remaining=OL ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} err=${searchErrors.join(",") || "-"}`
-      : `[search] q=${searchQuery} google=${googleBooks.length} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} err=${searchErrors.join(",") || "-"}`
-  );
+  const google429 =
+    googleBooks.length === 0 &&
+    (googleError?.status === 429 ||
+      /rate limit|quota/i.test(googleError?.message ?? ""));
 
   if (SEARCH_DEBUG) {
     console.info("[searchBooks] raw provider counts", {
@@ -370,62 +356,79 @@ async function fetchSearchPageUncached(
     }
   }
   const providerHitCount = rawCombined.length;
+  const archiveRows = [...openLibraryBooks, ...gutendexBooks];
 
-  let books = finalizeSearchBooks(rawCombined, {
-    ratedIds: new Set(),
-    protectedBooks: [],
-    debug: SEARCH_DEBUG,
-    query: genreMode ? undefined : searchQuery,
-  });
-  books = await enrichBooksWithCovers(books);
-  const afterFinalize = books;
-  books = dropBrowseJunk(books).filter((book) => !isTitleOnlyStub(book));
+  let books: BookSummary[] = [];
+  let afterFinalize: BookSummary[] = [];
+  try {
+    books = finalizeSearchBooks(rawCombined, {
+      ratedIds: new Set(),
+      protectedBooks: [],
+      debug: SEARCH_DEBUG,
+      query: genreMode ? undefined : searchQuery,
+    });
+    books = enrichBooksWithCovers(books);
+    afterFinalize = books;
+    books = dropBrowseJunk(books).filter((book) => !isTitleOnlyStub(book));
 
-  if (genreMode) {
-    books = preferMatchingGenreTags(books, searchQuery);
-  } else {
-    books = rankBrowseSearchResults(books, searchQuery);
+    if (genreMode) {
+      books = preferMatchingGenreTags(books, searchQuery);
+    } else {
+      books = rankBrowseSearchResults(books, searchQuery);
+    }
+
+    if (books.length === 0 && providerHitCount > 0) {
+      const matching = (afterFinalize.length > 0 ? afterFinalize : rawCombined)
+        .filter((book) => !isTitleOnlyStub(book))
+        .filter((book) =>
+          genreMode ? true : bookMatchesSearchQuery(book, searchQuery)
+        );
+      books = genreMode
+        ? matching
+        : rankBrowseSearchResults(matching, searchQuery);
+    }
+  } catch (error) {
+    console.error("[searchBooks] finalize/rank failed; keeping archive rows:", error);
+    books = [];
   }
 
-  if (books.length === 0 && providerHitCount > 0) {
-    const matching = (afterFinalize.length > 0 ? afterFinalize : rawCombined)
-      .filter((book) => !isTitleOnlyStub(book))
-      .filter((book) =>
-        genreMode ? true : bookMatchesSearchQuery(book, searchQuery)
-      );
-    books = genreMode
-      ? matching
-      : rankBrowseSearchResults(matching, searchQuery);
-  }
-
-  // Google 429 / ranking must never wipe Open Library hits.
-  if (books.length === 0 && openLibraryBooks.length > 0) {
-    const olKeep = dropBrowseJunk(openLibraryBooks).filter(
+  // Google 429 / ranking / google=0 must never wipe Open Library or Gutendex.
+  if (books.length === 0 && archiveRows.length > 0) {
+    const kept = dropBrowseJunk(archiveRows).filter(
       (book) => !isTitleOnlyStub(book)
     );
-    books = genreMode
-      ? olKeep
+    const ranked = genreMode
+      ? kept
       : rankBrowseSearchResults(
-          olKeep.filter((book) => bookMatchesSearchQuery(book, searchQuery)),
+          kept.filter((book) => bookMatchesSearchQuery(book, searchQuery)),
           searchQuery
         );
+    if (ranked.length > 0) {
+      books = ranked;
+    } else if (kept.length > 0) {
+      books = kept;
+    } else {
+      books = archiveRows.filter((book) => !isTitleOnlyStub(book));
+    }
     if (books.length === 0) {
-      books =
-        olKeep.length > 0
-          ? olKeep
-          : openLibraryBooks.filter((book) => !isTitleOnlyStub(book));
+      books = archiveRows;
     }
   }
 
-  const attempted = [
-    openLibrarySettled,
-    googleSettled,
-    ...(includeGutendex ? [gutendexSettled] : []),
-    ...(includeIsbndb ? [isbndbSettled] : []),
-  ];
+  const googleFailed =
+    settledFailed(googleSettled) || Boolean(googleError);
+  const olFailed = settledFailed(openLibrarySettled);
+  const gutendexFailed =
+    includeGutendex &&
+    (settledFailed(gutendexSettled) || settledTimedOut(gutendexSettled));
+  const isbndbFailed =
+    includeIsbndb &&
+    (settledFailed(isbndbSettled) || settledTimedOut(isbndbSettled));
   const allSourcesTimedOut =
-    attempted.length > 0 &&
-    attempted.every((result) => settledFailed(result) || settledTimedOut(result));
+    olFailed &&
+    googleFailed &&
+    (!includeGutendex || gutendexFailed) &&
+    (!includeIsbndb || isbndbFailed);
 
   const sourceCounts: Partial<Record<BookSource, number>> = {
     openlibrary: openLibraryBooks.length,
@@ -433,6 +436,9 @@ async function fetchSearchPageUncached(
     gutendex: gutendexBooks.length,
     isbndb: isbndbBooks.length,
   };
+  const sources = SEARCH_SOURCES.filter(
+    (source) => (sourceCounts[source] ?? 0) > 0
+  );
 
   const hasMore =
     openLibraryResult.hasMore ||
@@ -440,17 +446,24 @@ async function fetchSearchPageUncached(
     gutendexResult.hasMore ||
     isbndbResult.hasMore;
 
-  const warning = google429 ? GOOGLE_429_WARNING : null;
+  const warning =
+    google429 && books.length > 0 ? GOOGLE_429_WARNING : null;
+  const googleStatus = google429 ? "429" : String(googleBooks.length);
+  console.info(
+    `[search] q=${searchQuery} google=${googleStatus} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} out=${books.length}`
+  );
 
   return {
     query: searchQuery,
     books: cloneSummaries(books),
-    sources: SEARCH_SOURCES,
+    sources,
     sourceCounts,
     source: "multi",
     page: pageNumber,
     hasMore,
-    googleError,
+    googleError: google429
+      ? { message: googleError?.message ?? "Google Books rate limit reached.", status: 429 }
+      : googleError,
     googleRawCount,
     allSourcesTimedOut,
     warning,
@@ -511,7 +524,8 @@ export async function searchBooks(
     pageResult.books.length > 0 &&
     echoed === requested &&
     (pageResult.sourceCounts.openlibrary ?? 0) +
-      (pageResult.sourceCounts.google ?? 0) >
+      (pageResult.sourceCounts.google ?? 0) +
+      (pageResult.sourceCounts.gutendex ?? 0) >
       0
   ) {
     // A Google 429 must not occupy the 10-min success slot. Cache OL briefly

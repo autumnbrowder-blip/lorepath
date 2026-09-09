@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 /** Override per-fetch force-cache so provider results cannot leak across q. */
 export const fetchCache = "force-no-store";
-/** Netlify / serverless hard ceiling (seconds). Handler budget is tighter. */
-export const maxDuration = 10;
+/** Allow Open Library's ~12s search.json budget to finish (Google is optional). */
+export const maxDuration = 15;
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0, must-revalidate",
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     const books = result.books ?? [];
     const error =
       books.length === 0 && result.allSourcesTimedOut
-        ? "Search took too long across the shelves. Try again shortly."
+        ? "archives unavailable"
         : null;
 
     return NextResponse.json(
@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
         books,
         page: result.page,
         hasMore: result.hasMore,
+        sources: result.sources ?? [],
         sourceCounts: result.sourceCounts ?? {},
         warning: result.warning ?? null,
         googleError: result.googleError ?? null,
@@ -71,8 +72,7 @@ export async function GET(request: NextRequest) {
         hasMore: false,
         sourceCounts: {},
         warning: null,
-        error:
-          "Search could not reach every shelf. Try again shortly.",
+        error: "archives unavailable",
       },
       {
         status: 200,

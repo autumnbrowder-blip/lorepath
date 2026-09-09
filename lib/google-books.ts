@@ -458,10 +458,7 @@ export async function searchGoogleBooks(
       if (options?.tripRateLimitCircuit !== false) {
         openGoogle429Circuit();
       }
-      console.error(
-        "[searchGoogleBooks] Rate limited (429). Returning empty page.",
-        { query, page, mode: options?.mode, ...providerError }
-      );
+      console.warn("[searchGoogleBooks] 429 — using other archives");
       const page429: GoogleBooksPageResult = {
         books: [],
         hasMore: false,

@@ -45,14 +45,8 @@ async function loadBrowseRatedIdentities(): Promise<UserRatedIdentity[]> {
 export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   const { q, mode } = await searchParams;
   const initialMode = isGenreSearchMode(mode) ? "genre" : "text";
-  const hasQuery = Boolean(q?.trim());
 
-  const emptyBestsellers: Awaited<ReturnType<typeof fetchNytBestsellers>> = {
-    books: [],
-  };
-
-  // Auth cookie check + NYT in parallel. Signed-in: one rated-ids query.
-  // Signed-out: zero ratings fetches. Never per-card ratings.
+  // Always load NYT so clearing search restores bestsellers instead of a blank page.
   const [isLoggedIn, bestsellers] = await Promise.all([
     withTimeoutFallback(
       loadBrowseUser(),
@@ -60,14 +54,12 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
       "browse-auth",
       false
     ),
-    hasQuery
-      ? Promise.resolve(emptyBestsellers)
-      : withTimeoutFallback(
-          fetchNytBestsellers(),
-          PAGE_FETCH_TIMEOUT_MS,
-          "browse-nyt",
-          NYT_UNAVAILABLE
-        ),
+    withTimeoutFallback(
+      fetchNytBestsellers(),
+      PAGE_FETCH_TIMEOUT_MS,
+      "browse-nyt",
+      NYT_UNAVAILABLE
+    ),
   ]);
 
   const ratedIdentities = isLoggedIn

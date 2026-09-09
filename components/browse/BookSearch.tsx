@@ -6,7 +6,6 @@ import { SignupPrompt } from "@/components/auth/SignupPrompt";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { queryHint, track } from "@/lib/analytics";
 import {
-  bookMatchesSearchQuery,
   dropBrowseJunk,
   isTitleOnlyStub,
   rankBrowseSearchResults,
@@ -172,13 +171,20 @@ export function BookSearch({
     const books = Array.isArray(data.books)
       ? data.books.map((book: BookSummary) => ({ ...book }))
       : [];
-    if (!response.ok && books.length === 0) {
+    // Rows from OL / Gutendex must still render when Google 429s or sources
+    // omit google. Never throw away a non-empty books array.
+    if (books.length === 0 && !response.ok) {
       throw new Error(data.error ?? "Search failed.");
     }
     const echoed =
       typeof data.query === "string" ? data.query.trim().toLowerCase() : "";
     const requested = repairSearchQuery(searchQuery).toLowerCase();
-    if (echoed && echoed !== requested && repairSearchQuery(echoed).toLowerCase() !== requested) {
+    if (
+      books.length === 0 &&
+      echoed &&
+      echoed !== requested &&
+      repairSearchQuery(echoed).toLowerCase() !== requested
+    ) {
       console.warn("[BookSearch] dropping mismatched search payload", {
         requested: searchQuery,
         echoed: data.query,
@@ -195,7 +201,6 @@ export function BookSearch({
       typeof data.error === "string" &&
       data.error.trim()
     ) {
-      // Soft empty payload from the API — show a gentle message, not leftover cards.
       throw new Error(data.error);
     }
     return {
@@ -216,6 +221,7 @@ export function BookSearch({
       searchRequestIdRef.current += 1;
       setHasSearched(false);
       setResultsQuery("");
+      setBooks([]);
       setPage(1);
       setHasMore(false);
       setLoading(false);
@@ -251,11 +257,14 @@ export function BookSearch({
       const data = await fetchSearchPage(trimmed, 1, mode);
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = (data.books ?? [])
-        .filter((book: BookSummary) => !isTitleOnlyStub(book))
-        .filter((book: BookSummary) => bookMatchesSearchQuery(book, trimmed));
-
-      setBooks(incoming);
+      const incoming = data.books ?? [];
+      // Keep OL-only pages. Do not clear because google=0, sources omit
+      // google, or warning/error is set.
+      if (incoming.length > 0) {
+        setBooks(incoming);
+      } else {
+        setBooks([]);
+      }
       setResultsQuery(trimmed);
       setHasSearched(true);
       setPage(data.page ?? 1);
@@ -309,11 +318,10 @@ export function BookSearch({
       );
       if (requestId !== searchRequestIdRef.current) return;
 
-      const incoming = (data.books ?? [])
-        .filter((book: BookSummary) => !isTitleOnlyStub(book))
-        .filter((book: BookSummary) => bookMatchesSearchQuery(book, trimmed));
-
-      setBooks((current) => mergeSearchResults(current, incoming, trimmed));
+      const incoming = data.books ?? [];
+      if (incoming.length > 0) {
+        setBooks((current) => mergeSearchResults(current, incoming, trimmed));
+      }
       setPage(data.page ?? nextPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -356,8 +364,8 @@ export function BookSearch({
   }
 
   const queryEmpty = !query.trim();
-  const showBestsellers =
-    queryEmpty || (!hasSearched && books.length === 0);
+  // Keep NYT on screen until search results arrive; restore it when q is empty.
+  const showBestsellers = queryEmpty || !hasSearched;
 
   return (
     <FantasyPageShell variant="browse" priority>
@@ -375,7 +383,23 @@ export function BookSearch({
               <input
                 type="search"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setQuery(next);
+                  if (!next.trim()) {
+                    abortRef.current?.abort();
+                    searchRequestIdRef.current += 1;
+                    setHasSearched(false);
+                    setResultsQuery("");
+                    setBooks([]);
+                    setPage(1);
+                    setHasMore(false);
+                    setLoading(false);
+                    setLoadingMore(false);
+                    setError(null);
+                    setWarning(null);
+                  }
+                }}
                 // Search runs only on form submit — never on each keystroke
                 placeholder="Search by title, author, or ISBN…"
                 autoComplete="off"
