@@ -8,7 +8,7 @@ import {
   PROFILE_UPDATED_EVENT,
   resolveDisplayName,
 } from "@/lib/avatars";
-import { createClient } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { isNonRetryableDataApiError } from "@/lib/supabase/schema-cache";
 import type { User } from "@supabase/supabase-js";
@@ -57,18 +57,10 @@ export function AuthNav() {
     async function loadProfile(userId: string) {
       try {
         const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.user?.id || session.user.id !== userId) {
-          if (!cancelled) setProfile(null);
-          return;
-        }
-
         const { data, error } = await supabase
           .from("profiles")
           .select("display_name, avatar_key")
-          .eq("id", session.user.id)
+          .eq("id", userId)
           .maybeSingle();
 
         if (cancelled) return;
@@ -104,15 +96,15 @@ export function AuthNav() {
       }, AUTH_TIMEOUT_MS);
 
       supabase.auth
-        .getSession()
-        .then(({ data: { session } }) => {
+        .getUser()
+        .then(({ data: { user: currentUser } }) => {
           if (cancelled) return;
           window.clearTimeout(timeoutId);
-          const currentUser = session?.user ?? null;
-          setUser(currentUser);
+          if (currentUser) {
+            setUser(currentUser);
+            void loadProfile(currentUser.id);
+          }
           setLoading(false);
-          if (currentUser) void loadProfile(currentUser.id);
-          else setProfile(null);
         })
         .catch(() => {
           if (cancelled) return;
@@ -122,14 +114,21 @@ export function AuthNav() {
 
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, session) => {
-        const nextUser = session?.user ?? null;
-        setUser(nextUser);
-        setLoading(false);
-        if (nextUser) void loadProfile(nextUser.id);
-        else {
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        // Only SIGNED_OUT flips the navbar to Login. A stale 401 or a
+        // TOKEN_REFRESHED with a briefly empty session must not log us out.
+        if (event === "SIGNED_OUT") {
+          setUser(null);
           setProfile(null);
           setOpen(false);
+          setLoading(false);
+          return;
+        }
+        const nextUser = session?.user ?? null;
+        if (nextUser) {
+          setUser(nextUser);
+          setLoading(false);
+          void loadProfile(nextUser.id);
         }
       });
 
@@ -147,8 +146,8 @@ export function AuthNav() {
           }));
         }
 
-        void supabase.auth.getSession().then(({ data: { session } }) => {
-          if (session?.user) void loadProfile(session.user.id);
+        void supabase.auth.getUser().then(({ data: { user: currentUser } }) => {
+          if (currentUser) void loadProfile(currentUser.id);
         });
       };
 

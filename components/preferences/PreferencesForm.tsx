@@ -6,7 +6,7 @@ import {
   DEFAULT_USER_PREFERENCES,
   PREFERENCE_CATEGORIES,
 } from "@/lib/rating-categories";
-import { getBrowserAccessToken } from "@/lib/supabase";
+import { fetchWithAuthRetry } from "@/lib/supabase/client";
 import type { ContentRating } from "@/types";
 import { AlertCircle, CheckCircle2, Feather, Loader2, Scroll } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -95,21 +95,11 @@ export function PreferencesForm({
         return;
       }
 
-      const token = await getBrowserAccessToken();
-      if (!token) {
-        throw new Error(
-          "You are not signed in (no access token). Please sign out and back in, then try again."
-        );
-      }
-
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      };
-
-      const response = await fetch("/api/preferences", {
+      const response = await fetchWithAuthRetry("/api/preferences", {
         method: "PUT",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+        },
         credentials: "same-origin",
         cache: "no-store",
         body: JSON.stringify(preferences),

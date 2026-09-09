@@ -10,7 +10,8 @@ import {
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
 import type { CommunityRatingsSummary } from "@/lib/ratings";
-import { getBrowserAccessToken } from "@/lib/supabase";
+import { createClient, fetchWithAuthRetry } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { ContentRating } from "@/types";
 import {
   AlertCircle,
@@ -87,6 +88,13 @@ export function RatingForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  /**
+   * Client session. SSR `isLoggedIn` can lag if cookies were stale; if
+   * getUser() returns a user we never show "create a free account".
+   */
+  const [clientSignedIn, setClientSignedIn] = useState<boolean | null>(
+    isLoggedIn ? true : null
+  );
   /** True once a saved rating exists for this book (SSR, GET, or after first save). */
   const [hasExistingRating, setHasExistingRating] = useState(
     initialRatings != null
@@ -101,6 +109,45 @@ export function RatingForm({
   const statusRef = useRef<HTMLDivElement | null>(null);
   /** Save-error alert — scrolled and focused so it cannot be missed. */
   const errorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setClientSignedIn(isLoggedIn);
+      return;
+    }
+
+    let cancelled = false;
+    const supabase = createClient();
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled && !isLoggedIn) {
+        setClientSignedIn((prev) => (prev === true ? prev : false));
+      }
+    }, 5000);
+
+    supabase.auth
+      .getUser()
+      .then(({ data: { user } }) => {
+        if (cancelled) return;
+        window.clearTimeout(timeoutId);
+        if (user) {
+          setClientSignedIn(true);
+          return;
+        }
+        if (!isLoggedIn) setClientSignedIn(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        window.clearTimeout(timeoutId);
+        if (!isLoggedIn) setClientSignedIn(false);
+      });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isLoggedIn]);
+
+  const canRate = isLoggedIn || clientSignedIn === true;
 
   // Scroll only on success, after the message has rendered.
   // scroll-margin-top on the container keeps it clear of the sticky navbar.
@@ -157,7 +204,7 @@ export function RatingForm({
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!isLoggedIn) {
+    if (!canRate) {
       setError(SIGN_IN_TO_INSCRIBE);
       return;
     }
@@ -169,17 +216,11 @@ export function RatingForm({
     const submitted = ratings;
 
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      const token = await getBrowserAccessToken();
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
-      const response = await fetch(`/api/books/${bookId}/ratings`, {
+      const response = await fetchWithAuthRetry(`/api/books/${bookId}/ratings`, {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+        },
         credentials: "include",
         cache: "no-store",
         body: JSON.stringify(submitted),
@@ -217,14 +258,9 @@ export function RatingForm({
       }
 
       try {
-        const refreshHeaders: Record<string, string> = {};
-        if (token) {
-          refreshHeaders.Authorization = `Bearer ${token}`;
-        }
-        const refresh = await fetch(`/api/books/${bookId}/ratings`, {
+        const refresh = await fetchWithAuthRetry(`/api/books/${bookId}/ratings`, {
           credentials: "include",
           cache: "no-store",
-          headers: refreshHeaders,
         });
         // One read after a successful save — never retry on 401.
         if (refresh.status !== 401 && refresh.ok) {
@@ -280,7 +316,7 @@ export function RatingForm({
     <section
       aria-labelledby="rate-book-heading"
       className={`ornate-plaque preference-codex-box-shell rating-form-panel animate-fade-in-up${
-        isLoggedIn ? " rating-form-panel--inscribed" : ""
+        canRate ? " rating-form-panel--inscribed" : ""
       }`}
       style={{ animationDelay: "150ms" }}
     >
@@ -311,9 +347,7 @@ export function RatingForm({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col px-0.5">
-          {!isLoggedIn ? (
-            <SignupPrompt redirectTo={redirectTo} variant="panel" />
-          ) : (
+          {canRate ? (
             <>
               <p className="mb-2 shrink-0 font-heading text-sm leading-snug nav-dragon-gold sm:text-base">
                 0 = none · 5 = very high
@@ -395,6 +429,15 @@ export function RatingForm({
                 </button>
               </form>
             </>
+          ) : clientSignedIn === false ? (
+            <SignupPrompt redirectTo={redirectTo} variant="panel" />
+          ) : (
+            <div className="flex flex-1 items-center justify-center py-8">
+              <Loader2
+                className="h-5 w-5 animate-spin text-[#e2c06a]"
+                aria-label="Checking your session"
+              />
+            </div>
           )}
         </div>
       </div>
