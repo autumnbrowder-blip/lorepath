@@ -35,6 +35,8 @@ type BookInformationProps = {
   latestEditionId?: string | null;
   /** Year of that newest printing when it differs from this record. */
   latestEditionYear?: number | null;
+  /** Catalog 429 — show a small banner, still render the tome. */
+  archivesBusy?: boolean;
 };
 
 const YEAR_LINK_CLASS =
@@ -48,6 +50,7 @@ export function BookInformation({
   searchQuery,
   latestEditionId,
   latestEditionYear: latestEditionYearOverride,
+  archivesBusy = false,
 }: BookInformationProps) {
   const stamped = applyKnownWorkFields(book);
   const { displayYear, firstPublishYear, latestEditionYear } =
@@ -189,6 +192,15 @@ export function BookInformation({
           <h1 className="metallic-emerald-book-title mb-3 font-heading text-2xl font-medium tracking-normal sm:mb-4 sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
             {book.title}
           </h1>
+
+          {archivesBusy ? (
+            <p
+              role="status"
+              className="mb-3 font-heading text-sm leading-snug nav-dragon-gold sm:mb-4"
+            >
+              The outer archives are busy
+            </p>
+          ) : null}
 
           <p className="metallic-emerald mb-3 font-heading text-base font-normal leading-relaxed sm:mb-4 sm:text-lg">
             by{" "}

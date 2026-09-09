@@ -618,5 +618,8 @@ export async function enrichBookDetail(book: BookDetail): Promise<BookDetail> {
   // Re-assert known original + latest years after other merges.
   enriched = await enrichKnownEditionMetadata(enriched);
 
+  // Hardcover runs in loadBookDetail via enrichFromHardcover after this
+  // returns, so a 1.8s Hardcover timeout cannot starve OL enrichment or
+  // decide whether the tome page exists.
   return { ...enriched, id: book.id };
 }

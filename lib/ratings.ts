@@ -446,20 +446,27 @@ export async function getUserRatingForBook(
   }
 
   try {
-    const supabase = await getTrustedUserDataClient();
-    if (!supabase) return null;
+    const { withTimeout } = await import("@/lib/provider-resilience");
+    return await withTimeout(
+      (async () => {
+        const supabase = await getTrustedUserDataClient();
+        if (!supabase) return null;
 
-    const bookId = await findBookIdBySlugOrIsbn(supabase, {
-      slug: bookExternalId,
-      isbn,
-    });
+        const bookId = await findBookIdBySlugOrIsbn(supabase, {
+          slug: bookExternalId,
+          isbn,
+        });
 
-    if (!bookId) {
-      return null;
-    }
+        if (!bookId) {
+          return null;
+        }
 
-    const result = await fetchUserRatingRow(supabase, bookId, userId);
-    return result.data;
+        const result = await fetchUserRatingRow(supabase, bookId, userId);
+        return result.data;
+      })(),
+      2000,
+      `user-rating:${bookExternalId}`
+    );
   } catch {
     return null;
   }

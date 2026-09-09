@@ -10,8 +10,9 @@ type BookDetailErrorProps = {
 };
 
 /**
- * Last-resort boundary — prefer fantasy resting/unopened copy over a blank crash.
- * Primary outage mapping lives in page.tsx (RateLimitError → archives resting).
+ * Last-resort boundary for uncaught render errors. Catalog 429, Hardcover
+ * timeout/401/quota, and Supabase 57014 must not reach here when a title
+ * exists — those degrade in page.tsx (banner / empty Marks).
  */
 export default function BookDetailError({ reset }: BookDetailErrorProps) {
   return (

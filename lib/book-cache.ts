@@ -1,6 +1,12 @@
 import { normalizeIsbn, parsePublishedYear } from "@/lib/book-utils";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
+  isColumnMarkedMissing,
+  isMissingColumnError,
+  isNonRetryableDataApiError,
+  markColumnMissing,
+} from "@/lib/supabase/schema-cache";
+import {
   createClient,
   createServiceRoleClient,
 } from "@/lib/supabase/server";
@@ -72,7 +78,7 @@ export function bookDetailToDbRow(externalId: string, book: BookDetail) {
     cover_image_url: book.coverUrl,
     description: book.description,
     published_year: book.publishedYear,
-    genre: book.genres[0] ?? null,
+    genre: book.genres.filter(Boolean).slice(0, 5).join(", ") || null,
     page_count: book.pageCount,
   };
 }
@@ -100,7 +106,9 @@ export function dbBookToDetail(row: BookDbRow): BookDetail | null {
     authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
     coverUrl: row.cover_image_url,
     description: row.description,
-    genres: row.genre?.trim() ? [row.genre.trim()] : [],
+    genres: row.genre?.trim()
+      ? row.genre.split(", ").map((tag) => tag.trim()).filter(Boolean)
+      : [],
     publishedYear: parsePublishedYear(row.published_year),
     source: sourceFromBookSlug(row.slug),
     isbn: row.isbn,
@@ -145,10 +153,21 @@ export async function getCachedBookBySlug(
       .eq("slug", trimmed)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+      const message = error.message ?? "";
+      if (isNonRetryableDataApiError(message, error.code)) {
+        console.error("[book-cache] read skipped:", {
+          code: error.code,
+          message,
+        });
+      }
+      return null;
+    }
+    if (!data) return null;
     return dbBookToDetail(data as BookDbRow);
   } catch (error) {
-    console.error("[book-cache] read failed:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[book-cache] read failed:", message);
     return null;
   }
 }
@@ -266,5 +285,180 @@ export async function cacheBookDetail(
   } catch (error) {
     console.error("[book-cache] upsert error:", error);
     return false;
+  }
+}
+
+const HARDCOVER_CACHED_AT_COLUMN = "hardcover_cached_at";
+const HARDCOVER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export type HardcoverRowCache = {
+  title: string | null;
+  description: string | null;
+  coverUrl: string | null;
+  tags: string[];
+  year: number | null;
+  cachedAt: number;
+  empty: boolean;
+};
+
+function tagsFromGenre(genre: string | null | undefined): string[] {
+  if (!genre?.trim()) return [];
+  return genre
+    .split(", ")
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function isHardcoverColumnMissing(message: string): boolean {
+  return isMissingColumnError(message, HARDCOVER_CACHED_AT_COLUMN);
+}
+
+/**
+ * Read a 24h Hardcover overlay from the existing books row.
+ * Missing column / 57014 / any error → null (caller uses memory cache or API).
+ */
+export async function readHardcoverRowCache(
+  slug: string,
+  isbn?: string | null
+): Promise<HardcoverRowCache | null> {
+  const trimmed = slug.trim();
+  if (!trimmed || !isSupabaseConfigured()) return null;
+  if (isColumnMarkedMissing("books", HARDCOVER_CACHED_AT_COLUMN)) return null;
+
+  try {
+    const supabase = await resolveCacheClient();
+    if (!supabase) return null;
+
+    const select =
+      "slug, isbn, title, cover_image_url, description, published_year, genre, hardcover_cached_at";
+
+    const { data, error } = await supabase
+      .from("books")
+      .select(select)
+      .eq("slug", trimmed)
+      .maybeSingle();
+
+    if (error) {
+      const message = error.message ?? "";
+      if (isHardcoverColumnMissing(message)) {
+        markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
+        return null;
+      }
+      if (isNonRetryableDataApiError(message, error.code)) {
+        console.error("[book-cache] hardcover read skipped:", {
+          code: error.code,
+          message,
+        });
+      }
+      return null;
+    }
+
+    let row = data as
+      | (BookDbRow & { hardcover_cached_at?: string | null })
+      | null;
+
+    if (!row) {
+      const candidates = isbnLookupCandidates(isbn);
+      if (candidates.length === 0) return null;
+      const byIsbn = await supabase
+        .from("books")
+        .select(select)
+        .in("isbn", candidates)
+        .limit(1)
+        .maybeSingle();
+      if (byIsbn.error) {
+        if (isHardcoverColumnMissing(byIsbn.error.message ?? "")) {
+          markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
+        }
+        return null;
+      }
+      row = byIsbn.data as (BookDbRow & { hardcover_cached_at?: string | null }) | null;
+    }
+
+    const cachedAtRaw = row?.hardcover_cached_at;
+    if (!row || !cachedAtRaw) return null;
+    const cachedAt = Date.parse(cachedAtRaw);
+    if (!Number.isFinite(cachedAt)) return null;
+    if (Date.now() - cachedAt >= HARDCOVER_CACHE_TTL_MS) return null;
+
+    return {
+      title: row.title ?? null,
+      description: row.description,
+      coverUrl: row.cover_image_url,
+      tags: tagsFromGenre(row.genre),
+      year: parsePublishedYear(row.published_year),
+      cachedAt,
+      empty: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isHardcoverColumnMissing(message)) {
+      markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
+    }
+    console.error("[book-cache] hardcover read failed:", message);
+    return null;
+  }
+}
+
+/**
+ * Stamp hardcover_cached_at (and winning tags) on an existing books row.
+ * Title/cover/description/year are written by cacheBookDetail after merge
+ * so a Hardcover blurb cannot overwrite a Google/OL synopsis already on the row.
+ * Never inserts. Missing column / 57014 → skip.
+ */
+export async function persistHardcoverCache(
+  slug: string,
+  isbn: string | null,
+  record: HardcoverRowCache
+): Promise<void> {
+  const trimmed = slug.trim();
+  if (!trimmed || record.empty || !isSupabaseConfigured()) return;
+
+  try {
+    const supabase = await resolveCacheClient();
+    if (!supabase) return;
+
+    const fields: Record<string, unknown> = {};
+    if (record.tags.length > 0) {
+      fields.genre = record.tags.slice(0, 5).join(", ");
+    }
+    const withTimestamp = isColumnMarkedMissing("books", HARDCOVER_CACHED_AT_COLUMN)
+      ? fields
+      : {
+          ...fields,
+          hardcover_cached_at: new Date(record.cachedAt).toISOString(),
+        };
+
+    if (Object.keys(withTimestamp).length === 0) return;
+
+    const apply = async (payload: Record<string, unknown>) => {
+      const bySlug = await supabase.from("books").update(payload).eq("slug", trimmed);
+      if (!bySlug.error) return bySlug;
+      const candidates = isbnLookupCandidates(isbn);
+      if (candidates.length === 0) return bySlug;
+      return supabase.from("books").update(payload).in("isbn", candidates);
+    };
+
+    const { error } = await apply(withTimestamp);
+
+    if (error && isHardcoverColumnMissing(error.message ?? "")) {
+      markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
+      if (Object.keys(fields).length === 0) return;
+      const retry = await apply(fields);
+      if (retry.error) {
+        console.error("[book-cache] hardcover write skipped:", retry.error.message);
+      }
+      return;
+    }
+
+    if (error && isNonRetryableDataApiError(error.message ?? "", error.code)) {
+      console.error("[book-cache] hardcover write skipped:", {
+        code: error.code,
+        message: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("[book-cache] hardcover write failed:", error);
   }
 }

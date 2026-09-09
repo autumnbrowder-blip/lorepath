@@ -277,14 +277,21 @@ export async function getUserPreferences(
   }
 
   try {
-    const supabase = await getTrustedUserDataClient();
-    if (!supabase) return null;
+    const { withTimeout } = await import("@/lib/provider-resilience");
+    return await withTimeout(
+      (async () => {
+        const supabase = await getTrustedUserDataClient();
+        if (!supabase) return null;
 
-    const result = await fetchPreferenceRow(supabase, userId);
-    if (result.error || !result.data) {
-      return null;
-    }
-    return normalizePreferences(result.data);
+        const result = await fetchPreferenceRow(supabase, userId);
+        if (result.error || !result.data) {
+          return null;
+        }
+        return normalizePreferences(result.data);
+      })(),
+      2000,
+      `user-preferences:${userId}`
+    );
   } catch {
     return null;
   }

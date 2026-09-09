@@ -179,9 +179,17 @@ async function loadViewerState(
     }
 
     const [preferences, rating, community] = await Promise.allSettled([
-      getUserPreferences(user.id),
-      getUserRatingForBook(bookExternalId, user.id, isbn),
-      getCommunityRatings(bookExternalId, isbn),
+      withTimeout(getUserPreferences(user.id), 2000, "page-user-preferences"),
+      withTimeout(
+        getUserRatingForBook(bookExternalId, user.id, isbn),
+        2000,
+        "page-user-rating"
+      ),
+      withTimeout(
+        getCommunityRatings(bookExternalId, isbn),
+        2000,
+        "page-community-ratings"
+      ),
     ]);
 
     return {
@@ -212,12 +220,27 @@ export default async function BookDetailPage({
   const searchQuery = q?.trim() ?? "";
   const fromFirstRating = from === "first-rating";
 
-  const { book, failures, transient } = await loadBookDetail(id, {
-    searchHint: searchQuery || hint?.trim() || undefined,
-  });
+  let book = null as Awaited<ReturnType<typeof loadBookDetail>>["book"];
+  let failures: Awaited<ReturnType<typeof loadBookDetail>>["failures"] = [];
+  let transient = false;
+  let archivesBusy = false;
+  try {
+    const detail = await loadBookDetail(id, {
+      searchHint: searchQuery || hint?.trim() || undefined,
+    });
+    book = detail.book;
+    failures = detail.failures;
+    transient = detail.transient;
+    archivesBusy = detail.archivesBusy;
+  } catch (error) {
+    console.error("[books/[id]] loadBookDetail threw:", {
+      id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 
-  // Only reach the fantasy page when no usable record could be loaded at all.
-  if (!book) {
+  // TomeUnavailable / transient only when no catalog returned a title.
+  if (!book?.title?.trim()) {
     console.error("[books/[id]] tome unavailable:", {
       id,
       q: searchQuery || null,
@@ -275,16 +298,8 @@ export default async function BookDetailPage({
     currentBookId: id,
   });
 
-  const [viewer, latestEdition] = await Promise.all([
-    withTimeout(loadViewerState(id, book.isbn), 2000, "page-viewer-state").catch(
-      (error) => {
-        console.error("[books/[id]] viewer state timed out:", {
-          id,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return ANONYMOUS_VIEWER;
-      }
-    ),
+  const [viewerSettled, latestSettled] = await Promise.allSettled([
+    withTimeout(loadViewerState(id, book.isbn), 2000, "page-viewer-state"),
     cachedDistinct
       ? Promise.resolve(cachedDistinct)
       : withTimeoutFallback(
@@ -304,11 +319,26 @@ export default async function BookDetailPage({
               currentBookId: id,
             });
           }),
-          3500,
+          2000,
           "latest-edition-id",
           null
         ),
   ]);
+
+  const viewer =
+    viewerSettled.status === "fulfilled" ? viewerSettled.value : ANONYMOUS_VIEWER;
+  const latestEdition =
+    latestSettled.status === "fulfilled" ? latestSettled.value : cachedDistinct;
+
+  if (viewerSettled.status === "rejected") {
+    console.error("[books/[id]] viewer state failed:", {
+      id,
+      message:
+        viewerSettled.reason instanceof Error
+          ? viewerSettled.reason.message
+          : String(viewerSettled.reason),
+    });
+  }
 
   const communityRatings = viewer.communityRatings;
   const { user, userPreferences, userRating } = viewer;
@@ -344,6 +374,7 @@ export default async function BookDetailPage({
                 searchQuery={searchQuery}
                 latestEditionId={latestEdition?.id ?? null}
                 latestEditionYear={latestEdition?.year ?? null}
+                archivesBusy={archivesBusy}
                 communityRatings={<LiveCommunityRatings />}
                 matchScore={
                   <LiveMatchScore

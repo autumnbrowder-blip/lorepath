@@ -171,6 +171,7 @@ create table public.books (
   published_year  smallint,
   genre           text,
   page_count      integer,
+  hardcover_cached_at timestamptz,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
 

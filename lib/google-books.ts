@@ -47,6 +47,10 @@ function isGoogleSearchCircuitOpen(): boolean {
   return Date.now() < google429Until;
 }
 
+export function isGoogleBooksBusy(): boolean {
+  return isGoogleSearchCircuitOpen();
+}
+
 function openGoogle429Circuit() {
   google429Until = Date.now() + GOOGLE_429_COOLDOWN_MS;
 }
@@ -407,6 +411,7 @@ export async function getGoogleBookById(
       status: 429,
       message: bodyMessage,
     });
+    openGoogle429Circuit();
     throw new RateLimitError(
       bodyMessage ?? "Google Books rate limit reached."
     );
@@ -452,6 +457,7 @@ export async function getGoogleBookByIsbn(
 
   if (response.status === 429) {
     const bodyMessage = await readGoogleErrorBody(response);
+    openGoogle429Circuit();
     throw new RateLimitError(
       bodyMessage ?? "Google Books rate limit reached."
     );
