@@ -3,6 +3,7 @@ import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import {
   getAdminDashboardStats,
   requireAdmin,
+  type AdminBookRatingRow,
   type AdminRecentRating,
   type AdminUserRow,
 } from "@/lib/admin";
@@ -85,6 +86,45 @@ function StatusPill({
     >
       {active ? activeLabel : inactiveLabel}
     </span>
+  );
+}
+
+function BookRatingRow({ book }: { book: AdminBookRatingRow }) {
+  return (
+    <li className="rounded-sm border border-gold-600/30 bg-forest-950/40 px-3 py-3 sm:px-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="min-w-0 font-heading text-base font-semibold leading-snug nav-dragon-gold sm:text-lg">
+          {book.title}
+        </h3>
+        <p className="shrink-0 font-storybook text-sm font-semibold tabular-nums nav-dragon-gold">
+          {book.ratingsCount} {book.ratingsCount === 1 ? "rating" : "ratings"}
+        </p>
+      </div>
+      <p className="mt-1 font-heading text-sm text-[#e2c06a]/85">
+        {book.author ?? "Unknown author"}
+      </p>
+      <p className="mt-1 break-all font-heading text-sm text-[#e2c06a]/80">
+        <span className="font-display text-[10px] uppercase tracking-[0.14em] text-[#e2c06a]/65">
+          slug / external_id
+        </span>{" "}
+        {book.slug}
+      </p>
+      <p className="mt-1 font-heading text-sm text-[#e2c06a]/80">
+        unique raters {book.distinctUsers}
+      </p>
+      {book.isDuplicateWork ? (
+        <p className="mt-2 font-heading text-sm leading-snug text-[#f0d78a]">
+          Same title+author as another books row — ratings are split. Other
+          book_id{book.duplicateBookIds.length === 1 ? "" : "s"}:{" "}
+          {book.duplicateBookIds.join(", ")} (slug{" "}
+          {book.duplicateSlugs.join(", ")})
+        </p>
+      ) : null}
+      <p className="mt-2 break-all font-mono text-[11px] leading-snug text-[#e2c06a]/70">
+        ratings_count={book.ratingsCount} distinct_users={book.distinctUsers}{" "}
+        book_id={book.bookId}
+      </p>
+    </li>
   );
 }
 
@@ -186,8 +226,9 @@ export default async function AdminPage() {
           </p>
           <h1 className="page-title mt-2 nav-dragon-gold">Admin Dashboard</h1>
           <p className="mt-2 font-heading text-lg nav-dragon-gold">
-            A quiet tally of the realm — users, ratings, pageviews, and recent
-            marks.
+            A quiet tally of the realm — users, live rating counts from{" "}
+            <span className="font-mono text-sm">public.ratings</span>, pageviews,
+            and recent marks.
           </p>
         </header>
 
@@ -307,6 +348,45 @@ export default async function AdminPage() {
               <ul className="space-y-2.5">
                 {stats.users.map((user) => (
                   <UserRow key={user.id} user={user} />
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <div
+            className="h-px w-full bg-gradient-to-r from-transparent via-gold-600/50 to-transparent"
+            aria-hidden="true"
+          />
+
+          <section aria-labelledby="admin-book-ratings-heading">
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-gold-600/50 bg-gradient-to-br from-gold-500/30 to-transparent text-accent">
+                <BookOpen className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h2
+                  id="admin-book-ratings-heading"
+                  className="font-storybook text-base font-bold tracking-[0.1em] nav-dragon-gold sm:text-lg"
+                >
+                  Ratings by book
+                </h2>
+                <p className="font-heading text-sm nav-dragon-gold">
+                  Live COUNT(*) from public.ratings grouped by books.id — duplicate
+                  titles stay as separate rows
+                </p>
+              </div>
+            </div>
+
+            {stats.bookRatings.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-gold-600/35 bg-forest-950/45 px-3 py-4">
+                <p className="font-heading text-sm leading-snug nav-dragon-gold">
+                  No rating rows in public.ratings yet.
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-2.5">
+                {stats.bookRatings.map((book) => (
+                  <BookRatingRow key={book.bookId} book={book} />
                 ))}
               </ul>
             )}

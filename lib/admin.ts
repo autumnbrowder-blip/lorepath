@@ -1,5 +1,9 @@
 import { getAvatarOption } from "@/lib/avatars";
 import {
+  normalizeAuthorForDedupe,
+  normalizeTitleForDedupe,
+} from "@/lib/book-utils";
+import {
   getPageViewStats,
   type PageViewStats,
 } from "@/lib/page-views";
@@ -35,13 +39,46 @@ export type AdminUserRow = {
   createdAt: string;
 };
 
+export type AdminBookRatingRow = {
+  bookId: string;
+  title: string;
+  author: string | null;
+  /** Route identity / books.slug (not books.id). */
+  slug: string;
+  /** Live COUNT(*) of public.ratings rows for this books.id. */
+  ratingsCount: number;
+  /** Live COUNT(DISTINCT rated_by) — labeled "unique raters" in the UI. */
+  distinctUsers: number;
+  /** Same normalized title+author as at least one other rated book row. */
+  isDuplicateWork: boolean;
+  /** Other books.id values that share the same title+author key. */
+  duplicateBookIds: string[];
+  duplicateSlugs: string[];
+};
+
 export type AdminDashboardStats = {
   totalUsers: number;
   totalRatings: number;
   booksWithRatings: number;
+  bookRatings: AdminBookRatingRow[];
   recentRatings: AdminRecentRating[];
   users: AdminUserRow[];
   pageViews: PageViewStats;
+};
+
+const RATINGS_PAGE_SIZE = 1000;
+const BOOKS_IN_CHUNK = 100;
+
+type RatingIdentityRow = {
+  book_id: string;
+  rated_by: string | null;
+};
+
+type BookIdentityRow = {
+  id: string;
+  title: string | null;
+  author: string | null;
+  slug: string | null;
 };
 
 function coerceIsAdmin(value: unknown): boolean {
@@ -178,6 +215,160 @@ function mapRecentRating(row: {
   };
 }
 
+function workDedupeKey(title: string, author: string | null): string | null {
+  const normalizedTitle = normalizeTitleForDedupe(title);
+  if (!normalizedTitle) return null;
+  const normalizedAuthor = author ? normalizeAuthorForDedupe(author) : "";
+  return normalizedAuthor
+    ? `${normalizedTitle}|${normalizedAuthor}`
+    : `title:${normalizedTitle}`;
+}
+
+/**
+ * Live identity columns from public.ratings — COUNT(*) later groups by
+ * book_id. Never books.rating_count, never community_averages.
+ */
+async function loadLiveRatingIdentities(
+  supabase: SupabaseClient
+): Promise<RatingIdentityRow[]> {
+  const rows: RatingIdentityRow[] = [];
+
+  for (let from = 0; from < 50_000; from += RATINGS_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("ratings")
+      .select("book_id, rated_by")
+      .range(from, from + RATINGS_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("[admin] live ratings COUNT(*) query failed:", error.message);
+      break;
+    }
+    if (!data?.length) break;
+
+    for (const row of data) {
+      const bookId = typeof row.book_id === "string" ? row.book_id : "";
+      if (!bookId) continue;
+      rows.push({
+        book_id: bookId,
+        rated_by: typeof row.rated_by === "string" ? row.rated_by : null,
+      });
+    }
+
+    if (data.length < RATINGS_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
+async function loadBooksByIds(
+  supabase: SupabaseClient,
+  bookIds: string[]
+): Promise<Map<string, BookIdentityRow>> {
+  const map = new Map<string, BookIdentityRow>();
+  if (bookIds.length === 0) return map;
+
+  for (let i = 0; i < bookIds.length; i += BOOKS_IN_CHUNK) {
+    const chunk = bookIds.slice(i, i + BOOKS_IN_CHUNK);
+    const { data, error } = await supabase
+      .from("books")
+      .select("id, title, author, slug")
+      .in("id", chunk);
+
+    if (error) {
+      console.error("[admin] books lookup for rating counts failed:", error.message);
+      continue;
+    }
+
+    for (const row of data ?? []) {
+      const id = typeof row.id === "string" ? row.id : "";
+      if (!id) continue;
+      map.set(id, {
+        id,
+        title: typeof row.title === "string" ? row.title : null,
+        author: typeof row.author === "string" ? row.author : null,
+        slug: typeof row.slug === "string" ? row.slug : null,
+      });
+    }
+  }
+
+  return map;
+}
+
+function aggregateBookRatingRows(
+  ratingRows: RatingIdentityRow[],
+  booksById: Map<string, BookIdentityRow>
+): AdminBookRatingRow[] {
+  const byBook = new Map<
+    string,
+    { ratingsCount: number; users: Set<string> }
+  >();
+
+  for (const row of ratingRows) {
+    const current = byBook.get(row.book_id) ?? {
+      ratingsCount: 0,
+      users: new Set<string>(),
+    };
+    current.ratingsCount += 1;
+    if (row.rated_by) current.users.add(row.rated_by);
+    byBook.set(row.book_id, current);
+  }
+
+  const draft: AdminBookRatingRow[] = [];
+  const siblingsByKey = new Map<string, string[]>();
+
+  for (const [bookId, counts] of Array.from(byBook.entries())) {
+    const book = booksById.get(bookId);
+    const title =
+      book?.title && book.title.trim() ? book.title.trim() : "Untitled tome";
+    const author =
+      book?.author && book.author.trim() ? book.author.trim() : null;
+    const slug = book?.slug?.trim() || "—";
+    const key = workDedupeKey(title, author);
+
+    draft.push({
+      bookId,
+      title,
+      author,
+      slug,
+      ratingsCount: counts.ratingsCount,
+      distinctUsers: counts.users.size,
+      isDuplicateWork: false,
+      duplicateBookIds: [],
+      duplicateSlugs: [],
+    });
+
+    if (key) {
+      const group = siblingsByKey.get(key) ?? [];
+      group.push(bookId);
+      siblingsByKey.set(key, group);
+    }
+  }
+
+  const bookById = new Map(draft.map((row) => [row.bookId, row]));
+  for (const ids of Array.from(siblingsByKey.values())) {
+    if (ids.length < 2) continue;
+    for (const id of ids) {
+      const row = bookById.get(id);
+      if (!row) continue;
+      const others = ids.filter((otherId) => otherId !== id);
+      row.isDuplicateWork = true;
+      row.duplicateBookIds = others;
+      row.duplicateSlugs = others.map(
+        (otherId) => bookById.get(otherId)?.slug ?? "—"
+      );
+    }
+  }
+
+  draft.sort((a, b) => {
+    if (b.ratingsCount !== a.ratingsCount) return b.ratingsCount - a.ratingsCount;
+    const titleCmp = a.title.localeCompare(b.title);
+    if (titleCmp !== 0) return titleCmp;
+    return a.bookId.localeCompare(b.bookId);
+  });
+
+  return draft;
+}
+
 /**
  * Admin dashboard payload. Always runs requireAdmin first.
  * Stats + user directory are loaded with the service role when available.
@@ -196,12 +387,15 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const [
     usersResult,
     ratingsResult,
+    liveRatingIdentities,
     recentResult,
     profilesResult,
     pageViews,
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
+    // Totals: live COUNT(*) from public.ratings (head), not books.rating_count.
     supabase.from("ratings").select("id", { count: "exact", head: true }),
+    loadLiveRatingIdentities(supabase),
     supabase
       .from("ratings")
       .select(
@@ -231,9 +425,11 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     getPageViewStats(supabase),
   ]);
 
-  // Never SELECT every ratings.book_id — that seq-scans and 57014s.
-  // Head count of ratings is the cheap stand-in (not distinct books).
-  const booksWithRatings = ratingsResult.count ?? 0;
+  const bookIds = Array.from(
+    new Set(liveRatingIdentities.map((row) => row.book_id))
+  );
+  const booksById = await loadBooksByIds(supabase, bookIds);
+  const bookRatings = aggregateBookRatingRows(liveRatingIdentities, booksById);
 
   const emailById = await loadAuthEmailMap(supabase);
 
@@ -273,8 +469,9 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
 
   return {
     totalUsers: usersResult.count ?? users.length,
-    totalRatings: ratingsResult.count ?? 0,
-    booksWithRatings,
+    totalRatings: ratingsResult.count ?? liveRatingIdentities.length,
+    booksWithRatings: bookRatings.length,
+    bookRatings,
     recentRatings: (recentResult.data ?? []).map(mapRecentRating),
     users,
     pageViews,
