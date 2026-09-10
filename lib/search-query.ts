@@ -1,5 +1,19 @@
 import { isAuthorQuery, normalizeTitleForDedupe, repairSearchQuery } from "@/lib/book-utils";
 
+/**
+ * Conservative public-domain classic detector for Gutendex.
+ * "brain damage" and "moriarty" must not match.
+ */
+const PUBLIC_DOMAIN_CLASSIC_RE =
+  /\b(austen|dickens|shakespeare|melville|twain|tolstoy|dostoevsky|dostoyevsky)\b|pride and prejudice|sense and sensibility|moby[\s-]*dick|great expectations|tale of two cities|\bhamlet\b|\bmacbeth\b|romeo and juliet|\bfrankenstein\b|jane eyre|wuthering heights|\bdracula\b|little women|tom sawyer|huckleberry finn|war and peace|crime and punishment|\bodyssey\b|\biliad\b/i;
+
+/** True only for well-known public-domain classics — Gutendex stay skipped otherwise. */
+export function isPublicDomainClassicQuery(query: string): boolean {
+  const q = query.trim();
+  if (!q) return false;
+  return PUBLIC_DOMAIN_CLASSIC_RE.test(q);
+}
+
 export type SearchQueryKind =
   | "isbn"
   | "author"

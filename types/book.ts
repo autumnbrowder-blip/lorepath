@@ -97,7 +97,7 @@ export type BookSearchResult = {
   /** All providers queried together via Promise.allSettled. */
   sources: BookSource[];
   /** Raw hit counts from each provider for this page. */
-  sourceCounts: Partial<Record<BookSource, number>>;
+  sourceCounts: Partial<Record<BookSource | "local", number>>;
   /** Summary label for the search (use `sources` for per-provider detail). */
   source: BookSearchSource;
   /** 1-based page that was fetched. */

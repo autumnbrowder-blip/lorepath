@@ -17,9 +17,9 @@ const NO_STORE_HEADERS = {
 } as const;
 
 /**
- * Catalog search only: Open Library (required) + Google / Gutendex / ISBNdb.
- * Never calls Supabase or Hardcover. A source timeout becomes [] — if any
- * books exist, error is null.
+ * Local public.books + cached NYT first, then Open Library / ISBNdb / Google.
+ * Gutendex only for clear public-domain classics. Never calls Hardcover.
+ * A source timeout becomes [] — if any books exist, error is null.
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;

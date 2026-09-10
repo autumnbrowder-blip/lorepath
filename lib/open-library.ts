@@ -4,7 +4,7 @@ import {
   cleanDescription,
   cleanTitle,
   isLowQualityBook,
-  isAuthorQuery,
+  isPersonNameQuery,
   parsePublishedYear,
 } from "@/lib/book-utils";
 import { parseUtf8Json } from "@/lib/utf8-json";
@@ -164,7 +164,7 @@ export async function searchOpenLibrary(
   try {
     const genreMode = isGenreSearchMode(options?.mode);
     const pageSize = genreMode ? GENRE_PAGE_SIZE : OPEN_LIBRARY_PAGE_SIZE;
-    const authorSearch = !genreMode && isAuthorQuery(query);
+    const authorSearch = !genreMode && isPersonNameQuery(query);
     const params = new URLSearchParams({
       limit: String(pageSize),
       page: String(Math.max(1, page)),
@@ -177,7 +177,7 @@ export async function searchOpenLibrary(
     } else if (authorSearch) {
       params.set("author", query.trim());
     } else {
-      params.set("q", query);
+      params.set("title", query);
     }
 
     /**
@@ -220,13 +220,13 @@ export async function searchOpenLibrary(
     if (result && result.books.length > 0) return result;
 
     // Title-shaped-like-a-name queries ("Fourth Wing", "Project Hail Mary")
-    // find nothing in author mode — retry them as a plain keyword search.
+    // find nothing in author mode — retry them as a title search.
     if (authorSearch) {
-      const keywordParams = new URLSearchParams(params);
-      keywordParams.delete("author");
-      keywordParams.set("q", query);
-      const keywordResult = await runSearch(keywordParams);
-      if (keywordResult) return keywordResult;
+      const titleParams = new URLSearchParams(params);
+      titleParams.delete("author");
+      titleParams.set("title", query);
+      const titleResult = await runSearch(titleParams);
+      if (titleResult) return titleResult;
     }
 
     return result ?? { books: [], hasMore: false };

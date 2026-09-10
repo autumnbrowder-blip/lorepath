@@ -18,6 +18,8 @@ import {
   dropBrowseJunk,
   getBookDedupeKey,
   isAuthorQuery,
+  isPersonNameQuery,
+  isSingleSurnameQuery,
   isJunkCatalogAuthor,
   isTitleOnlyStub,
   normalizeAuthorForDedupe,
@@ -26,7 +28,7 @@ import {
   rankBrowseSearchResults,
   repairMojibake,
 } from "../lib/book-utils";
-import { googleAuthorPriorityQuery, googleSearchQuery, googleTitlePriorityQuery } from "../lib/search-query";
+import { googleAuthorPriorityQuery, googleSearchQuery, googleTitlePriorityQuery, isPublicDomainClassicQuery } from "../lib/search-query";
 import { applyKnownWorkFields } from "../lib/known-editions";
 import type { BookSummary } from "../types/book";
 
@@ -1199,6 +1201,16 @@ check("isAuthorQuery lowercase two-word name", isAuthorQuery("liane moriarty"), 
 check("isAuthorQuery navessa allen", isAuthorQuery("navessa allen"), true);
 check("isAuthorQuery sarah a. parker", isAuthorQuery("sarah a. parker"), true);
 check("isAuthorQuery does not treat Fourth Wing as an author", isAuthorQuery("Fourth Wing"), false);
+check("isAuthorQuery does not treat brain damage as an author", isAuthorQuery("brain damage"), false);
+check("isAuthorQuery does not treat Big Little Truths as an author", isAuthorQuery("Big Little Truths"), false);
+check("google search query for brain damage is intitle once", googleSearchQuery("brain damage"), 'intitle:"brain damage"');
+check("moriarty is a single surname query", isSingleSurnameQuery("moriarty"), true);
+check("brain damage is not a person name", isPersonNameQuery("brain damage"), false);
+check("liane moriarty is a person name", isPersonNameQuery("liane moriarty"), true);
+check("gutendex skips brain damage", isPublicDomainClassicQuery("brain damage"), false);
+check("gutendex skips moriarty", isPublicDomainClassicQuery("moriarty"), false);
+check("gutendex keeps austen", isPublicDomainClassicQuery("jane austen"), true);
+check("gutendex keeps pride and prejudice", isPublicDomainClassicQuery("pride and prejudice"), true);
 
 const rankedWhistler = rankBrowseSearchResults(
   [
@@ -1417,6 +1429,66 @@ const thinRecent = dropBrowseJunk([
   }),
 ]);
 check("dropBrowseJunk keeps 2026 book with no description", thinRecent.length, 1);
+
+const brainDamageRanked = rankBrowseSearchResults(
+  [
+    book({
+      id: "google-brain-science",
+      title: "Brain Plasticity and Recovery",
+      authors: ["A. Neuroscientist"],
+      coverUrl: "https://covers.example/brain-sci.jpg",
+      description: "A survey of cortical remapping after injury.",
+      publishedYear: 2019,
+    }),
+    book({
+      id: "google-brain-damage",
+      title: "Brain Damage",
+      authors: ["Freida McFadden"],
+      coverUrl: "https://covers.example/bd.jpg",
+      description: null,
+      publishedYear: 2025,
+    }),
+    book({
+      id: "ol-brain-stub",
+      title: "Brain Damage",
+      authors: ["Unknown author"],
+      coverUrl: null,
+      description: null,
+      publishedYear: null,
+      source: "openlibrary",
+    }),
+  ],
+  "brain damage"
+);
+check("exact title Brain Damage ranks first", brainDamageRanked[0]?.id, "google-brain-damage");
+check(
+  "McFadden is not buried under brain science",
+  brainDamageRanked.findIndex((row) => row.id === "google-brain-damage") <
+    brainDamageRanked.findIndex((row) => row.id === "google-brain-science") ||
+    !brainDamageRanked.some((row) => row.id === "google-brain-science"),
+  true
+);
+
+const stubVsAuthor = dedupeBooks([
+  book({
+    id: "ol-bd-thin",
+    title: "Brain Damage",
+    authors: ["Freida McFadden"],
+    coverUrl: null,
+    description: null,
+    publishedYear: 2025,
+    source: "openlibrary",
+  }),
+  book({
+    id: "google-bd-cover",
+    title: "Brain Damage",
+    authors: ["Freida McFadden"],
+    coverUrl: "https://covers.example/bd.jpg",
+    description: null,
+    publishedYear: 2025,
+  }),
+]);
+check("dedupe prefers author+cover over title-only stub", stubVsAuthor[0]?.id, "google-bd-cover");
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

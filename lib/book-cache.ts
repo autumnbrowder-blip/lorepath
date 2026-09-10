@@ -1,14 +1,17 @@
 import { normalizeIsbn, parsePublishedYear } from "@/lib/book-utils";
-import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   isColumnMarkedMissing,
   isMissingColumnError,
   isNonRetryableDataApiError,
   markColumnMissing,
 } from "@/lib/supabase/schema-cache";
-import { createServiceRoleClient } from "@/lib/supabase/server";
-import type { BookDetail, BookSource } from "@/types/book";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createServiceRoleClient, noStoreFetch } from "@/lib/supabase/server";
+import type { BookDetail, BookSource, BookSummary } from "@/types/book";
+import {
+  createClient as createSupabaseClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 export type BookDbRow = {
   slug: string;
@@ -29,6 +32,10 @@ export type BookDbRow = {
  */
 const BOOK_READ_COLUMNS =
   "id, slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count";
+
+/** Cheap local search — never `select *`, never ratings. */
+const LOCAL_SEARCH_COLUMNS =
+  "slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count";
 
 function isHardcoverEnabled(): boolean {
   return process.env.HARDCOVER_ENABLED === "true";
@@ -126,6 +133,103 @@ export function dbBookToDetail(row: BookDbRow): BookDetail | null {
     pageCount: row.page_count,
     language: null,
   };
+}
+
+/**
+ * Anon/user-safe SELECT client for public.books reads.
+ * Falls back to service role only when the caller retries after RLS denial.
+ */
+function resolveBooksReadClient(): SupabaseClient | null {
+  const env = getSupabaseEnv();
+  if (!env) return null;
+  return createSupabaseClient(env.url, env.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      fetch: noStoreFetch,
+    },
+  });
+}
+
+function escapeIlikeValue(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/%/g, "\\%")
+    .replace(/_/g, "\\_")
+    .replace(/"/g, "")
+    .replace(/,/g, " ")
+    .replace(/\(/g, " ")
+    .replace(/\)/g, " ")
+    .trim();
+}
+
+function isBooksSelectDenied(message: string, code?: string): boolean {
+  return (
+    code === "42501" ||
+    /permission denied|row-level security|42501/i.test(message)
+  );
+}
+
+/**
+ * One ILIKE on title/author. No ratings join, no Hardcover, no HTTP catalogs.
+ * Anon SELECT first; service-role only if books SELECT is locked down.
+ */
+export async function searchLocalBooks(
+  query: string,
+  limit = 20
+): Promise<BookSummary[]> {
+  const trimmed = query.trim();
+  if (!trimmed || !isSupabaseConfigured()) return [];
+
+  const escaped = escapeIlikeValue(trimmed);
+  if (!escaped) return [];
+  const pattern = `%${escaped}%`;
+  const pageSize = Math.max(1, Math.min(40, limit));
+
+  const run = async (supabase: SupabaseClient) =>
+    supabase
+      .from("books")
+      .select(LOCAL_SEARCH_COLUMNS)
+      .or(`title.ilike."${pattern}",author.ilike."${pattern}"`)
+      .limit(pageSize);
+
+  try {
+    const anon = resolveBooksReadClient();
+    if (!anon) return [];
+
+    let { data, error } = await run(anon);
+    if (error && isBooksSelectDenied(error.message ?? "", error.code)) {
+      const admin = resolveBooksWriteClient();
+      if (admin) {
+        const retry = await run(admin);
+        data = retry.data;
+        error = retry.error;
+      }
+    }
+
+    if (error) {
+      if (isNonRetryableDataApiError(error.message ?? "", error.code)) {
+        console.error("[book-cache] local search skipped:", {
+          code: error.code,
+          message: error.message,
+        });
+      } else {
+        console.error("[book-cache] local search failed:", error.message);
+      }
+      return [];
+    }
+
+    return (data ?? [])
+      .map((row) => dbBookToDetail(row as BookDbRow))
+      .filter((book): book is BookDetail => book !== null);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[book-cache] local search failed:", message);
+    return [];
+  }
 }
 
 /**

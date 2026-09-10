@@ -254,7 +254,7 @@ export function cleanTitle(title?: string | null): string {
 
 /** Title function/content words — "Fourth Wing" must not become author=. */
 const AUTHOR_QUERY_TITLE_TERMS =
-  /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean)$/i;
+  /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean|brain|damage|big|little|truths)$/i;
 
 function isAuthorNameToken(word: string): boolean {
   return /^[A-Za-z][A-Za-z'-]*$/.test(word) && word.length >= 2;
@@ -295,8 +295,47 @@ export function isAuthorQuery(query: string): boolean {
 
   if (words.length < 3 || words.length > 4) return false;
 
-  // Longer names still prefer Cap Case so "Big Little Truths" stays a title.
+  // Longer names still prefer Cap Case so "Big Little Truths" stays a title
+  // (title-ish words are rejected above).
   return words.every((word) => /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word));
+}
+
+/** Single-word classic titles that must not be treated as surnames. */
+const SINGLE_WORD_TITLE_BLOCKLIST = new Set([
+  "hamlet",
+  "macbeth",
+  "othello",
+  "tempest",
+  "frankenstein",
+  "dracula",
+  "emma",
+  "persuasion",
+  "dune",
+  "beloved",
+  "recursion",
+  "ulysses",
+  "iliad",
+  "odyssey",
+  "beowulf",
+  "inferno",
+]);
+
+/**
+ * One token that looks like a surname ("moriarty"), not a title word.
+ * Used so Open Library can set author= without treating "brain damage" as a name.
+ */
+export function isSingleSurnameQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed || /\s/.test(trimmed) || /\d/.test(trimmed)) return false;
+  if (!/^[A-Za-z][A-Za-z'-]{4,}$/.test(trimmed)) return false;
+  if (AUTHOR_QUERY_TITLE_TERMS.test(trimmed)) return false;
+  if (SINGLE_WORD_TITLE_BLOCKLIST.has(trimmed.toLowerCase())) return false;
+  return true;
+}
+
+/** Author-shaped query: full name or a single surname. */
+export function isPersonNameQuery(query: string): boolean {
+  return isAuthorQuery(query) || isSingleSurnameQuery(query);
 }
 
 /**
@@ -1185,6 +1224,7 @@ const CANONICAL_TITLE_AUTHORS: Array<{ title: string; authors: string[] }> = [
   { title: "fourth wing", authors: ["rebecca yarros"] },
   { title: "tender is the flesh", authors: ["agustina bazterrica"] },
   { title: "big little truths", authors: ["liane moriarty"] },
+  { title: "brain damage", authors: ["freida mcfadden"] },
   { title: "whistler", authors: ["ann patchett"] },
   {
     title: "aristotle and dante discover the secrets of the universe",
