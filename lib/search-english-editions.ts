@@ -13,7 +13,7 @@ import {
   normalizeTitleForDedupe,
   parsePublishedYear,
 } from "@/lib/book-utils";
-import { searchGoogleBooks } from "@/lib/google-books";
+import { hasGoogleBooksApiKey, isGoogleBooksBusy, searchGoogleBooks } from "@/lib/google-books";
 import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   findKnownWorkEditions,
@@ -241,6 +241,7 @@ async function findEnglishViaOpenLibraryWorkThin(
 async function findEnglishViaGoogle(
   book: BookSummary
 ): Promise<BookSummary | null> {
+  if (!hasGoogleBooksApiKey() || isGoogleBooksBusy()) return null;
   const query = buildEnglishEditionQuery(book);
   const result = await searchGoogleBooks(query, 1, {
     langRestrict: "en",

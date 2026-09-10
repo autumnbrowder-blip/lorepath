@@ -1,6 +1,6 @@
 import { searchBigBook } from "@/lib/big-book";
 import type { SearchBooksOptions } from "@/lib/genre-search";
-import { searchGoogleBooks, type GoogleBooksPageResult } from "@/lib/google-books";
+import { hasGoogleBooksApiKey, isGoogleBooksBusy, searchGoogleBooks, type GoogleBooksPageResult } from "@/lib/google-books";
 import { searchGutendex } from "@/lib/gutendex";
 import { hasIsbndbApiKey, searchIsbndb } from "@/lib/isbndb";
 import { searchOpenLibrary } from "@/lib/open-library";
@@ -182,7 +182,7 @@ export async function fetchSearchProviderFlood(input: {
   const catalogQuery = plainQuery(primary) || primary;
 
   // One Google HTTP call per flood page — same query choice as searchBooks.
-  {
+  if (hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
     const ms = stepTimeout();
     const googleQuery = input.genreMode
       ? catalogQuery

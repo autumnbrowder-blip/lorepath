@@ -21,6 +21,7 @@ import { searchGutendex, getGutendexBookById, isGutendexId } from "@/lib/gutende
 import {
   getGoogleBookById,
   getGoogleBookByIsbn,
+  hasGoogleBooksApiKey,
   isGoogleBooksBusy,
   RateLimitError,
   searchGoogleBooks,
@@ -296,7 +297,11 @@ async function fetchSearchPageUncached(
   const googleRawCount = googleResult.rawCount ?? 0;
   const googleError = googleResult.error;
 
-  if (googleError && googleError.status !== 429) {
+  if (
+    googleError &&
+    googleError.status !== 429 &&
+    googleError.status !== 403
+  ) {
     console.error("[searchBooks] Google Books provider error:", {
       query: searchQuery,
       page: pageNumber,
@@ -307,10 +312,13 @@ async function fetchSearchPageUncached(
     });
   }
 
-  const google429 =
-    googleBooks.length === 0 &&
-    (googleError?.status === 429 ||
-      /rate limit|quota/i.test(googleError?.message ?? ""));
+  const googleHttp = googleResult.httpStatus;
+  const googleQuotaBlocked =
+    googleHttp === 429 ||
+    googleHttp === 403 ||
+    googleError?.status === 429 ||
+    googleError?.status === 403 ||
+    /rate limit|quota|api key/i.test(googleError?.message ?? "");
 
   if (SEARCH_DEBUG) {
     console.info("[searchBooks] raw provider counts", {
@@ -447,8 +455,15 @@ async function fetchSearchPageUncached(
     isbndbResult.hasMore;
 
   const warning =
-    google429 && books.length > 0 ? GOOGLE_429_WARNING : null;
-  const googleStatus = google429 ? "429" : String(googleBooks.length);
+    googleQuotaBlocked && books.length > 0 ? GOOGLE_429_WARNING : null;
+  const googleStatus =
+    googleHttp === 200 || googleHttp === 403 || googleHttp === 429
+      ? String(googleHttp)
+      : googleQuotaBlocked
+        ? String(googleError?.status ?? "429")
+        : googleHttp == null
+          ? "skip"
+          : String(googleHttp);
   console.info(
     `[search] q=${searchQuery} google=${googleStatus} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} out=${books.length}`
   );
@@ -461,8 +476,12 @@ async function fetchSearchPageUncached(
     source: "multi",
     page: pageNumber,
     hasMore,
-    googleError: google429
-      ? { message: googleError?.message ?? "Google Books rate limit reached.", status: 429 }
+    googleError: googleQuotaBlocked
+      ? {
+          message:
+            googleError?.message ?? "Google Books rate limit reached.",
+          status: googleError?.status ?? googleHttp ?? 429,
+        }
       : googleError,
     googleRawCount,
     allSourcesTimedOut,
@@ -528,9 +547,12 @@ export async function searchBooks(
       (pageResult.sourceCounts.gutendex ?? 0) >
       0
   ) {
-    // A Google 429 must not occupy the 10-min success slot. Cache OL briefly
+    // A Google 429/403 must not occupy the 15-min success slot. Cache OL briefly
     // so we still serve results without hammering Google.
-    if (pageResult.googleError?.status === 429) {
+    if (
+      pageResult.googleError?.status === 429 ||
+      pageResult.googleError?.status === 403
+    ) {
       setCachedSearchPage(cacheKey, pageResult, SEARCH_PAGE_429_TTL_MS);
     } else {
       setCachedSearchPage(cacheKey, pageResult);
@@ -629,17 +651,23 @@ async function loadCoreBook(
     } else if (isNytId(bookId)) {
       const primary = await trySource("nyt", () => resolveNytBook(bookId));
       if (primary) return primary;
-    } else if (!isHardcoverId(bookId)) {
+    } else if (
+      !isHardcoverId(bookId) &&
+      hasGoogleBooksApiKey() &&
+      !isGoogleBooksBusy()
+    ) {
       const primary = await trySource("google", () => getGoogleBookById(bookId));
       if (primary) return primary;
     }
 
-    const isbn = isbnFromIsbndbId(bookId) ?? isbnFromNytId(bookId) ?? null;
+    const isbn = isNytId(bookId) ? null : isbnFromIsbndbId(bookId);
     if (isbn) {
-      const viaGoogleIsbn = await trySource("google", () =>
-        getGoogleBookByIsbn(isbn)
-      );
-      if (viaGoogleIsbn) return viaGoogleIsbn;
+      if (hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
+        const viaGoogleIsbn = await trySource("google", () =>
+          getGoogleBookByIsbn(isbn)
+        );
+        if (viaGoogleIsbn) return viaGoogleIsbn;
+      }
 
       const viaOlIsbn = await trySource("openlibrary", () =>
         getOpenLibraryBookByIsbn(isbn)
@@ -659,13 +687,6 @@ async function loadCoreBook(
         resolveOpenLibraryFallback({ bookId, searchHint })
       );
       if (viaOl) return viaOl;
-    }
-
-    if (isOpenLibraryId(bookId) && !searchHint) {
-      const viaGoogle = await trySource("google", () =>
-        resolveGoogleVolume(bookId, searchHint)
-      );
-      if (viaGoogle) return viaGoogle;
     }
 
     return null;
@@ -744,7 +765,9 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
       const archivesBusy =
         isGoogleBooksBusy() ||
         transient ||
-        coreFailures.some((failure) => failure.status === 429);
+        coreFailures.some(
+          (failure) => failure.status === 429 || failure.status === 403
+        );
       console.error("[getBookById] no usable record:", {
         id: bookId,
         searchHint: searchHint ?? null,
@@ -891,7 +914,8 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
       isGoogleBooksBusy() ||
       failures.some(
         (failure) =>
-          failure.status === 429 && failure.provider !== "book-cache"
+          (failure.status === 429 || failure.status === 403) &&
+          failure.provider !== "book-cache"
       );
 
     if (failures.length > 0) {
@@ -1040,20 +1064,22 @@ async function resolveOpenLibraryFallback(options: {
 async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
   const isbn = isbnFromIsbndbId(bookId);
   if (isbn) {
-    try {
-      const viaGoogle = await getGoogleBookByIsbn(isbn);
-      if (viaGoogle) return viaGoogle;
-    } catch (error) {
-      // Keep going: OL and ISBNdb below can still resolve this ISBN.
-      console.error("[getBookById] ISBNdb→Google ISBN failed:", {
-        bookId,
-        isbn,
-        message: error instanceof Error ? error.message : String(error),
-        status:
-          error instanceof RateLimitError
-            ? error.status
-            : (error as Error & { status?: number })?.status,
-      });
+    if (hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
+      try {
+        const viaGoogle = await getGoogleBookByIsbn(isbn);
+        if (viaGoogle) return viaGoogle;
+      } catch (error) {
+        // Keep going: OL and ISBNdb below can still resolve this ISBN.
+        console.error("[getBookById] ISBNdb→Google ISBN failed:", {
+          bookId,
+          isbn,
+          message: error instanceof Error ? error.message : String(error),
+          status:
+            error instanceof RateLimitError
+              ? error.status
+              : (error as Error & { status?: number })?.status,
+        });
+      }
     }
 
     const viaOl = await resolveOpenLibraryFallback({ bookId, isbn });
@@ -1087,71 +1113,10 @@ async function resolveIsbndbBook(bookId: string): Promise<BookDetail | null> {
 async function resolveNytBook(bookId: string): Promise<BookDetail | null> {
   const isbn = isbnFromNytId(bookId);
   if (isbn) {
-    try {
-      const viaGoogle = await getGoogleBookByIsbn(isbn);
-      if (viaGoogle) return viaGoogle;
-    } catch (error) {
-      // Keep going: OL by ISBN and the NYT list record are still available.
-      console.error("[getBookById] NYT→Google ISBN failed:", {
-        bookId,
-        isbn,
-        message: error instanceof Error ? error.message : String(error),
-        status:
-          error instanceof RateLimitError
-            ? error.status
-            : (error as Error & { status?: number })?.status,
-      });
-    }
-
     const viaOl = await resolveOpenLibraryFallback({ bookId, isbn });
     if (viaOl) return viaOl;
   }
   return getNytBookById(bookId);
-}
-
-/**
- * Resolve a Google Books volume id with OL/search-hint fallback.
- * The caller (loadCoreBook) supplies the transient-error retry.
- */
-async function resolveGoogleVolume(
-  bookId: string,
-  searchHint?: string
-): Promise<BookDetail | null> {
-  let lastError: unknown = null;
-
-  try {
-    const book = await getGoogleBookById(bookId);
-    if (book) return book;
-  } catch (error) {
-    lastError = error;
-    console.error("[getBookById] Google volume fetch failed:", {
-      bookId,
-      message: error instanceof Error ? error.message : String(error),
-      status:
-        error instanceof RateLimitError
-          ? error.status
-          : (error as Error & { status?: number })?.status,
-    });
-  }
-
-  if (searchHint) {
-    const fromHint = await resolveViaSearchHint(bookId, searchHint);
-    if (fromHint) return fromHint;
-  }
-
-  // Always attempt Open Library before resting-archives / RateLimitError.
-  const fromOl = await resolveOpenLibraryFallback({
-    bookId,
-    searchHint,
-  });
-  if (fromOl) return fromOl;
-
-  // A 429 here is a missing title from Google — callers may still have OL.
-  // Never throw: withProviderRetry would swallow it, but a leak takes down the page.
-  if (lastError instanceof RateLimitError) {
-    return null;
-  }
-  return null;
 }
 
 /**

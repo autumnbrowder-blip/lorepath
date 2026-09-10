@@ -3,7 +3,7 @@ import {
   hasRealDescription,
   isExactTitleMatch,
 } from "@/lib/book-utils";
-import { getGoogleBookByIsbn, searchGoogleBooks } from "@/lib/google-books";
+import { getGoogleBookByIsbn, hasGoogleBooksApiKey, isGoogleBooksBusy, searchGoogleBooks } from "@/lib/google-books";
 import {
   fetchIsbndbByIsbn,
   fetchIsbndbByTitle,
@@ -94,7 +94,7 @@ async function findDescription(
     }
   }
 
-  if (book.isbn) {
+  if (book.isbn && hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
     try {
       const viaGoogle = await getGoogleBookByIsbn(book.isbn);
       const description = usableDescription(viaGoogle?.description);
@@ -114,32 +114,34 @@ async function findDescription(
     }
   }
 
-  try {
-    const author = authors[0];
-    const query = author
-      ? `intitle:"${book.title}" inauthor:"${author}"`
-      : `intitle:"${book.title}"`;
-    const page = await searchGoogleBooks(query, 1);
-    const match =
-      page.books.find(
-        (candidate) =>
-          isExactTitleMatch(book.title, candidate.title) &&
-          hasRealDescription(candidate)
-      ) ?? page.books.find((candidate) => hasRealDescription(candidate));
-    const description = usableDescription(match?.description);
-    if (description && match) {
-      return {
-        supplement: {
-          description,
-          coverUrl: match.coverUrl,
-          publishedYear: match.publishedYear,
-          pageCount: match.pageCount,
-        },
-        source: "google-title",
-      };
+  if (hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
+    try {
+      const author = authors[0];
+      const query = author
+        ? `intitle:"${book.title}" inauthor:"${author}"`
+        : `intitle:"${book.title}"`;
+      const page = await searchGoogleBooks(query, 1);
+      const match =
+        page.books.find(
+          (candidate) =>
+            isExactTitleMatch(book.title, candidate.title) &&
+            hasRealDescription(candidate)
+        ) ?? page.books.find((candidate) => hasRealDescription(candidate));
+      const description = usableDescription(match?.description);
+      if (description && match) {
+        return {
+          supplement: {
+            description,
+            coverUrl: match.coverUrl,
+            publishedYear: match.publishedYear,
+            pageCount: match.pageCount,
+          },
+          source: "google-title",
+        };
+      }
+    } catch {
+      // Google quota/outage — keep going.
     }
-  } catch {
-    // Google quota/outage — keep going.
   }
 
   if (hasIsbndbApiKey() && budget.isbndbCalls > 0) {

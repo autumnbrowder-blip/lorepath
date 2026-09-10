@@ -14,7 +14,7 @@ import {
   pickPublishedYear,
 } from "@/lib/book-utils";
 import { preferCoverUrl } from "@/lib/cover-resolve";
-import { getGoogleBookByIsbn } from "@/lib/google-books";
+import { getGoogleBookByIsbn, isGoogleBooksBusy } from "@/lib/google-books";
 import { parseUtf8Json } from "@/lib/utf8-json";
 import {
   applyKnownWorkFields,
@@ -440,6 +440,7 @@ export async function fetchOpenLibraryWorkEditions(
 }
 
 async function softGoogleIsbn(isbn: string): Promise<Partial<BookDetail> | null> {
+  if (isGoogleBooksBusy()) return null;
   try {
     const detail = await getGoogleBookByIsbn(isbn);
     if (!detail) return null;
@@ -523,17 +524,21 @@ export async function enrichKnownEditionMetadata(
   }
 
   const reprintIsbns = getPopularReprintIsbns(known);
-  const lookups = await Promise.all(
-    reprintIsbns.map(async (isbn) => {
-      const fromGoogle = await softGoogleIsbn(isbn);
-      if (fromGoogle?.publishedYear || fromGoogle?.description || fromGoogle?.coverUrl) {
-        return fromGoogle;
-      }
-      const fromIsbndb = await softIsbndbIsbn(isbn);
-      if (fromIsbndb) return fromIsbndb;
-      return fetchOpenLibraryByIsbn(isbn);
-    })
-  );
+  const lookups: Array<Partial<BookDetail> | null> = [];
+  let triedGoogle = false;
+  for (const isbn of reprintIsbns) {
+    let hit: Partial<BookDetail> | null = null;
+    if (!triedGoogle && !isGoogleBooksBusy()) {
+      hit = await softGoogleIsbn(isbn);
+      triedGoogle = true;
+    }
+    if (hit?.publishedYear || hit?.description || hit?.coverUrl) {
+      lookups.push(hit);
+      continue;
+    }
+    const fromIsbndb = await softIsbndbIsbn(isbn);
+    lookups.push(fromIsbndb ?? (await fetchOpenLibraryByIsbn(isbn)));
+  }
 
   for (const hit of lookups) {
     if (!hit) continue;

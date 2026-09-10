@@ -12,7 +12,12 @@ import {
   rankSearchResults,
 } from "@/lib/book-utils";
 import { searchBooks } from "@/lib/books";
-import { getGoogleBookByIsbn, RateLimitError } from "@/lib/google-books";
+import {
+  getGoogleBookByIsbn,
+  hasGoogleBooksApiKey,
+  isGoogleBooksBusy,
+  RateLimitError,
+} from "@/lib/google-books";
 import {
   getOpenLibraryBookByIsbn,
   getOpenLibraryBookByTitle,
@@ -99,12 +104,14 @@ function authorsLookAlike(csvAuthor: string, bookAuthors: string[]): boolean {
 }
 
 async function resolveByIsbn(isbn: string): Promise<BookSummary | null> {
-  try {
-    const google = await getGoogleBookByIsbn(isbn);
-    if (google) return google;
-  } catch (err) {
-    if (!(err instanceof RateLimitError)) {
-      // Soft-fail — try Open Library next
+  if (hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
+    try {
+      const google = await getGoogleBookByIsbn(isbn);
+      if (google) return google;
+    } catch (err) {
+      if (!(err instanceof RateLimitError)) {
+        // Soft-fail — try Open Library next
+      }
     }
   }
 

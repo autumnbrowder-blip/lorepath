@@ -1,4 +1,8 @@
-import { searchGoogleBooks } from "@/lib/google-books";
+import {
+  hasGoogleBooksApiKey,
+  isGoogleBooksBusy,
+  searchGoogleBooks,
+} from "@/lib/google-books";
 import { searchOpenLibrary } from "@/lib/open-library";
 import { dedupeBooks } from "@/lib/book-utils";
 import {
@@ -58,10 +62,15 @@ export async function suggestBooks(query: string): Promise<SuggestBooksResult> {
   }
 
   const settled = await Promise.allSettled(
-    queries.flatMap((q) => [
-      searchGoogleBooks(q, 1),
-      searchOpenLibrary(q, 1),
-    ])
+    queries.flatMap((q) => {
+      const tasks: Promise<{ books: BookSummary[] }>[] = [
+        searchOpenLibrary(q, 1),
+      ];
+      if (hasGoogleBooksApiKey() && !isGoogleBooksBusy()) {
+        tasks.push(searchGoogleBooks(q, 1));
+      }
+      return tasks;
+    })
   );
 
   const books: BookSummary[] = [];

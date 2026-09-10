@@ -25,9 +25,9 @@ type SearchCacheEntry = {
 
 export type CachedSearchPage = Omit<SearchCacheEntry, "expiresAt">;
 
-/** Ten minutes — GET /api/books/search is keyed on q + page. */
-const TTL_MS = 600_000;
-/** Brief merged-page TTL when Google 429'd so we still serve OL, then retry. */
+/** Fifteen minutes — GET /api/books/search is keyed on q + page. */
+const TTL_MS = 15 * 60 * 1000;
+/** Brief merged-page TTL when Google 429/403 so we still serve OL, then retry. */
 export const SEARCH_PAGE_429_TTL_MS = 60_000;
 const MAX_ENTRIES = 80;
 

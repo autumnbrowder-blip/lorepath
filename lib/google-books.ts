@@ -23,11 +23,12 @@ import type {
 } from "@/types/google-books";
 
 export class RateLimitError extends Error {
-  status = 429;
+  status: number;
 
-  constructor(message = "Google Books rate limit reached.") {
+  constructor(message = "Google Books rate limit reached.", status = 429) {
     super(message);
     this.name = "RateLimitError";
+    this.status = status;
   }
 }
 
@@ -38,27 +39,73 @@ export type GoogleBooksProviderError = {
 
 const FETCH_TIMEOUT_MS = 3000;
 const GOOGLE_PAGE_SIZE = 20;
-/** One retry is enough — extra 503 loops keep the serverless function alive. */
-const MAX_503_ATTEMPTS = 2;
-/** Skip Google search after a 429 so Open Library + Gutendex can still fill the page. */
-const GOOGLE_429_COOLDOWN_MS = 60_000;
-let google429Until = 0;
+/** Successful Google search pages — keyed by query + page. */
+const GOOGLE_SEARCH_TTL_MS = 15 * 60 * 1000;
+/** Successful volume / ISBN lookups. */
+const GOOGLE_VOLUME_TTL_MS = 24 * 60 * 60 * 1000;
+/** 429/403 must not occupy the 15-min success slot. */
+const GOOGLE_NEGATIVE_CACHE_TTL_MS = 60_000;
+/**
+ * Process-wide skip after 429/403 so concurrent search/detail cannot turn
+ * one quota error into thousands of retries.
+ */
+const GOOGLE_QUOTA_COOLDOWN_MS = 3 * 60 * 1000;
+const GOOGLE_SEARCH_CACHE_MAX = 80;
+const GOOGLE_VOLUME_CACHE_MAX = 200;
 
-function isGoogleSearchCircuitOpen(): boolean {
-  return Date.now() < google429Until;
+let googleQuotaUntil = 0;
+
+const googleHttpStats = {
+  200: 0,
+  403: 0,
+  429: 0,
+  skip: 0,
+};
+
+function isGoogleQuotaStatus(status: number | undefined): boolean {
+  return status === 429 || status === 403;
+}
+
+function isGoogleQuotaCircuitOpen(): boolean {
+  return Date.now() < googleQuotaUntil;
 }
 
 export function isGoogleBooksBusy(): boolean {
-  return isGoogleSearchCircuitOpen();
+  return isGoogleQuotaCircuitOpen();
 }
 
-function openGoogle429Circuit() {
-  google429Until = Date.now() + GOOGLE_429_COOLDOWN_MS;
+export function hasGoogleBooksApiKey(): boolean {
+  return Boolean(getGoogleBooksApiKey());
+}
+
+function openGoogleQuotaCircuit() {
+  googleQuotaUntil = Date.now() + GOOGLE_QUOTA_COOLDOWN_MS;
 }
 
 function getGoogleBooksApiKey(): string | null {
   const key = process.env.GOOGLE_BOOKS_API_KEY?.trim();
   return key || null;
+}
+
+function logGoogleHttpStats() {
+  console.info(
+    `[google-books] status 200=${googleHttpStats[200]} 403=${googleHttpStats[403]} 429=${googleHttpStats[429]} skip=${googleHttpStats.skip}`
+  );
+}
+
+function recordGoogleHttpStatus(status: number) {
+  if (status === 200) googleHttpStats[200] += 1;
+  else if (status === 403) googleHttpStats[403] += 1;
+  else if (status === 429) googleHttpStats[429] += 1;
+  if (status === 200 || isGoogleQuotaStatus(status)) {
+    logGoogleHttpStats();
+  }
+}
+
+function recordGoogleSkip(reason: string) {
+  googleHttpStats.skip += 1;
+  console.info(`[google-books] skip reason=${reason}`);
+  logGoogleHttpStats();
 }
 
 function normalizeCoverUrl(url: string | undefined): string | null {
@@ -101,10 +148,28 @@ async function readGoogleErrorBody(
   }
 }
 
+/**
+ * The only Google Books HTTP helper. Never retries 429/403.
+ * Callers must skip when the key is missing or the quota circuit is open.
+ */
 async function fetchGoogleBooks(
   url: string,
   options?: { revalidate?: number; noStore?: boolean }
 ): Promise<Response> {
+  if (!getGoogleBooksApiKey()) {
+    recordGoogleSkip("no-key");
+    const error = new Error(
+      "Google Books skipped: GOOGLE_BOOKS_API_KEY is not set"
+    );
+    (error as Error & { status?: number }).status = 0;
+    throw error;
+  }
+
+  if (isGoogleQuotaCircuitOpen()) {
+    recordGoogleSkip("quota-circuit");
+    throw new RateLimitError();
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -117,33 +182,18 @@ async function fetchGoogleBooks(
         ? { cache: "no-store", signal: controller.signal }
         : {
             cache: "force-cache",
-            next: { revalidate: options?.revalidate ?? 3600 },
+            next: { revalidate: options?.revalidate ?? 86400 },
             signal: controller.signal,
           }
     );
+    recordGoogleHttpStatus(response.status);
+    if (isGoogleQuotaStatus(response.status)) {
+      openGoogleQuotaCircuit();
+    }
     return response;
   } finally {
     clearTimeout(timeout);
   }
-}
-
-async function fetchGoogleBooksWithRetry(
-  url: string,
-  options?: { revalidate?: number; noStore?: boolean }
-): Promise<Response> {
-  let response = await fetchGoogleBooks(url, options);
-
-  // Google occasionally returns transient 503s — retry with short backoff.
-  for (
-    let attempt = 1;
-    response.status === 503 && attempt < MAX_503_ATTEMPTS;
-    attempt++
-  ) {
-    await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
-    response = await fetchGoogleBooks(url, options);
-  }
-
-  return response;
 }
 
 function toProviderError(
@@ -226,13 +276,9 @@ export type GoogleBooksPageResult = {
   /** Item count from Google before local quality filtering. */
   rawCount: number;
   error: GoogleBooksProviderError | null;
+  /** Google HTTP status for this page: 200, 403, 429, or null when skipped. */
+  httpStatus?: number | null;
 };
-
-/** Successful Google volume pages — repeat searches must not re-hit Google. */
-const GOOGLE_SEARCH_TTL_MS = 600_000;
-/** Brief 429 cache so we skip Google without poisoning a 10-min success page. */
-const GOOGLE_429_CACHE_TTL_MS = 60_000;
-const GOOGLE_SEARCH_CACHE_MAX = 80;
 
 type CachedGoogleSearch = {
   expiresAt: number;
@@ -252,7 +298,7 @@ function googleSearchCacheKey(
   const mode = options?.mode ?? "text";
   const pageSize = options?.pageSize ?? "";
   const lang = options?.langRestrict?.trim() ?? "";
-  return `v=google-q1|q=${q}|page=${p}|mode=${mode}|ps=${pageSize}|lang=${lang}`;
+  return `v=google-q2|q=${q}|page=${p}|mode=${mode}|ps=${pageSize}|lang=${lang}`;
 }
 
 function cloneGooglePage(page: GoogleBooksPageResult): GoogleBooksPageResult {
@@ -261,6 +307,7 @@ function cloneGooglePage(page: GoogleBooksPageResult): GoogleBooksPageResult {
     hasMore: page.hasMore,
     rawCount: page.rawCount,
     error: page.error ? { ...page.error } : null,
+    httpStatus: page.httpStatus,
   };
 }
 
@@ -293,12 +340,98 @@ function setCachedGoogleSearch(
   const now = Date.now();
   pruneGoogleSearchCache(now);
   const ttl =
-    kind === "rate_limit" ? GOOGLE_429_CACHE_TTL_MS : GOOGLE_SEARCH_TTL_MS;
+    kind === "rate_limit" ? GOOGLE_NEGATIVE_CACHE_TTL_MS : GOOGLE_SEARCH_TTL_MS;
   googleSearchCache.set(key, {
     expiresAt: now + ttl,
     page: cloneGooglePage(page),
     kind,
   });
+}
+
+type CachedGoogleVolume = {
+  expiresAt: number;
+  book: BookDetail | null;
+  kind: "success" | "miss" | "rate_limit";
+};
+
+const googleVolumeCache = new Map<string, CachedGoogleVolume>();
+
+function pruneGoogleVolumeCache(now: number) {
+  for (const [key, entry] of Array.from(googleVolumeCache.entries())) {
+    if (entry.expiresAt <= now) googleVolumeCache.delete(key);
+  }
+  if (googleVolumeCache.size <= GOOGLE_VOLUME_CACHE_MAX) return;
+  const overflow = googleVolumeCache.size - GOOGLE_VOLUME_CACHE_MAX;
+  const keys = Array.from(googleVolumeCache.keys()).slice(0, overflow);
+  for (const key of keys) googleVolumeCache.delete(key);
+}
+
+function getCachedGoogleVolume(key: string): CachedGoogleVolume | null {
+  const now = Date.now();
+  const entry = googleVolumeCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    googleVolumeCache.delete(key);
+    return null;
+  }
+  return {
+    ...entry,
+    book: entry.book ? { ...entry.book } : null,
+  };
+}
+
+function setCachedGoogleVolume(
+  key: string,
+  book: BookDetail | null,
+  kind: CachedGoogleVolume["kind"]
+) {
+  const now = Date.now();
+  pruneGoogleVolumeCache(now);
+  const ttl =
+    kind === "rate_limit" ? GOOGLE_NEGATIVE_CACHE_TTL_MS : GOOGLE_VOLUME_TTL_MS;
+  googleVolumeCache.set(key, {
+    expiresAt: now + ttl,
+    book: book ? { ...book } : null,
+    kind,
+  });
+}
+
+function quotaBlockedPage(status: number, message: string): GoogleBooksPageResult {
+  return {
+    books: [],
+    hasMore: false,
+    rawCount: 0,
+    httpStatus: status,
+    error: { message, status },
+  };
+}
+
+function skippedPage(message: string): GoogleBooksPageResult {
+  return {
+    books: [],
+    hasMore: false,
+    rawCount: 0,
+    httpStatus: null,
+    error: { message },
+  };
+}
+
+async function throwIfQuotaResponse(
+  response: Response,
+  context: string
+): Promise<void> {
+  if (!isGoogleQuotaStatus(response.status)) return;
+  const bodyMessage = await readGoogleErrorBody(response);
+  const message =
+    bodyMessage ??
+    (response.status === 403
+      ? "Google Books API key rejected."
+      : "Google Books rate limit reached.");
+  console.warn(`[${context}] ${response.status} — using other archives`, {
+    status: response.status,
+    message: bodyMessage,
+  });
+  throw new RateLimitError(message, response.status);
 }
 
 async function fetchGoogleSearch(
@@ -314,6 +447,7 @@ async function fetchGoogleSearch(
   totalItems: number;
   pageSize: number;
   rawCount: number;
+  httpStatus: number;
 }> {
   const genreMode = isGenreSearchMode(options?.mode);
   const pageSize = Math.min(
@@ -339,14 +473,9 @@ async function fetchGoogleSearch(
 
   const url = buildGoogleBooksUrl("volumes", params);
   // Search must never reuse a Data Cache entry from a previous q.
-  const response = await fetchGoogleBooksWithRetry(url, { noStore: true });
+  const response = await fetchGoogleBooks(url, { noStore: true });
 
-  if (response.status === 429) {
-    const bodyMessage = await readGoogleErrorBody(response);
-    throw new RateLimitError(
-      bodyMessage ?? "Google Books rate limit reached."
-    );
-  }
+  await throwIfQuotaResponse(response, "searchGoogleBooks");
 
   if (!response.ok) {
     const bodyMessage = await readGoogleErrorBody(response);
@@ -365,6 +494,7 @@ async function fetchGoogleSearch(
     totalItems: data.totalItems ?? books.length,
     pageSize,
     rawCount,
+    httpStatus: response.status,
   };
 }
 
@@ -374,11 +504,6 @@ export async function searchGoogleBooks(
   options?: SearchBooksOptions & {
     langRestrict?: string;
     pageSize?: number;
-    /**
-     * When false, a 429 still returns [] but does not close Google for the
-     * rest of the process (used for the extra intitle search).
-     */
-    tripRateLimitCircuit?: boolean;
   }
 ): Promise<GoogleBooksPageResult> {
   const cacheKey = googleSearchCacheKey(query, page, options);
@@ -387,35 +512,32 @@ export async function searchGoogleBooks(
     return cached.page;
   }
 
-  const rateLimitedPage = (): GoogleBooksPageResult => ({
-    books: [],
-    hasMore: false,
-    rawCount: 0,
-    error: {
-      message: "Google Books rate limit reached.",
-      status: 429,
-    },
-  });
-
-  if (isGoogleSearchCircuitOpen()) {
-    const page429 = rateLimitedPage();
-    setCachedGoogleSearch(cacheKey, page429, "rate_limit");
-    return page429;
+  if (!getGoogleBooksApiKey()) {
+    recordGoogleSkip("no-key");
+    console.warn(
+      "[searchGoogleBooks] GOOGLE_BOOKS_API_KEY is not set — skipping Google."
+    );
+    const skipped = skippedPage("Google Books API key is not set");
+    setCachedGoogleSearch(cacheKey, skipped, "rate_limit");
+    return skipped;
   }
 
-  if (!getGoogleBooksApiKey()) {
-    // Anonymous Books API quota is effectively 0 from many hosts; a key is required.
-    console.warn(
-      "[searchGoogleBooks] GOOGLE_BOOKS_API_KEY is not set — requests often fail with HTTP 429 (quota exceeded)."
-    );
+  if (isGoogleQuotaCircuitOpen()) {
+    recordGoogleSkip("quota-circuit");
+    const blocked: GoogleBooksPageResult = {
+      ...skippedPage("Google Books rate limit reached."),
+      error: {
+        message: "Google Books rate limit reached.",
+        status: 429,
+      },
+    };
+    setCachedGoogleSearch(cacheKey, blocked, "rate_limit");
+    return blocked;
   }
 
   try {
-    const { books, totalItems, pageSize, rawCount } = await fetchGoogleSearch(
-      query,
-      page,
-      options
-    );
+    const { books, totalItems, pageSize, rawCount, httpStatus } =
+      await fetchGoogleSearch(query, page, options);
 
     // Use requested page size so filtered-out items don't keep advertising
     // endless "Load More" pages.
@@ -443,6 +565,7 @@ export async function searchGoogleBooks(
       hasMore,
       rawCount,
       error: null,
+      httpStatus,
     };
     setCachedGoogleSearch(cacheKey, success, "success");
     return success;
@@ -454,19 +577,17 @@ export async function searchGoogleBooks(
         : undefined
     );
 
-    if (error instanceof RateLimitError) {
-      if (options?.tripRateLimitCircuit !== false) {
-        openGoogle429Circuit();
-      }
-      console.warn("[searchGoogleBooks] 429 — using other archives");
-      const page429: GoogleBooksPageResult = {
-        books: [],
-        hasMore: false,
-        rawCount: 0,
-        error: providerError,
-      };
-      setCachedGoogleSearch(cacheKey, page429, "rate_limit");
-      return page429;
+    if (error instanceof RateLimitError || isGoogleQuotaStatus(providerError.status)) {
+      const status = providerError.status === 403 ? 403 : 429;
+      console.warn(
+        `[searchGoogleBooks] ${status} — using other archives`
+      );
+      const blocked = quotaBlockedPage(
+        status,
+        providerError.message || "Google Books rate limit reached."
+      );
+      setCachedGoogleSearch(cacheKey, blocked, "rate_limit");
+      return blocked;
     }
 
     console.error("[searchGoogleBooks] Request failed:", {
@@ -477,8 +598,14 @@ export async function searchGoogleBooks(
     });
 
     // Soft-fail so Promise.allSettled siblings still surface results.
-    // Do not cache other errors as a 10-min Google success.
-    return { books: [], hasMore: false, rawCount: 0, error: providerError };
+    // Do not cache other errors as a 15-min Google success.
+    return {
+      books: [],
+      hasMore: false,
+      rawCount: 0,
+      error: providerError,
+      httpStatus: providerError.status ?? null,
+    };
   }
 }
 
@@ -488,52 +615,95 @@ export async function getGoogleBookById(
   const trimmed = volumeId.trim();
   if (!trimmed) return null;
 
-  // Encode so hyphenated Google volume ids (e.g. E-OLEAAAQBAJ) stay intact.
-  const response = await fetchGoogleBooks(
-    buildGoogleBooksUrl(`volumes/${encodeURIComponent(trimmed)}`),
-    { revalidate: 3600 }
-  );
-
-  if (response.status === 429) {
-    const bodyMessage = await readGoogleErrorBody(response);
-    console.error("[getGoogleBookById] rate limited:", {
-      volumeId: trimmed,
-      status: 429,
-      message: bodyMessage,
-    });
-    openGoogle429Circuit();
-    throw new RateLimitError(
-      bodyMessage ?? "Google Books rate limit reached."
-    );
+  const cacheKey = `id:${trimmed.toLowerCase()}`;
+  const cached = getCachedGoogleVolume(cacheKey);
+  if (cached) {
+    if (cached.kind === "rate_limit") {
+      throw new RateLimitError(
+        "Google Books rate limit reached.",
+        429
+      );
+    }
+    return cached.book;
   }
 
-  if (response.status === 404) {
-    console.warn("[getGoogleBookById] volume not found:", { volumeId: trimmed });
+  if (!getGoogleBooksApiKey()) {
+    recordGoogleSkip("no-key");
     return null;
   }
 
-  if (!response.ok) {
-    const bodyMessage = await readGoogleErrorBody(response);
-    console.error("[getGoogleBookById] API error:", {
-      volumeId: trimmed,
-      status: response.status,
-      message: bodyMessage,
-    });
-    throw new Error(
-      bodyMessage ?? `Google Books API error: ${response.status}`
-    );
+  if (isGoogleQuotaCircuitOpen()) {
+    recordGoogleSkip("quota-circuit");
+    throw new RateLimitError();
   }
 
-  const data: GoogleBooksVolumeResponse = await parseUtf8Json(response);
-  return parseGoogleBookDetail(data);
+  try {
+    // Encode so hyphenated Google volume ids (e.g. E-OLEAAAQBAJ) stay intact.
+    const response = await fetchGoogleBooks(
+      buildGoogleBooksUrl(`volumes/${encodeURIComponent(trimmed)}`),
+      { noStore: true }
+    );
+
+    await throwIfQuotaResponse(response, "getGoogleBookById");
+
+    if (response.status === 404) {
+      console.warn("[getGoogleBookById] volume not found:", { volumeId: trimmed });
+      setCachedGoogleVolume(cacheKey, null, "miss");
+      return null;
+    }
+
+    if (!response.ok) {
+      const bodyMessage = await readGoogleErrorBody(response);
+      console.error("[getGoogleBookById] API error:", {
+        volumeId: trimmed,
+        status: response.status,
+        message: bodyMessage,
+      });
+      throw new Error(
+        bodyMessage ?? `Google Books API error: ${response.status}`
+      );
+    }
+
+    const data: GoogleBooksVolumeResponse = await parseUtf8Json(response);
+    const book = parseGoogleBookDetail(data);
+    setCachedGoogleVolume(cacheKey, book, "success");
+    return book;
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      setCachedGoogleVolume(cacheKey, null, "rate_limit");
+    }
+    throw error;
+  }
 }
 
-/** Look up a Google Books volume by ISBN (for NYT and other ISBN-based ids). */
+/** Look up a Google Books volume by ISBN. Search/NYT/cards must not call this. */
 export async function getGoogleBookByIsbn(
   isbn: string
 ): Promise<BookDetail | null> {
   const digits = isbn.replace(/\D/g, "");
   if (!digits) return null;
+
+  const cacheKey = `isbn:${digits}`;
+  const cached = getCachedGoogleVolume(cacheKey);
+  if (cached) {
+    if (cached.kind === "rate_limit") {
+      throw new RateLimitError(
+        "Google Books rate limit reached.",
+        429
+      );
+    }
+    return cached.book;
+  }
+
+  if (!getGoogleBooksApiKey()) {
+    recordGoogleSkip("no-key");
+    return null;
+  }
+
+  if (isGoogleQuotaCircuitOpen()) {
+    recordGoogleSkip("quota-circuit");
+    throw new RateLimitError();
+  }
 
   const params = new URLSearchParams({
     q: `isbn:${digits}`,
@@ -541,28 +711,35 @@ export async function getGoogleBookByIsbn(
     printType: "books",
   });
 
-  const response = await fetchGoogleBooks(buildGoogleBooksUrl("volumes", params), {
-    revalidate: 3600,
-  });
-
-  if (response.status === 429) {
-    const bodyMessage = await readGoogleErrorBody(response);
-    openGoogle429Circuit();
-    throw new RateLimitError(
-      bodyMessage ?? "Google Books rate limit reached."
+  try {
+    const response = await fetchGoogleBooks(
+      buildGoogleBooksUrl("volumes", params),
+      { noStore: true }
     );
+
+    await throwIfQuotaResponse(response, "getGoogleBookByIsbn");
+
+    if (!response.ok) {
+      const bodyMessage = await readGoogleErrorBody(response);
+      throw new Error(
+        bodyMessage ?? `Google Books API error: ${response.status}`
+      );
+    }
+
+    const data: GoogleBooksSearchResponse = await parseUtf8Json(response);
+    const volume = data.items?.[0];
+    if (!volume) {
+      setCachedGoogleVolume(cacheKey, null, "miss");
+      return null;
+    }
+
+    const book = parseGoogleBookDetail(volume as GoogleBooksVolumeResponse);
+    setCachedGoogleVolume(cacheKey, book, "success");
+    return book;
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      setCachedGoogleVolume(cacheKey, null, "rate_limit");
+    }
+    throw error;
   }
-
-  if (!response.ok) {
-    const bodyMessage = await readGoogleErrorBody(response);
-    throw new Error(
-      bodyMessage ?? `Google Books API error: ${response.status}`
-    );
-  }
-
-  const data: GoogleBooksSearchResponse = await parseUtf8Json(response);
-  const volume = data.items?.[0];
-  if (!volume) return null;
-
-  return parseGoogleBookDetail(volume as GoogleBooksVolumeResponse);
 }

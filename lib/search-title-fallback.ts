@@ -1,5 +1,5 @@
 import { isExactTitleMatch } from "@/lib/book-utils";
-import { getGoogleBookByIsbn, searchGoogleBooks } from "@/lib/google-books";
+import { getGoogleBookByIsbn, hasGoogleBooksApiKey, isGoogleBooksBusy, searchGoogleBooks } from "@/lib/google-books";
 import {
   knownWorkMatchesQuery,
   type KnownWorkEditions,
@@ -46,6 +46,7 @@ function detailToSummary(
 }
 
 async function softGooglePhrase(query: string): Promise<BookSummary[]> {
+  if (!hasGoogleBooksApiKey() || isGoogleBooksBusy()) return [];
   try {
     const page = await searchGoogleBooks(query, 1);
     return page.books;
@@ -55,6 +56,7 @@ async function softGooglePhrase(query: string): Promise<BookSummary[]> {
 }
 
 async function softIsbn(isbn: string): Promise<BookSummary | null> {
+  if (!hasGoogleBooksApiKey() || isGoogleBooksBusy()) return null;
   try {
     return detailToSummary(await getGoogleBookByIsbn(isbn));
   } catch {
