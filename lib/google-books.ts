@@ -40,10 +40,10 @@ export type GoogleBooksProviderError = {
 const FETCH_TIMEOUT_MS = 3000;
 const GOOGLE_PAGE_SIZE = 20;
 /** Successful Google search pages — keyed by query + page. */
-const GOOGLE_SEARCH_TTL_MS = 15 * 60 * 1000;
+const GOOGLE_SEARCH_TTL_MS = 10 * 60 * 1000;
 /** Successful volume / ISBN lookups. */
 const GOOGLE_VOLUME_TTL_MS = 24 * 60 * 60 * 1000;
-/** 429/403 must not occupy the 15-min success slot. */
+/** 429/403 must not occupy the 10-min success slot. */
 const GOOGLE_NEGATIVE_CACHE_TTL_MS = 60_000;
 /**
  * Process-wide skip after 429/403 so concurrent search/detail cannot turn
@@ -598,7 +598,7 @@ export async function searchGoogleBooks(
     });
 
     // Soft-fail so Promise.allSettled siblings still surface results.
-    // Do not cache other errors as a 15-min Google success.
+    // Do not cache other errors as a 10-min Google success.
     return {
       books: [],
       hasMore: false,

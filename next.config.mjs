@@ -23,6 +23,7 @@ const nextConfig = {
     ];
   },
   images: {
+    unoptimized: true,
     minimumCacheTTL: 2678400,
     remotePatterns: [
       {

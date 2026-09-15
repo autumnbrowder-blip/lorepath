@@ -9,14 +9,21 @@ import { parseUtf8Json } from "@/lib/utf8-json";
 import { finalizeBookTags } from "@/lib/book-tags";
 import { PAGE_FETCH_TIMEOUT_MS, withTimeout } from "@/lib/provider-resilience";
 import type { BookDetail, BookSummary } from "@/types/book";
+import { promises as fs } from "fs";
+import os from "os";
+import path from "path";
 
 const NYT_ID_PREFIX = "nyt-";
-const NYT_CACHE_TTL_MS = 60 * 60 * 1000;
+const NYT_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const NYT_CACHE_FILE = path.join(os.tmpdir(), "lorepath-nyt-bestsellers.json");
 
-let nytBestsellersCache: {
+type NytCacheEntry = {
   expiresAt: number;
   value: NytBestsellersResult;
-} | null = null;
+};
+
+let nytBestsellersCache: NytCacheEntry | null = null;
+let nytInFlight: Promise<NytBestsellersResult> | null = null;
 
 export const NYT_BESTSELLER_LISTS = [
   {
@@ -56,6 +63,48 @@ export type NytBestsellersResult = {
   error?: string;
 };
 
+export type FetchNytBestsellersOptions = {
+  /** When false, never call the NYT API (bots / prefetch). Serve cache or empty. */
+  allowNetwork?: boolean;
+};
+
+function isFreshCache(entry: NytCacheEntry | null, now: number): boolean {
+  return Boolean(entry && entry.expiresAt > now);
+}
+
+async function readNytFileCache(): Promise<NytCacheEntry | null> {
+  try {
+    const raw = await fs.readFile(NYT_CACHE_FILE, "utf8");
+    const parsed = JSON.parse(raw) as NytCacheEntry;
+    if (!parsed || typeof parsed.expiresAt !== "number" || !parsed.value) {
+      return null;
+    }
+    if (!Array.isArray(parsed.value.books)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeNytFileCache(entry: NytCacheEntry): void {
+  void fs
+    .mkdir(path.dirname(NYT_CACHE_FILE), { recursive: true })
+    .then(() => fs.writeFile(NYT_CACHE_FILE, JSON.stringify(entry), "utf8"))
+    .catch(() => {
+      /* /tmp may be missing or read-only — memory cache still applies. */
+    });
+}
+
+function rememberNytCache(value: NytBestsellersResult, now: number): NytBestsellersResult {
+  const entry: NytCacheEntry = {
+    expiresAt: now + NYT_CACHE_TTL_MS,
+    value,
+  };
+  nytBestsellersCache = entry;
+  writeNytFileCache(entry);
+  return value;
+}
+
 function hasNytApiKey(): boolean {
   return Boolean(process.env.NYT_BOOKS_API_KEY?.trim());
 }
@@ -82,7 +131,7 @@ async function fetchNyt(url: string): Promise<Response> {
   try {
     return await fetch(url, {
       cache: "force-cache",
-      next: { revalidate: 3600 },
+      next: { revalidate: 21600 },
       signal: controller.signal,
     });
   } finally {
@@ -188,8 +237,31 @@ async function fetchNytList(
 /**
  * Fetch hardcover fiction + trade paperback fiction NYT lists,
  * merge, and dedupe by id (ISBN-based when available).
+ * Cached 6 hours in memory and a JSON file. Bots must pass allowNetwork: false.
  */
-export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
+export async function fetchNytBestsellers(
+  options?: FetchNytBestsellersOptions
+): Promise<NytBestsellersResult> {
+  const allowNetwork = options?.allowNetwork !== false;
+  const now = Date.now();
+
+  if (isFreshCache(nytBestsellersCache, now) && nytBestsellersCache) {
+    return nytBestsellersCache.value;
+  }
+
+  const fromFile = await readNytFileCache();
+  if (fromFile) {
+    nytBestsellersCache = fromFile;
+    if (isFreshCache(fromFile, now)) {
+      return fromFile.value;
+    }
+  }
+
+  // Bots must not trigger NYT — serve stale cache if we have one, else empty.
+  if (!allowNetwork) {
+    return fromFile?.value ?? nytBestsellersCache?.value ?? { books: [] };
+  }
+
   if (!hasNytApiKey()) {
     // Optional source — Browse/search still work; bestsellers section stays hidden.
     console.warn(
@@ -198,65 +270,61 @@ export async function fetchNytBestsellers(): Promise<NytBestsellersResult> {
     return { books: [] };
   }
 
-  const now = Date.now();
-  if (nytBestsellersCache && nytBestsellersCache.expiresAt > now) {
-    return nytBestsellersCache.value;
-  }
+  if (nytInFlight) return nytInFlight;
 
-  try {
-    const results = await withTimeout(
-      Promise.all(
-        NYT_BESTSELLER_LISTS.map((list) => fetchNytList(list.url, list.label))
-      ),
-      Math.max(1000, PAGE_FETCH_TIMEOUT_MS),
-      "nyt-bestsellers"
-    );
+  nytInFlight = (async () => {
+    const fetchNow = Date.now();
+    try {
+      const results = await withTimeout(
+        Promise.all(
+          NYT_BESTSELLER_LISTS.map((list) => fetchNytList(list.url, list.label))
+        ),
+        Math.max(1000, PAGE_FETCH_TIMEOUT_MS),
+        "nyt-bestsellers"
+      );
 
-    const seen = new Set<string>();
-    const books: BookSummary[] = [];
+      const seen = new Set<string>();
+      const books: BookSummary[] = [];
 
-    for (const listBooks of results) {
-      for (const book of listBooks) {
-        if (seen.has(book.id)) continue;
-        seen.add(book.id);
-        books.push(book);
+      for (const listBooks of results) {
+        for (const book of listBooks) {
+          if (seen.has(book.id)) continue;
+          seen.add(book.id);
+          books.push(book);
+        }
       }
-    }
 
-    if (books.length === 0) {
-      const empty: NytBestsellersResult = {
-        books: [],
-        error:
-          "The bestsellers archive is resting for now. Try searching below for any tome.",
-      };
-      nytBestsellersCache = {
-        expiresAt: now + NYT_CACHE_TTL_MS,
-        value: empty,
-      };
-      return empty;
-    }
+      if (books.length === 0) {
+        return rememberNytCache(
+          {
+            books: [],
+            error:
+              "The bestsellers archive is resting for now. Try searching below for any tome.",
+          },
+          fetchNow
+        );
+      }
 
-    const value: NytBestsellersResult = {
-      books: books.filter((book) => !isTitleOnlyStub(book)),
-    };
-    nytBestsellersCache = {
-      expiresAt: now + NYT_CACHE_TTL_MS,
-      value,
-    };
-    return value;
-  } catch (error) {
-    console.error("NYT bestsellers fetch failed:", error);
-    const failed: NytBestsellersResult = {
-      books: [],
-      error:
-        "The bestsellers archive is resting for now. Try searching below for any tome.",
-    };
-    nytBestsellersCache = {
-      expiresAt: now + NYT_CACHE_TTL_MS,
-      value: failed,
-    };
-    return failed;
-  }
+      return rememberNytCache(
+        { books: books.filter((book) => !isTitleOnlyStub(book)) },
+        fetchNow
+      );
+    } catch (error) {
+      console.error("NYT bestsellers fetch failed:", error);
+      return rememberNytCache(
+        {
+          books: [],
+          error:
+            "The bestsellers archive is resting for now. Try searching below for any tome.",
+        },
+        fetchNow
+      );
+    }
+  })().finally(() => {
+    nytInFlight = null;
+  });
+
+  return nytInFlight;
 }
 
 export function nytSummaryToDetail(

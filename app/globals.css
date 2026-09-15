@@ -222,7 +222,7 @@
     border-radius: 6px;
     border: 3px solid #8c6b2e;
     background-color: #e6d9b8;
-    background-image: url("/images/parchment.jpg");
+    background-image: url("/images/parchment.webp");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -243,7 +243,7 @@
   }
 
   /*
-   * Shared classical library — Peter Herrmann Unsplash original (O_DUcg4cDlc).
+   * Shared classical library — compressed WebP of Peter Herrmann Unsplash (O_DUcg4cDlc).
    * Element is position:fixed so the photo never recrops; background-attachment
    * fixed matches a real photograph pinned behind the overlay UI.
    */
@@ -271,7 +271,7 @@
         rgba(8, 16, 12, 0.28),
         rgba(8, 16, 12, 0.28)
       ),
-      url("/images/backgrounds/peter-herrmann-O_DUcg4cDlc-unsplash.jpg");
+      url("/images/backgrounds/peter-herrmann-O_DUcg4cDlc-unsplash.webp");
     background-size: cover, cover;
     background-position: center, center;
     background-repeat: no-repeat, no-repeat;
@@ -474,7 +474,7 @@
         rgba(230, 217, 184, 0.14) 42%,
         rgba(230, 217, 184, 0.32) 100%
       ),
-      url("/images/parchment.jpg");
+      url("/images/parchment.webp");
     /* Fixed tile size — independent of container width/height */
     background-size: auto, 1100px auto;
     background-position: center, top center;
@@ -593,7 +593,7 @@
     width: 100%;
     min-height: 100vh;
     background-color: #1a120c;
-    background-image: url("/images/auth-hall.jpg");
+    background-image: url("/images/auth-hall.webp");
     background-repeat: no-repeat;
     background-position: center bottom;
     background-size: cover;
@@ -730,7 +730,7 @@
   }
 
   /*
-   * Portal scene: Next/Image fills this fixed frame (cover + center).
+   * Portal / preferences scenes: CSS cover background (compressed WebP).
    * Equivalent to background-attachment:fixed — viewport-locked so scroll /
    * form growth / Login↔Register never reframes the art.
    */
@@ -740,6 +740,10 @@
 
   .preferences-page-scene {
     background-color: #d8c49a;
+    background-image: url("/images/lorepath-preferences-parchment.webp");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
   }
 
   .home-hero-scene {
@@ -1772,7 +1776,7 @@
         rgba(18, 50, 41, 0.94) 68%,
         rgba(12, 36, 28, 0.94) 100%
       ),
-      url("/images/parchment.jpg");
+      url("/images/parchment.webp");
     background-size: auto, cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -1960,7 +1964,7 @@
         rgba(16, 44, 35, 0.94) 72%,
         rgba(11, 32, 25, 0.94) 100%
       ),
-      url("/images/parchment.jpg");
+      url("/images/parchment.webp");
     background-size: auto, cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -2148,7 +2152,7 @@
 /* Login / Register hall — unlayered so cover reaches the viewport bottom. */
 .portal-auth-page {
   min-height: 100vh;
-  background-image: url("/images/auth-hall.jpg");
+  background-image: url("/images/auth-hall.webp");
   background-repeat: no-repeat;
   background-position: center bottom;
   background-size: cover;
@@ -2665,7 +2669,7 @@ html.dark .browse-search-scroll input[type="search"]::placeholder {
   }
 
   .portal-auth-page {
-    background-image: url("/images/auth-hall.jpg");
+    background-image: url("/images/auth-hall.webp");
     background-color: #1a120c;
   }
 

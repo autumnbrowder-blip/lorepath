@@ -165,7 +165,6 @@ export function BookSearch({
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
       credentials: "same-origin",
-      cache: "no-store",
     });
     const data = await response.json();
     const books = Array.isArray(data.books)

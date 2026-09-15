@@ -1,7 +1,11 @@
 import type { BookSearchResult, BookSummary } from "@/types/book";
+import { createHash } from "crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import os from "os";
+import path from "path";
 
 /**
- * Short in-memory cache for browse search pages (a few minutes).
+ * Short in-memory + JSON-file cache for browse search pages (10 minutes).
  * User-specific Inscribed data is reapplied after a hit — never stored here.
  * Every entry is keyed by exact query + page + mode. Callers always receive
  * cloned book arrays so overlapping requests cannot mutate a shared page.
@@ -25,8 +29,8 @@ type SearchCacheEntry = {
 
 export type CachedSearchPage = Omit<SearchCacheEntry, "expiresAt">;
 
-/** Fifteen minutes — GET /api/books/search is keyed on q + page. */
-const TTL_MS = 15 * 60 * 1000;
+/** Ten minutes — GET /api/books/search is keyed on q + page. */
+const TTL_MS = 10 * 60 * 1000;
 /** Brief merged-page TTL when Google 429/403 so we still serve OL, then retry. */
 export const SEARCH_PAGE_429_TTL_MS = 60_000;
 const MAX_ENTRIES = 80;
@@ -34,6 +38,36 @@ const MAX_ENTRIES = 80;
 const cache = new Map<string, SearchCacheEntry>();
 /** In-flight pages keyed by searchCacheKey — never shared across different q. */
 const inFlight = new Map<string, Promise<CachedSearchPage>>();
+const SEARCH_CACHE_DIR = path.join(os.tmpdir(), "lorepath-search");
+
+function searchCacheFile(key: string): string {
+  const hash = createHash("sha1").update(key).digest("hex");
+  return path.join(SEARCH_CACHE_DIR, `${hash}.json`);
+}
+
+function readSearchFile(key: string): SearchCacheEntry | null {
+  try {
+    const raw = readFileSync(searchCacheFile(key), "utf8");
+    const parsed = JSON.parse(raw) as SearchCacheEntry;
+    if (!parsed || typeof parsed.expiresAt !== "number") return null;
+    if (!Array.isArray(parsed.books) || parsed.books.length === 0) return null;
+    if (typeof parsed.query !== "string" || !parsed.query.trim()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeSearchFile(key: string, entry: SearchCacheEntry): void {
+  try {
+    if (!existsSync(SEARCH_CACHE_DIR)) {
+      mkdirSync(SEARCH_CACHE_DIR, { recursive: true });
+    }
+    writeFileSync(searchCacheFile(key), JSON.stringify(entry), "utf8");
+  } catch {
+    /* /tmp may be missing or read-only — memory cache still applies. */
+  }
+}
 
 export function searchCacheKey(input: {
   query: string;
@@ -85,7 +119,14 @@ export function getCachedSearchPage(
   expectedQuery?: string
 ): CachedSearchPage | null {
   const now = Date.now();
-  const entry = cache.get(key);
+  let entry = cache.get(key) ?? null;
+  if (!entry) {
+    const fromFile = readSearchFile(key);
+    if (fromFile) {
+      cache.set(key, fromFile);
+      entry = fromFile;
+    }
+  }
   if (!entry) return null;
   if (entry.expiresAt <= now) {
     cache.delete(key);
@@ -119,10 +160,12 @@ export function setCachedSearchPage(
 
   const now = Date.now();
   pruneExpired(now);
-  cache.set(key, {
+  const entry: SearchCacheEntry = {
     ...clonePage({ ...value, query }),
     expiresAt: now + ttlMs,
-  });
+  };
+  cache.set(key, entry);
+  writeSearchFile(key, entry);
 }
 
 /**

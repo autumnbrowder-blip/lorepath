@@ -28,6 +28,7 @@ export function Navbar() {
       <nav className="site-nav-bar grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 sm:grid-cols-[1fr_auto_1fr]">
         <Link
           href="/"
+          prefetch={false}
           aria-label="LorePath home"
           className={`${wordmark.className} ${wordmark.variable} site-nav-wordmark cursor-pointer justify-self-start`}
         >
@@ -47,6 +48,7 @@ export function Navbar() {
               ) : null}
               <Link
                 href={link.href}
+                prefetch={false}
                 className={`${navLinkClass} ${
                   pathname === link.href ? "site-nav-gold--active" : ""
                 }`}

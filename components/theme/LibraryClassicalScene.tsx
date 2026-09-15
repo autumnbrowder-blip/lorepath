@@ -1,7 +1,7 @@
 /**
  * Shared classical library backdrop.
- * Peter Herrmann Unsplash original (photo O_DUcg4cDlc) as a CSS background
- * on a viewport-fixed layer so cover size never recrops.
+ * Compressed WebP of Peter Herrmann Unsplash original (photo O_DUcg4cDlc)
+ * as a CSS background on a viewport-fixed layer so cover size never recrops.
  */
 export function LibraryClassicalScene({
   className = "",

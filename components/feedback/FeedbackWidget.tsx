@@ -215,7 +215,7 @@ export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.14]"
           style={{
-            backgroundImage: "url('/images/parchment.jpg')",
+            backgroundImage: "url('/images/parchment.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}

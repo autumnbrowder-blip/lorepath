@@ -13,7 +13,6 @@ import { getUserRatingCount } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient, getCachedUser } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -52,16 +51,6 @@ export default async function PreferencesPage() {
     <div className="preferences-page">
       {/* Viewport-locked parchment scene — does not rescale when sliders/notes expand */}
       <div className="preferences-page-scene" aria-hidden="true">
-        <div className="scroll-parallax-layer" data-scroll-parallax="">
-          <Image
-            src="/images/lorepath-preferences-parchment.png"
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="preferences-page-scene-image"
-          />
-        </div>
         {/* Fiber grain + coffee stains */}
         <div
           className="absolute inset-0 opacity-[0.34] mix-blend-multiply"

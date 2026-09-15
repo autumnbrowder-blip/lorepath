@@ -7,16 +7,15 @@ import {
 } from "@/lib/cover-resolve";
 import type { BookSummary } from "@/types/book";
 import { BookOpen } from "lucide-react";
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 type BookCoverProps = {
   book: Pick<BookSummary, "id" | "title" | "coverUrl" | "isbn"> & {
     coverImage?: string | null;
   };
-  /** next/image sizes attribute */
+  /** Layout hint from callers — unused; covers are never next/image. */
   sizes: string;
-  /** LCP priority — use on book detail hero cover only */
+  /** LCP hint from callers — covers always load lazy to cut bandwidth. */
   priority?: boolean;
   className?: string;
   /** Card uses compact “Ancient volume”; detail uses a larger label. */
@@ -25,14 +24,12 @@ type BookCoverProps = {
 
 /**
  * Shared cover image with fallback chain:
- * Google thumbnail (zoom=1) → Open Library ISBN → parchment placeholder →
+ * Open Library / stored cover URL → local /images placeholder →
  * inline “Ancient volume” (if even the local asset fails).
- * Never waits on Hardcover.
+ * Plain <img> only — never next/image (Netlify image function).
  */
 export function BookCover({
   book,
-  sizes,
-  priority = false,
   className = "object-cover",
   variant = "card",
 }: BookCoverProps) {
@@ -93,19 +90,17 @@ export function BookCover({
   }
 
   return (
-    <Image
+    // eslint-disable-next-line @next/next/no-img-element -- hotlink OL/local covers; never next/image
+    <img
       src={src}
       alt={
         isPlaceholder
           ? `Placeholder cover for ${book.title}`
           : `Cover of ${book.title}`
       }
-      fill
-      className={className}
-      sizes={sizes}
-      priority={priority}
-      loading={priority ? undefined : "lazy"}
-      unoptimized={!isPlaceholder}
+      className={`absolute inset-0 h-full w-full ${className}`}
+      loading="lazy"
+      decoding="async"
       onError={() => {
         if (index + 1 < candidates.length) {
           setIndex((current) => current + 1);

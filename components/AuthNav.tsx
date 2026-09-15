@@ -244,6 +244,7 @@ export function AuthNav() {
             >
               <Link
                 href="/profile"
+                prefetch={false}
                 role="menuitem"
                 className={`${menuItemClass} ${
                   onProfile ? menuItemActiveClass : ""
@@ -255,6 +256,7 @@ export function AuthNav() {
               </Link>
               <Link
                 href="/preferences"
+                prefetch={false}
                 role="menuitem"
                 className={`${menuItemClass} ${
                   onPreferences ? menuItemActiveClass : ""
@@ -266,6 +268,7 @@ export function AuthNav() {
               </Link>
               <Link
                 href="/stats"
+                prefetch={false}
                 role="menuitem"
                 className={`${menuItemClass} ${
                   onStats ? menuItemActiveClass : ""
@@ -277,6 +280,7 @@ export function AuthNav() {
               </Link>
               <Link
                 href="/settings"
+                prefetch={false}
                 role="menuitem"
                 className={`${menuItemClass} ${
                   onSettings ? menuItemActiveClass : ""
@@ -349,6 +353,7 @@ export function AuthNav() {
         >
           <Link
             href="/login"
+            prefetch={false}
             role="menuitem"
             className={`${menuItemClass} ${onLogin ? menuItemActiveClass : ""}`}
             onClick={() => setOpen(false)}
@@ -357,6 +362,7 @@ export function AuthNav() {
           </Link>
           <Link
             href="/register"
+            prefetch={false}
             role="menuitem"
             className={`${menuItemClass} ${onRegister ? menuItemActiveClass : ""}`}
             onClick={() => setOpen(false)}

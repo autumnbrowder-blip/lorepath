@@ -12,7 +12,7 @@ import type { BookSummary } from "@/types/book";
  */
 
 /** Fantasy parchment texture already used across LorePath UI. */
-export const BOOK_COVER_PLACEHOLDER = "/images/parchment.jpg";
+export const BOOK_COVER_PLACEHOLDER = "/images/parchment.webp";
 
 export type CoverSource = "google" | "ol" | "none";
 
@@ -153,7 +153,7 @@ export function resolveRemoteCoverUrl(book: CoverBook): string | null {
 }
 
 /**
- * Ordered cover candidates for next/image + onError fallback chain.
+ * Ordered cover candidates for a plain <img> + onError fallback chain.
  * Always ends with the local fantasy placeholder. Never includes Hardcover.
  */
 export function getCoverCandidates(book: CoverBook): string[] {

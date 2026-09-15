@@ -21,7 +21,7 @@ export default function BookDetailError({ reset }: BookDetailErrorProps) {
         <div
           className="w-full max-w-lg px-6 py-12 shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
           style={{
-            backgroundImage: "url('/images/parchment.jpg')",
+            backgroundImage: "url('/images/parchment.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",
