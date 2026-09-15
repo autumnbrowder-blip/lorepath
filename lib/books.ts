@@ -50,7 +50,6 @@ import {
   searchOpenLibrary,
 } from "@/lib/open-library";
 import {
-  cacheBookDetail,
   getCachedBookBySlug,
   searchLocalBooks,
   sourceFromBookSlug,
@@ -116,11 +115,11 @@ const OPTIONAL_SEARCH_TIMEOUT_MS = 2000;
 /** Open Library is required — search.json is often slower than optional catalogs. */
 const OPEN_LIBRARY_SEARCH_TIMEOUT_MS = 12000;
 /** Local books ILIKE + in-memory NYT cache — fail fast on 57014 / hang. */
-const LOCAL_SEARCH_TIMEOUT_MS = 1000;
+const LOCAL_SEARCH_TIMEOUT_MS = 800;
 /** One browse page — local+NYT fill this before catalogs. */
 const SEARCH_PAGE_SIZE = 20;
-/** Upsert only the returned page, not hundreds of OL rows. */
-const SEARCH_UPSERT_CAP = 20;
+/** Local public.books ILIKE page — keep tiny so %q% cannot scan the table. */
+const LOCAL_ILIKE_LIMIT = 10;
 /** Detail-page enrichment total budget after core book is resolved. */
 const DETAIL_ENRICH_BUDGET_MS = 1500;
 /** Core catalog lookups — keep short so Hardcover cannot decide page existence. */
@@ -270,25 +269,13 @@ function pinLocalAndNyt(
   return [...rankBrowseSearchResults(top, query), ...rest];
 }
 
-function persistSearchHits(books: BookSummary[]): void {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) return;
-  for (const book of books.slice(0, SEARCH_UPSERT_CAP)) {
-    if (!book.title?.trim() || isTitleOnlyStub(book)) continue;
-    void cacheBookDetail(book.id, summaryToDetail(book, book.id)).catch(
-      (error) => {
-        console.error("[searchBooks] upsert skipped:", error);
-      }
-    );
-  }
-}
-
 async function loadLocalAndNytMatches(searchQuery: string): Promise<{
   localBooks: BookSummary[];
   nytBooks: BookSummary[];
 }> {
   const [localSettled, nytSettled] = await Promise.allSettled([
     withTimeout(
-      searchLocalBooks(searchQuery, SEARCH_PAGE_SIZE),
+      searchLocalBooks(searchQuery, LOCAL_ILIKE_LIMIT),
       LOCAL_SEARCH_TIMEOUT_MS,
       "local search"
     ),
@@ -632,8 +619,6 @@ async function fetchSearchPageUncached(
     `[search] q=${searchQuery} google=${googleStatus} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} out=${books.length} local=${localBooks.length} nyt=${nytBooks.length}`
   );
 
-  persistSearchHits(books);
-
   return {
     query: searchQuery,
     books: cloneSummaries(books),
@@ -716,7 +701,7 @@ export async function searchBooks(
       (pageResult.sourceCounts.isbndb ?? 0) >
       0
   ) {
-    // A Google 429/403 must not occupy the 15-min success slot. Cache OL briefly
+    // A Google 429/403 must not occupy the 10-min success slot. Cache OL briefly
     // so we still serve results without hammering Google.
     if (
       pageResult.googleError?.status === 429 ||
@@ -1065,18 +1050,11 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
         .then(({ enrichFromHardcover }) => enrichFromHardcover(tagged))
         .then((enriched) => {
           if (!isUsableCoreBook(enriched)) return;
-          return cacheBookDetail(bookId, enriched);
         })
         .catch((error) => {
           logBookDetailError(bookId, error);
         });
     }
-
-    void cacheBookDetail(bookId, tagged).catch((error) => {
-      // Upsert is best-effort. Google/OL already rendered — never throw,
-      // and never treat a cache/RLS miss as "archives are resting".
-      logBookDetailError(bookId, error);
-    });
 
     const failures = [...coreFailures, ...optionalFailures];
     const archivesBusy =

@@ -73,18 +73,37 @@ export function isNonRetryableDataApiError(
       : typeof code === "string" && /^\d+$/.test(code)
         ? Number(code)
         : null;
-  if (status === 401 || status === 403 || status === 500) return true;
+  if (
+    status === 401 ||
+    status === 403 ||
+    status === 500 ||
+    status === 520 ||
+    status === 525
+  ) {
+    return true;
+  }
   if (
     rawCode === "57014" ||
     rawCode === "42501" ||
     rawCode === "PGRST301" ||
     rawCode === "401" ||
     rawCode === "403" ||
-    rawCode === "500"
+    rawCode === "500" ||
+    rawCode === "520" ||
+    rawCode === "525"
   ) {
     return true;
   }
   if (isPermissionDeniedError(message, typeof code === "string" ? code : undefined)) {
+    return true;
+  }
+  if (/error code:\s*52[05]\b/i.test(message)) return true;
+  if (
+    /\b52[05]\b/.test(message) &&
+    /cloudflare|web server is down|origin is unreachable|ssl handshake/i.test(
+      message
+    )
+  ) {
     return true;
   }
   return /timeout|timed out|57014|canceling statement|statement timeout/i.test(

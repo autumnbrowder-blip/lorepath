@@ -37,6 +37,110 @@ const BOOK_READ_COLUMNS =
 const LOCAL_SEARCH_COLUMNS =
   "slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count";
 
+/** Hard cap — ILIKE %q% on a large books table must not scan dozens of rows. */
+const LOCAL_SEARCH_LIMIT = 10;
+
+/** Process-wide: after 520/525/57014, skip every books write for 15 minutes. */
+const BOOKS_WRITE_COOLDOWN_MS = 15 * 60 * 1000;
+let booksWriteBlockedUntil = 0;
+
+function openBooksWriteCircuit(reason: string): void {
+  booksWriteBlockedUntil = Date.now() + BOOKS_WRITE_COOLDOWN_MS;
+  console.error("[book-cache] books write circuit open 15m:", reason);
+}
+
+export function isBooksWriteCircuitOpen(): boolean {
+  return Date.now() < booksWriteBlockedUntil;
+}
+
+/**
+ * Cloudflare 520/525 in front of PostgREST, or Postgres statement timeout 57014.
+ * Match status/code first so a title containing those digits cannot trip this.
+ */
+export function isBooksOverloadedError(
+  message: string,
+  code?: string | number | null,
+  status?: number | null
+): boolean {
+  const rawCode = code == null ? "" : String(code).trim();
+  const numeric =
+    typeof code === "number"
+      ? code
+      : typeof status === "number"
+        ? status
+        : /^\d+$/.test(rawCode)
+          ? Number(rawCode)
+          : null;
+  if (numeric === 520 || numeric === 525 || numeric === 57014) return true;
+  if (rawCode === "520" || rawCode === "525" || rawCode === "57014") return true;
+  if (status === 520 || status === 525) return true;
+  if (/\b57014\b/.test(message) || /canceling statement|statement timeout/i.test(message)) {
+    return true;
+  }
+  if (/error code:\s*52[05]\b/i.test(message)) return true;
+  if (/\b52[05]\b/.test(message) && /cloudflare|web server is down|origin is unreachable|ssl handshake/i.test(message)) {
+    return true;
+  }
+  return false;
+}
+
+/** Open the 15-minute write circuit. Returns true when the error matched. */
+export function noteBooksOverloadedError(
+  message: string,
+  code?: string | number | null,
+  status?: number | null
+): boolean {
+  if (!isBooksOverloadedError(message, code, status)) return false;
+  openBooksWriteCircuit(`${rawErrorLabel(code, status)} ${message}`.trim());
+  return true;
+}
+
+function rawErrorLabel(
+  code?: string | number | null,
+  status?: number | null
+): string {
+  if (code != null && String(code).trim()) return String(code);
+  if (status != null) return String(status);
+  return "";
+}
+
+/**
+ * Skip local ILIKE for bot/noise queries. Catalog search still runs.
+ * "Dune" (4) is allowed; "It" (2) is skipped; "Typex" is treated as garbage.
+ * Multi-token queries may include short words ("It Ends With Us").
+ */
+export function isLocalIlikeNoiseQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+
+  const compact = trimmed.replace(/[\s-]/g, "");
+  if (/^\d{9}[\dXx]$|^\d{13}$/.test(compact)) return false;
+  if (/^\d{4}$/.test(trimmed)) return false;
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  const letters = trimmed.replace(/[^A-Za-z]/g, "");
+  if (letters.length === 0) return true;
+
+  const stripped = trimmed
+    .replace(/[^A-Za-z0-9'\- ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped.length < 2) return true;
+
+  if (tokens.length >= 2) {
+    return !tokens.some((token) => (token.match(/[A-Za-z]/g) ?? []).length >= 2);
+  }
+
+  const token = tokens[0] ?? "";
+  if (token.length < 4) return true;
+  if (/\d/.test(token) && /[A-Za-z]/.test(token)) return true;
+  if (!/[aeiouy]/i.test(token)) return true;
+  if (/(.)\1{3,}/.test(token)) return true;
+  // Probe-like 5-letter token ending in x but not -ix (Typex yes, Helix no).
+  if (token.length === 5 && /x$/i.test(token) && !/ix$/i.test(token)) return true;
+  return false;
+}
+
 function isHardcoverEnabled(): boolean {
   return process.env.HARDCOVER_ENABLED === "true";
 }
@@ -176,18 +280,20 @@ function isBooksSelectDenied(message: string, code?: string): boolean {
 /**
  * One ILIKE on title/author. No ratings join, no Hardcover, no HTTP catalogs.
  * Anon SELECT first; service-role only if books SELECT is locked down.
+ * Never retries 520/525/57014. Noise queries never hit PostgREST.
  */
 export async function searchLocalBooks(
   query: string,
-  limit = 20
+  limit = LOCAL_SEARCH_LIMIT
 ): Promise<BookSummary[]> {
   const trimmed = query.trim();
   if (!trimmed || !isSupabaseConfigured()) return [];
+  if (isLocalIlikeNoiseQuery(trimmed)) return [];
 
   const escaped = escapeIlikeValue(trimmed);
   if (!escaped) return [];
   const pattern = `%${escaped}%`;
-  const pageSize = Math.max(1, Math.min(40, limit));
+  const pageSize = Math.max(1, Math.min(LOCAL_SEARCH_LIMIT, limit));
 
   const run = async (supabase: SupabaseClient) =>
     supabase
@@ -201,6 +307,13 @@ export async function searchLocalBooks(
     if (!anon) return [];
 
     let { data, error } = await run(anon);
+    if (error && noteBooksOverloadedError(error.message ?? "", error.code)) {
+      console.error("[book-cache] local search failed fast (overloaded):", {
+        code: error.code,
+        message: error.message,
+      });
+      return [];
+    }
     if (error && isBooksSelectDenied(error.message ?? "", error.code)) {
       const admin = resolveBooksWriteClient();
       if (admin) {
@@ -211,6 +324,7 @@ export async function searchLocalBooks(
     }
 
     if (error) {
+      noteBooksOverloadedError(error.message ?? "", error.code);
       if (isNonRetryableDataApiError(error.message ?? "", error.code)) {
         console.error("[book-cache] local search skipped:", {
           code: error.code,
@@ -227,6 +341,11 @@ export async function searchLocalBooks(
       .filter((book): book is BookDetail => book !== null);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const status =
+      error instanceof Error
+        ? (error as Error & { status?: number }).status
+        : undefined;
+    noteBooksOverloadedError(message, undefined, status);
     console.error("[book-cache] local search failed:", message);
     return [];
   }
@@ -268,6 +387,7 @@ export async function getCachedBookBySlug(
 
     if (error) {
       const message = error.message ?? "";
+      noteBooksOverloadedError(message, error.code);
       if (isNonRetryableDataApiError(message, error.code)) {
         console.error("[book-cache] read skipped:", {
           code: error.code,
@@ -280,6 +400,11 @@ export async function getCachedBookBySlug(
     return dbBookToDetail(data as BookDbRow);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const status =
+      error instanceof Error
+        ? (error as Error & { status?: number }).status
+        : undefined;
+    noteBooksOverloadedError(message, undefined, status);
     console.error("[book-cache] read failed:", message);
     console.error("[book-detail]", trimmed, message);
     return null;
@@ -297,6 +422,9 @@ export async function findBookIdBySlugOrIsbn(
       .select("id")
       .eq("slug", slug)
       .maybeSingle();
+    if (error && noteBooksOverloadedError(error.message ?? "", error.code)) {
+      return null;
+    }
     if (!error && data?.id) return data.id;
   }
 
@@ -314,17 +442,24 @@ export async function findBookIdBySlugOrIsbn(
     .limit(1)
     .maybeSingle();
 
-  if (error || !data?.id) return null;
+  if (error) {
+    noteBooksOverloadedError(error.message ?? "", error.code);
+    return null;
+  }
+  if (!data?.id) return null;
   return data.id;
 }
 
+const BOOKS_CIRCUIT_ERROR =
+  "Books catalog is temporarily unavailable. Try again in a few minutes.";
+
 /**
- * Idempotent books-row write used by rating saves and detail-page cache.
+ * Idempotent books-row write used only by rating saves.
  *
  * Always upsert on slug so we never insert a second row for the same slug
  * (books_slug_unique). After the write, SELECT id WHERE slug = $slug and
  * use that id for ratings. On 23505 (e.g. books_isbn_unique), recover the
- * existing row instead of inserting another.
+ * existing row instead of inserting another. Never retries 520/525/57014.
  */
 export async function ensureBookRow(
   _supabase: SupabaseClient,
@@ -334,6 +469,10 @@ export async function ensureBookRow(
   const slug = externalId.trim();
   if (!slug || !book.title?.trim()) {
     return { error: "Book not found." };
+  }
+
+  if (isBooksWriteCircuitOpen()) {
+    return { error: BOOKS_CIRCUIT_ERROR };
   }
 
   const supabase = resolveBooksWriteClient();
@@ -349,11 +488,18 @@ export async function ensureBookRow(
     .from("books")
     .upsert(bookRow, { onConflict: "slug" });
 
-  const { data: slugRow } = await supabase
+  if (upsertError && noteBooksOverloadedError(upsertError.message, upsertError.code)) {
+    return { error: BOOKS_CIRCUIT_ERROR };
+  }
+
+  const { data: slugRow, error: slugReadError } = await supabase
     .from("books")
     .select("id")
     .eq("slug", slug)
     .maybeSingle();
+  if (slugReadError && noteBooksOverloadedError(slugReadError.message, slugReadError.code)) {
+    return { error: BOOKS_CIRCUIT_ERROR };
+  }
   if (slugRow?.id) {
     return { bookDbId: slugRow.id };
   }
@@ -383,36 +529,15 @@ export async function ensureBookRow(
 }
 
 /**
- * Upsert a resolved book into `books` for later detail hits.
- * Soft-fails — never throws. Reuses an existing ISBN row instead of inserting
- * a duplicate (books_isbn_unique).
+ * Formerly upserted browse/detail hits into public.books. That path flooded
+ * PostgREST with POST ?on_conflict=slug. Search, grid, and detail views are
+ * read-only against books; only rating submit may insert a row.
  */
 export async function cacheBookDetail(
-  externalId: string,
-  book: BookDetail
+  _externalId: string,
+  _book: BookDetail
 ): Promise<boolean> {
-  const slug = externalId.trim();
-  if (!slug || !book.title?.trim() || !isSupabaseConfigured()) return false;
-
-  try {
-    const supabase = resolveBooksWriteClient();
-    if (!supabase) {
-      console.error(
-        "[book-cache] upsert skipped: SUPABASE_SERVICE_ROLE_KEY is not set"
-      );
-      return false;
-    }
-
-    const result = await ensureBookRow(supabase, slug, book);
-    if ("error" in result) {
-      console.error("[book-cache] upsert failed:", result.error);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error("[book-cache] upsert error:", error);
-    return false;
-  }
+  return false;
 }
 
 const HARDCOVER_CACHED_AT_COLUMN = "hardcover_cached_at";
@@ -473,6 +598,7 @@ export async function readHardcoverRowCache(
         markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
         return null;
       }
+      noteBooksOverloadedError(message, error.code);
       if (isNonRetryableDataApiError(message, error.code)) {
         console.error("[book-cache] hardcover read skipped:", {
           code: error.code,
@@ -499,6 +625,7 @@ export async function readHardcoverRowCache(
         if (isHardcoverColumnMissing(byIsbn.error.message ?? "")) {
           markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
         }
+        noteBooksOverloadedError(byIsbn.error.message ?? "", byIsbn.error.code);
         return null;
       }
       row = byIsbn.data as (BookDbRow & { hardcover_cached_at?: string | null }) | null;
@@ -521,6 +648,11 @@ export async function readHardcoverRowCache(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const status =
+      error instanceof Error
+        ? (error as Error & { status?: number }).status
+        : undefined;
+    noteBooksOverloadedError(message, undefined, status);
     if (isHardcoverColumnMissing(message)) {
       markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
     }
@@ -543,6 +675,7 @@ export async function persistHardcoverCache(
   const trimmed = slug.trim();
   if (!trimmed || record.empty || !isSupabaseConfigured()) return;
   if (!isHardcoverEnabled()) return;
+  if (isBooksWriteCircuitOpen()) return;
 
   try {
     const supabase = resolveBooksWriteClient();
@@ -564,6 +697,9 @@ export async function persistHardcoverCache(
     const apply = async (payload: Record<string, unknown>) => {
       const bySlug = await supabase.from("books").update(payload).eq("slug", trimmed);
       if (!bySlug.error) return bySlug;
+      if (noteBooksOverloadedError(bySlug.error.message ?? "", bySlug.error.code)) {
+        return bySlug;
+      }
       const candidates = isbnLookupCandidates(isbn);
       if (candidates.length === 0) return bySlug;
       return supabase.from("books").update(payload).in("isbn", candidates);
@@ -571,11 +707,20 @@ export async function persistHardcoverCache(
 
     const { error } = await apply(withTimestamp);
 
+    if (error && noteBooksOverloadedError(error.message ?? "", error.code)) {
+      console.error("[book-cache] hardcover write skipped (overloaded):", {
+        code: error.code,
+        message: error.message,
+      });
+      return;
+    }
+
     if (error && isHardcoverColumnMissing(error.message ?? "")) {
       markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
       if (Object.keys(fields).length === 0) return;
       const retry = await apply(fields);
       if (retry.error) {
+        noteBooksOverloadedError(retry.error.message ?? "", retry.error.code);
         console.error("[book-cache] hardcover write skipped:", retry.error.message);
       }
       return;
@@ -589,6 +734,11 @@ export async function persistHardcoverCache(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const status =
+      error instanceof Error
+        ? (error as Error & { status?: number }).status
+        : undefined;
+    noteBooksOverloadedError(message, undefined, status);
     if (isHardcoverColumnMissing(message)) {
       markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
     }
