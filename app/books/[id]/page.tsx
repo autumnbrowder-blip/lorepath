@@ -8,7 +8,7 @@ import { CornerFlourish } from "@/components/theme/FantasyDecor";
 import { FantasyPageShell } from "@/components/theme/FantasyPageShell";
 import { loadBookDetail, searchBooks } from "@/lib/books";
 import { pickEarliestYear, pickPublishedYear } from "@/lib/book-utils";
-import { sourceFromBookSlug } from "@/lib/book-cache";
+import { sourceFromBookSlug } from "@/lib/book-slug";
 import {
   applyFirstPublishYearHint,
   booksShareWork,

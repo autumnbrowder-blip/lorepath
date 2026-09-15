@@ -1,17 +1,15 @@
+import { sourceFromBookSlug } from "@/lib/book-slug";
 import { normalizeIsbn, parsePublishedYear } from "@/lib/book-utils";
-import { getSupabaseEnv, isSupabaseConfigured } from "@/lib/supabase/config";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   isColumnMarkedMissing,
   isMissingColumnError,
   isNonRetryableDataApiError,
   markColumnMissing,
 } from "@/lib/supabase/schema-cache";
-import { createServiceRoleClient, noStoreFetch } from "@/lib/supabase/server";
-import type { BookDetail, BookSource, BookSummary } from "@/types/book";
-import {
-  createClient as createSupabaseClient,
-  type SupabaseClient,
-} from "@supabase/supabase-js";
+import { createServiceRoleClient } from "@/lib/supabase/server";
+import type { BookDetail } from "@/types/book";
+import { type SupabaseClient } from "@supabase/supabase-js";
 
 export type BookDbRow = {
   slug: string;
@@ -33,28 +31,32 @@ export type BookDbRow = {
 const BOOK_READ_COLUMNS =
   "id, slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count";
 
-/** Cheap local search — never `select *`, never ratings. */
-const LOCAL_SEARCH_COLUMNS =
-  "slug, title, author, isbn, cover_image_url, description, published_year, genre, page_count";
+/**
+ * Process-wide: after two 5xx from any public.books REST call, skip every
+ * books REST request (read and write) for 15 minutes.
+ */
+const BOOKS_REST_COOLDOWN_MS = 15 * 60 * 1000;
+const BOOKS_5XX_TRIP = 2;
+let booksRestBlockedUntil = 0;
+let books5xxHits = 0;
 
-/** Hard cap — ILIKE %q% on a large books table must not scan dozens of rows. */
-const LOCAL_SEARCH_LIMIT = 10;
-
-/** Process-wide: after 520/525/57014, skip every books write for 15 minutes. */
-const BOOKS_WRITE_COOLDOWN_MS = 15 * 60 * 1000;
-let booksWriteBlockedUntil = 0;
-
-function openBooksWriteCircuit(reason: string): void {
-  booksWriteBlockedUntil = Date.now() + BOOKS_WRITE_COOLDOWN_MS;
-  console.error("[book-cache] books write circuit open 15m:", reason);
+function openBooksRestCircuit(reason: string): void {
+  booksRestBlockedUntil = Date.now() + BOOKS_REST_COOLDOWN_MS;
+  books5xxHits = 0;
+  console.error("[book-cache] books REST circuit open 15m:", reason);
 }
 
+export function isBooksRestCircuitOpen(): boolean {
+  return Date.now() < booksRestBlockedUntil;
+}
+
+/** @deprecated Use isBooksRestCircuitOpen — writes and reads share one circuit. */
 export function isBooksWriteCircuitOpen(): boolean {
-  return Date.now() < booksWriteBlockedUntil;
+  return isBooksRestCircuitOpen();
 }
 
 /**
- * Cloudflare 520/525 in front of PostgREST, or Postgres statement timeout 57014.
+ * HTTP 5xx, Cloudflare 520/525, or Postgres 57014 from PostgREST.
  * Match status/code first so a title containing those digits cannot trip this.
  */
 export function isBooksOverloadedError(
@@ -62,36 +64,42 @@ export function isBooksOverloadedError(
   code?: string | number | null,
   status?: number | null
 ): boolean {
+  const asNum = (value: string | number | null | undefined): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+      return Number(value.trim());
+    }
+    return null;
+  };
+  for (const n of [asNum(status), asNum(code)]) {
+    if (n != null && n >= 500 && n <= 599) return true;
+  }
   const rawCode = code == null ? "" : String(code).trim();
-  const numeric =
-    typeof code === "number"
-      ? code
-      : typeof status === "number"
-        ? status
-        : /^\d+$/.test(rawCode)
-          ? Number(rawCode)
-          : null;
-  if (numeric === 520 || numeric === 525 || numeric === 57014) return true;
-  if (rawCode === "520" || rawCode === "525" || rawCode === "57014") return true;
-  if (status === 520 || status === 525) return true;
+  if (rawCode === "57014") return true;
   if (/\b57014\b/.test(message) || /canceling statement|statement timeout/i.test(message)) {
     return true;
   }
-  if (/error code:\s*52[05]\b/i.test(message)) return true;
+  if (/error code:\s*5\d\d\b/i.test(message)) return true;
   if (/\b52[05]\b/.test(message) && /cloudflare|web server is down|origin is unreachable|ssl handshake/i.test(message)) {
     return true;
   }
   return false;
 }
 
-/** Open the 15-minute write circuit. Returns true when the error matched. */
+/** Count a 5xx. On the second hit, open the 15-minute REST circuit. */
 export function noteBooksOverloadedError(
   message: string,
   code?: string | number | null,
   status?: number | null
 ): boolean {
   if (!isBooksOverloadedError(message, code, status)) return false;
-  openBooksWriteCircuit(`${rawErrorLabel(code, status)} ${message}`.trim());
+  if (isBooksRestCircuitOpen()) return true;
+  books5xxHits += 1;
+  if (books5xxHits >= BOOKS_5XX_TRIP) {
+    openBooksRestCircuit(
+      `${rawErrorLabel(code, status)} ${message}`.trim() || "5xx"
+    );
+  }
   return true;
 }
 
@@ -102,43 +110,6 @@ function rawErrorLabel(
   if (code != null && String(code).trim()) return String(code);
   if (status != null) return String(status);
   return "";
-}
-
-/**
- * Skip local ILIKE for bot/noise queries. Catalog search still runs.
- * "Dune" (4) is allowed; "It" (2) is skipped; "Typex" is treated as garbage.
- * Multi-token queries may include short words ("It Ends With Us").
- */
-export function isLocalIlikeNoiseQuery(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed) return true;
-
-  const compact = trimmed.replace(/[\s-]/g, "");
-  if (/^\d{9}[\dXx]$|^\d{13}$/.test(compact)) return false;
-  if (/^\d{4}$/.test(trimmed)) return false;
-
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
-  const letters = trimmed.replace(/[^A-Za-z]/g, "");
-  if (letters.length === 0) return true;
-
-  const stripped = trimmed
-    .replace(/[^A-Za-z0-9'\- ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (stripped.length < 2) return true;
-
-  if (tokens.length >= 2) {
-    return !tokens.some((token) => (token.match(/[A-Za-z]/g) ?? []).length >= 2);
-  }
-
-  const token = tokens[0] ?? "";
-  if (token.length < 4) return true;
-  if (/\d/.test(token) && /[A-Za-z]/.test(token)) return true;
-  if (!/[aeiouy]/i.test(token)) return true;
-  if (/(.)\1{3,}/.test(token)) return true;
-  // Probe-like 5-letter token ending in x but not -ix (Typex yes, Helix no).
-  if (token.length === 5 && /x$/i.test(token) && !/ix$/i.test(token)) return true;
-  return false;
 }
 
 function isHardcoverEnabled(): boolean {
@@ -204,18 +175,7 @@ export function bookDetailToDbRow(externalId: string, book: BookDetail) {
   };
 }
 
-export function sourceFromBookSlug(slug: string): BookSource {
-  if (slug.startsWith("ol-") || slug.startsWith("openlibrary-")) {
-    return "openlibrary";
-  }
-  if (slug.startsWith("gutenberg-") || slug.startsWith("gutendex-")) {
-    return "gutendex";
-  }
-  if (slug.startsWith("isbndb-")) return "isbndb";
-  if (slug.startsWith("bigbook-")) return "bigbook";
-  if (slug.startsWith("nyt-")) return "nyt";
-  return "google";
-}
+export { sourceFromBookSlug } from "@/lib/book-slug";
 
 export function dbBookToDetail(row: BookDbRow): BookDetail | null {
   const title = row.title?.trim();
@@ -240,118 +200,6 @@ export function dbBookToDetail(row: BookDbRow): BookDetail | null {
 }
 
 /**
- * Anon/user-safe SELECT client for public.books reads.
- * Falls back to service role only when the caller retries after RLS denial.
- */
-function resolveBooksReadClient(): SupabaseClient | null {
-  const env = getSupabaseEnv();
-  if (!env) return null;
-  return createSupabaseClient(env.url, env.anonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-    global: {
-      fetch: noStoreFetch,
-    },
-  });
-}
-
-function escapeIlikeValue(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_")
-    .replace(/"/g, "")
-    .replace(/,/g, " ")
-    .replace(/\(/g, " ")
-    .replace(/\)/g, " ")
-    .trim();
-}
-
-function isBooksSelectDenied(message: string, code?: string): boolean {
-  return (
-    code === "42501" ||
-    /permission denied|row-level security|42501/i.test(message)
-  );
-}
-
-/**
- * One ILIKE on title/author. No ratings join, no Hardcover, no HTTP catalogs.
- * Anon SELECT first; service-role only if books SELECT is locked down.
- * Never retries 520/525/57014. Noise queries never hit PostgREST.
- */
-export async function searchLocalBooks(
-  query: string,
-  limit = LOCAL_SEARCH_LIMIT
-): Promise<BookSummary[]> {
-  const trimmed = query.trim();
-  if (!trimmed || !isSupabaseConfigured()) return [];
-  if (isLocalIlikeNoiseQuery(trimmed)) return [];
-
-  const escaped = escapeIlikeValue(trimmed);
-  if (!escaped) return [];
-  const pattern = `%${escaped}%`;
-  const pageSize = Math.max(1, Math.min(LOCAL_SEARCH_LIMIT, limit));
-
-  const run = async (supabase: SupabaseClient) =>
-    supabase
-      .from("books")
-      .select(LOCAL_SEARCH_COLUMNS)
-      .or(`title.ilike."${pattern}",author.ilike."${pattern}"`)
-      .limit(pageSize);
-
-  try {
-    const anon = resolveBooksReadClient();
-    if (!anon) return [];
-
-    let { data, error } = await run(anon);
-    if (error && noteBooksOverloadedError(error.message ?? "", error.code)) {
-      console.error("[book-cache] local search failed fast (overloaded):", {
-        code: error.code,
-        message: error.message,
-      });
-      return [];
-    }
-    if (error && isBooksSelectDenied(error.message ?? "", error.code)) {
-      const admin = resolveBooksWriteClient();
-      if (admin) {
-        const retry = await run(admin);
-        data = retry.data;
-        error = retry.error;
-      }
-    }
-
-    if (error) {
-      noteBooksOverloadedError(error.message ?? "", error.code);
-      if (isNonRetryableDataApiError(error.message ?? "", error.code)) {
-        console.error("[book-cache] local search skipped:", {
-          code: error.code,
-          message: error.message,
-        });
-      } else {
-        console.error("[book-cache] local search failed:", error.message);
-      }
-      return [];
-    }
-
-    return (data ?? [])
-      .map((row) => dbBookToDetail(row as BookDbRow))
-      .filter((book): book is BookDetail => book !== null);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status =
-      error instanceof Error
-        ? (error as Error & { status?: number }).status
-        : undefined;
-    noteBooksOverloadedError(message, undefined, status);
-    console.error("[book-cache] local search failed:", message);
-    return [];
-  }
-}
-
-/**
  * Books upserts/reads that write a row MUST use the service-role key.
  * Never fall back to the anon/user JWT — that hits 42501 RLS on insert.
  */
@@ -365,56 +213,11 @@ function resolveBooksWriteClient(): SupabaseClient | null {
   return admin.supabase;
 }
 
-/**
- * Prefer a previously resolved `books` row by external slug.
- * Soft-fails to null on any error (never blocks page load).
- */
-export async function getCachedBookBySlug(
-  slug: string
-): Promise<BookDetail | null> {
-  const trimmed = slug.trim();
-  if (!trimmed || !isSupabaseConfigured()) return null;
-
-  try {
-    const supabase = resolveBooksWriteClient();
-    if (!supabase) return null;
-
-    const { data, error } = await supabase
-      .from("books")
-      .select(BOOK_READ_COLUMNS)
-      .eq("slug", trimmed)
-      .maybeSingle();
-
-    if (error) {
-      const message = error.message ?? "";
-      noteBooksOverloadedError(message, error.code);
-      if (isNonRetryableDataApiError(message, error.code)) {
-        console.error("[book-cache] read skipped:", {
-          code: error.code,
-          message,
-        });
-      }
-      return null;
-    }
-    if (!data) return null;
-    return dbBookToDetail(data as BookDbRow);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status =
-      error instanceof Error
-        ? (error as Error & { status?: number }).status
-        : undefined;
-    noteBooksOverloadedError(message, undefined, status);
-    console.error("[book-cache] read failed:", message);
-    console.error("[book-detail]", trimmed, message);
-    return null;
-  }
-}
-
 export async function findBookIdBySlugOrIsbn(
   supabase: SupabaseClient,
   options: { slug?: string | null; isbn?: string | null }
 ): Promise<string | null> {
+  if (isBooksRestCircuitOpen()) return null;
   const slug = options.slug?.trim() || "";
   if (slug) {
     const { data, error } = await supabase
@@ -471,7 +274,7 @@ export async function ensureBookRow(
     return { error: "Book not found." };
   }
 
-  if (isBooksWriteCircuitOpen()) {
+  if (isBooksRestCircuitOpen()) {
     return { error: BOOKS_CIRCUIT_ERROR };
   }
 
@@ -577,6 +380,7 @@ export async function readHardcoverRowCache(
 ): Promise<HardcoverRowCache | null> {
   const trimmed = slug.trim();
   if (!trimmed || !isSupabaseConfigured()) return null;
+  if (isBooksRestCircuitOpen()) return null;
   if (!isHardcoverEnabled()) return null;
   if (isColumnMarkedMissing("books", HARDCOVER_CACHED_AT_COLUMN)) return null;
 
@@ -668,81 +472,10 @@ export async function readHardcoverRowCache(
  * column when the flag is off. Never inserts. Missing column / 57014 → skip.
  */
 export async function persistHardcoverCache(
-  slug: string,
-  isbn: string | null,
-  record: HardcoverRowCache
+  _slug: string,
+  _isbn: string | null,
+  _record: HardcoverRowCache
 ): Promise<void> {
-  const trimmed = slug.trim();
-  if (!trimmed || record.empty || !isSupabaseConfigured()) return;
-  if (!isHardcoverEnabled()) return;
-  if (isBooksWriteCircuitOpen()) return;
-
-  try {
-    const supabase = resolveBooksWriteClient();
-    if (!supabase) return;
-
-    const fields: Record<string, unknown> = {};
-    if (record.tags.length > 0) {
-      fields.genre = record.tags.slice(0, 5).join(", ");
-    }
-    const withTimestamp = isColumnMarkedMissing("books", HARDCOVER_CACHED_AT_COLUMN)
-      ? fields
-      : {
-          ...fields,
-          hardcover_cached_at: new Date(record.cachedAt).toISOString(),
-        };
-
-    if (Object.keys(withTimestamp).length === 0) return;
-
-    const apply = async (payload: Record<string, unknown>) => {
-      const bySlug = await supabase.from("books").update(payload).eq("slug", trimmed);
-      if (!bySlug.error) return bySlug;
-      if (noteBooksOverloadedError(bySlug.error.message ?? "", bySlug.error.code)) {
-        return bySlug;
-      }
-      const candidates = isbnLookupCandidates(isbn);
-      if (candidates.length === 0) return bySlug;
-      return supabase.from("books").update(payload).in("isbn", candidates);
-    };
-
-    const { error } = await apply(withTimestamp);
-
-    if (error && noteBooksOverloadedError(error.message ?? "", error.code)) {
-      console.error("[book-cache] hardcover write skipped (overloaded):", {
-        code: error.code,
-        message: error.message,
-      });
-      return;
-    }
-
-    if (error && isHardcoverColumnMissing(error.message ?? "")) {
-      markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
-      if (Object.keys(fields).length === 0) return;
-      const retry = await apply(fields);
-      if (retry.error) {
-        noteBooksOverloadedError(retry.error.message ?? "", retry.error.code);
-        console.error("[book-cache] hardcover write skipped:", retry.error.message);
-      }
-      return;
-    }
-
-    if (error && isNonRetryableDataApiError(error.message ?? "", error.code)) {
-      console.error("[book-cache] hardcover write skipped:", {
-        code: error.code,
-        message: error.message,
-      });
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status =
-      error instanceof Error
-        ? (error as Error & { status?: number }).status
-        : undefined;
-    noteBooksOverloadedError(message, undefined, status);
-    if (isHardcoverColumnMissing(message)) {
-      markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
-    }
-    console.error("[book-cache] hardcover write failed:", error);
-    console.error("[book-detail]", trimmed, message);
-  }
+  // Not a rating submit — never PATCH/POST public.books.
+  return;
 }

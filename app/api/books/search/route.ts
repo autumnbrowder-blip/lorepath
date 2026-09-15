@@ -24,7 +24,7 @@ const SEARCH_CACHE_HEADERS = publicGetCacheHeaders({
 });
 
 /**
- * Local public.books + cached NYT first, then Open Library / ISBNdb / Google.
+ * Cached NYT first, then Open Library / ISBNdb / Google.
  * Gutendex only for clear public-domain classics. Never calls Hardcover.
  * A source timeout becomes [] — if any books exist, error is null.
  * Successful pages are cached 10 minutes by query+page (memory, file, CDN).

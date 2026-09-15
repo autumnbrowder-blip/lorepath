@@ -1,4 +1,4 @@
-import { sourceFromBookSlug } from "@/lib/book-cache";
+import { sourceFromBookSlug } from "@/lib/book-slug";
 import { searchBooks } from "@/lib/books";
 import { fetchNytBestsellers } from "@/lib/nyt-books";
 import type { BookSource, BookSummary } from "@/types/book";

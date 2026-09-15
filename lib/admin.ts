@@ -1,3 +1,4 @@
+import { isBooksRestCircuitOpen, noteBooksOverloadedError } from "@/lib/book-cache";
 import { getAvatarOption } from "@/lib/avatars";
 import {
   normalizeAuthorForDedupe,
@@ -266,6 +267,7 @@ async function loadBooksByIds(
 ): Promise<Map<string, BookIdentityRow>> {
   const map = new Map<string, BookIdentityRow>();
   if (bookIds.length === 0) return map;
+  if (isBooksRestCircuitOpen()) return map;
 
   for (let i = 0; i < bookIds.length; i += BOOKS_IN_CHUNK) {
     const chunk = bookIds.slice(i, i + BOOKS_IN_CHUNK);
@@ -275,6 +277,7 @@ async function loadBooksByIds(
       .in("id", chunk);
 
     if (error) {
+      noteBooksOverloadedError(error.message ?? "", error.code);
       console.error("[admin] books lookup for rating counts failed:", error.message);
       continue;
     }

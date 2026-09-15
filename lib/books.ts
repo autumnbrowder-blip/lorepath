@@ -49,11 +49,7 @@ import {
   isOpenLibraryId,
   searchOpenLibrary,
 } from "@/lib/open-library";
-import {
-  getCachedBookBySlug,
-  searchLocalBooks,
-  sourceFromBookSlug,
-} from "@/lib/book-cache";
+import { sourceFromBookSlug } from "@/lib/book-slug";
 import {
   classifyProviderError,
   createDeadline,
@@ -114,12 +110,10 @@ const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
 const OPTIONAL_SEARCH_TIMEOUT_MS = 2000;
 /** Open Library is required — search.json is often slower than optional catalogs. */
 const OPEN_LIBRARY_SEARCH_TIMEOUT_MS = 12000;
-/** Local books ILIKE + in-memory NYT cache — fail fast on 57014 / hang. */
+/** Local books ILIKE removed — catalog search only. NYT is in-process cache. */
 const LOCAL_SEARCH_TIMEOUT_MS = 800;
-/** One browse page — local+NYT fill this before catalogs. */
+/** One browse page — NYT + catalogs fill this. */
 const SEARCH_PAGE_SIZE = 20;
-/** Local public.books ILIKE page — keep tiny so %q% cannot scan the table. */
-const LOCAL_ILIKE_LIMIT = 10;
 /** Detail-page enrichment total budget after core book is resolved. */
 const DETAIL_ENRICH_BUDGET_MS = 1500;
 /** Core catalog lookups — keep short so Hardcover cannot decide page existence. */
@@ -269,17 +263,12 @@ function pinLocalAndNyt(
   return [...rankBrowseSearchResults(top, query), ...rest];
 }
 
-async function loadLocalAndNytMatches(searchQuery: string): Promise<{
+async function loadNytMatches(searchQuery: string): Promise<{
   localBooks: BookSummary[];
   nytBooks: BookSummary[];
 }> {
-  const [localSettled, nytSettled] = await Promise.allSettled([
-    withTimeout(
-      searchLocalBooks(searchQuery, LOCAL_ILIKE_LIMIT),
-      LOCAL_SEARCH_TIMEOUT_MS,
-      "local search"
-    ),
-    withTimeout(
+  try {
+    const nytBooks = await withTimeout(
       fetchNytBestsellers().then((result) =>
         result.books.filter((book) =>
           titleOrAuthorMatchesQuery(book, searchQuery)
@@ -287,24 +276,12 @@ async function loadLocalAndNytMatches(searchQuery: string): Promise<{
       ),
       LOCAL_SEARCH_TIMEOUT_MS,
       "nyt cache"
-    ),
-  ]);
-
-  const localBooks =
-    localSettled.status === "fulfilled"
-      ? cloneSummaries(localSettled.value)
-      : [];
-  if (localSettled.status === "rejected") {
-    console.error("[searchBooks] local rejected:", localSettled.reason);
+    );
+    return { localBooks: [], nytBooks: cloneSummaries(nytBooks) };
+  } catch (error) {
+    console.error("[searchBooks] nyt rejected:", error);
+    return { localBooks: [], nytBooks: [] };
   }
-
-  const nytBooks =
-    nytSettled.status === "fulfilled" ? cloneSummaries(nytSettled.value) : [];
-  if (nytSettled.status === "rejected") {
-    console.error("[searchBooks] nyt rejected:", nytSettled.reason);
-  }
-
-  return { localBooks, nytBooks };
 }
 
 /** Catalog-only page — never attaches ratings or preferences. */
@@ -327,7 +304,7 @@ function toSearchResult(page: CachedSearchPage): BookSearchResult {
 }
 
 /**
- * Local public.books + cached NYT first (no catalog HTTP). Then fill remaining
+ * Cached NYT first (no catalog HTTP, no public.books). Then fill remaining
  * slots with Open Library / ISBNdb / Google. Gutendex only for clear classics.
  * Hardcover is never called. One Google HTTP call per page max (cache + circuit).
  */
@@ -340,7 +317,7 @@ async function fetchSearchPageUncached(
   let localBooks: BookSummary[] = [];
   let nytBooks: BookSummary[] = [];
   if (!genreMode && pageNumber === 1) {
-    const localAndNyt = await loadLocalAndNytMatches(searchQuery);
+    const localAndNyt = await loadNytMatches(searchQuery);
     localBooks = localAndNyt.localBooks;
     nytBooks = localAndNyt.nytBooks;
   }
@@ -892,22 +869,9 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
       optionalFailures.push(failure);
 
     let book: BookDetail | null = null;
-    let fromCache = false;
     let coreTitle: BookDetail | null = null;
 
-    // 1) Prefer a previously resolved books row — 57014 / timeout must not
-    // decide whether the page exists.
-    const cached = await softStep(
-      { provider: "book-cache", id: bookId, timeoutMs: 2000, onFailure: onOptionalFailure },
-      null as BookDetail | null,
-      () => getCachedBookBySlug(bookId)
-    );
-    if (isUsableCoreBook(cached)) {
-      book = cached;
-      fromCache = true;
-    }
-
-    // 2) Core catalog (Google / OL / NYT / …). Never Hardcover.
+    // Catalog (Google / OL / NYT / …). Never public.books REST. Never Hardcover.
     if (!book) {
       book = await loadCoreBook(bookId, searchHint, onCoreFailure);
     }
@@ -984,13 +948,7 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
       if (!isUsableCoreBook(book)) book = before;
     };
 
-    if (fromCache) {
-      await enrichIfBudget("known-edition-years", 400, async () => {
-        const { applyKnownEditionYears } = await import("@/lib/book-enrichment");
-        return applyKnownEditionYears(core);
-      });
-    } else {
-      await enrichIfBudget("enrichment", 1200, () => enrichBookDetail(core));
+    await enrichIfBudget("enrichment", 1200, () => enrichBookDetail(core));
 
       if (book && needsIsbndbEnrichment(book) && !enrichDeadline.expired()) {
         const beforeIsbndb = book;
@@ -1006,7 +964,6 @@ const loadBookDetailCached = cache(async function loadBookDetailCached(
           return applyKnownEditionYears(beforeYears);
         });
       }
-    }
 
     if (!isUsableCoreBook(book)) {
       book = { ...coreTitle, id: bookId };

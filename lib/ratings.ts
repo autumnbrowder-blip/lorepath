@@ -2,7 +2,7 @@ import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import {
   ensureBookRow,
   findBookIdBySlugOrIsbn,
-  isBooksWriteCircuitOpen,
+  isBooksRestCircuitOpen,
   sourceFromBookSlug,
 } from "@/lib/book-cache";
 import { getBookById } from "@/lib/books";
@@ -379,7 +379,7 @@ async function ensureBookRecord(
 ): Promise<
   { bookDbId: string } | { error: string; code: string | null }
 > {
-  if (isBooksWriteCircuitOpen()) {
+  if (isBooksRestCircuitOpen()) {
     return {
       error:
         "Books catalog is temporarily unavailable. Try again in a few minutes.",
