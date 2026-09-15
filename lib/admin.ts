@@ -1,4 +1,8 @@
-import { isBooksRestCircuitOpen, noteBooksOverloadedError } from "@/lib/book-cache";
+import {
+  isBooksRestCircuitOpen,
+  noteBooksAuthDeniedError,
+  noteBooksOverloadedError,
+} from "@/lib/book-cache";
 import { getAvatarOption } from "@/lib/avatars";
 import {
   normalizeAuthorForDedupe,
@@ -277,8 +281,13 @@ async function loadBooksByIds(
       .in("id", chunk);
 
     if (error) {
-      noteBooksOverloadedError(error.message ?? "", error.code);
-      console.error("[admin] books lookup for rating counts failed:", error.message);
+      const message = error.message ?? "";
+      if (noteBooksAuthDeniedError(message, error.code)) {
+        console.error("[admin] books lookup stopped after 401/403/42501:", message);
+        break;
+      }
+      noteBooksOverloadedError(message, error.code);
+      console.error("[admin] books lookup for rating counts failed:", message);
       continue;
     }
 

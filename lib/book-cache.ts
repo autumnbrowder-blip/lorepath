@@ -5,6 +5,7 @@ import {
   isColumnMarkedMissing,
   isMissingColumnError,
   isNonRetryableDataApiError,
+  isPermissionDeniedError,
   markColumnMissing,
 } from "@/lib/supabase/schema-cache";
 import { createServiceRoleClient } from "@/lib/supabase/server";
@@ -39,6 +40,8 @@ const BOOKS_REST_COOLDOWN_MS = 15 * 60 * 1000;
 const BOOKS_5XX_TRIP = 2;
 let booksRestBlockedUntil = 0;
 let books5xxHits = 0;
+/** After 401/403/42501, never hit public.books again in this process. */
+let booksAuthBlocked = false;
 
 function openBooksRestCircuit(reason: string): void {
   booksRestBlockedUntil = Date.now() + BOOKS_REST_COOLDOWN_MS;
@@ -47,7 +50,7 @@ function openBooksRestCircuit(reason: string): void {
 }
 
 export function isBooksRestCircuitOpen(): boolean {
-  return Date.now() < booksRestBlockedUntil;
+  return booksAuthBlocked || Date.now() < booksRestBlockedUntil;
 }
 
 /** @deprecated Use isBooksRestCircuitOpen — writes and reads share one circuit. */
@@ -103,6 +106,43 @@ export function noteBooksOverloadedError(
   return true;
 }
 
+export function isBooksAuthDeniedError(
+  message: string,
+  code?: string | number | null,
+  status?: number | null
+): boolean {
+  const raw = code == null ? "" : String(code).trim();
+  const numeric =
+    typeof status === "number"
+      ? status
+      : typeof code === "number"
+        ? code
+        : /^\d+$/.test(raw)
+          ? Number(raw)
+          : null;
+  if (numeric === 401 || numeric === 403) return true;
+  if (raw === "401" || raw === "403" || raw === "42501") return true;
+  return isPermissionDeniedError(message, raw || undefined);
+}
+
+/** 401/403/42501 — do not retry this request or any later books REST call. */
+export function noteBooksAuthDeniedError(
+  message: string,
+  code?: string | number | null,
+  status?: number | null
+): boolean {
+  if (!isBooksAuthDeniedError(message, code, status)) return false;
+  if (!booksAuthBlocked) {
+    booksAuthBlocked = true;
+    console.error("[book-cache] books REST stopped after 401/403/42501:", {
+      code,
+      status,
+      message,
+    });
+  }
+  return true;
+}
+
 function rawErrorLabel(
   code?: string | number | null,
   status?: number | null
@@ -148,18 +188,7 @@ function isbnFromBookSlug(slug: string): string | null {
   return bookIsbnKey(trimmed);
 }
 
-function isUniqueViolation(message: string): boolean {
-  return /23505/.test(message) || /duplicate key/i.test(message);
-}
-
-function isIsbnUniqueViolation(message: string): boolean {
-  return (
-    isUniqueViolation(message) &&
-    (/isbn/i.test(message) || /books_isbn_unique/i.test(message))
-  );
-}
-
-/** Map an external route id (slug) to a `books` table upsert payload. */
+/** Map an external route id (slug) to a books row shape (read/legacy). */
 export function bookDetailToDbRow(externalId: string, book: BookDetail) {
   const isbn = bookIsbnKey(book.isbn);
   return {
@@ -213,6 +242,15 @@ function resolveBooksWriteClient(): SupabaseClient | null {
   return admin.supabase;
 }
 
+function noteBooksRestFailure(
+  message: string,
+  code?: string | number | null,
+  status?: number | null
+): boolean {
+  if (noteBooksAuthDeniedError(message, code, status)) return true;
+  return noteBooksOverloadedError(message, code, status);
+}
+
 export async function findBookIdBySlugOrIsbn(
   supabase: SupabaseClient,
   options: { slug?: string | null; isbn?: string | null }
@@ -225,10 +263,11 @@ export async function findBookIdBySlugOrIsbn(
       .select("id")
       .eq("slug", slug)
       .maybeSingle();
-    if (error && noteBooksOverloadedError(error.message ?? "", error.code)) {
+    if (error) {
+      noteBooksRestFailure(error.message ?? "", error.code);
       return null;
     }
-    if (!error && data?.id) return data.id;
+    if (data?.id) return data.id;
   }
 
   const candidates = [
@@ -237,6 +276,7 @@ export async function findBookIdBySlugOrIsbn(
   ].filter((value, index, list) => list.indexOf(value) === index);
 
   if (candidates.length === 0) return null;
+  if (isBooksRestCircuitOpen()) return null;
 
   const { data, error } = await supabase
     .from("books")
@@ -246,7 +286,7 @@ export async function findBookIdBySlugOrIsbn(
     .maybeSingle();
 
   if (error) {
-    noteBooksOverloadedError(error.message ?? "", error.code);
+    noteBooksRestFailure(error.message ?? "", error.code);
     return null;
   }
   if (!data?.id) return null;
@@ -257,15 +297,12 @@ const BOOKS_CIRCUIT_ERROR =
   "Books catalog is temporarily unavailable. Try again in a few minutes.";
 
 /**
- * Idempotent books-row write used only by rating saves.
- *
- * Always upsert on slug so we never insert a second row for the same slug
- * (books_slug_unique). After the write, SELECT id WHERE slug = $slug and
- * use that id for ratings. On 23505 (e.g. books_isbn_unique), recover the
- * existing row instead of inserting another. Never retries 520/525/57014.
+ * Resolve an existing public.books id. Never INSERT or UPSERT — those POSTs
+ * flooded PostgREST (401/42501 and 5xx). Rating submit attaches to a row
+ * that already exists.
  */
 export async function ensureBookRow(
-  _supabase: SupabaseClient,
+  supabase: SupabaseClient,
   externalId: string,
   book: BookDetail
 ): Promise<{ bookDbId: string } | { error: string }> {
@@ -278,63 +315,17 @@ export async function ensureBookRow(
     return { error: BOOKS_CIRCUIT_ERROR };
   }
 
-  const supabase = resolveBooksWriteClient();
-  if (!supabase) {
-    return {
-      error:
-        "Book row could not be saved. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
-    };
-  }
-
-  const bookRow = bookDetailToDbRow(slug, book);
-  const { error: upsertError } = await supabase
-    .from("books")
-    .upsert(bookRow, { onConflict: "slug" });
-
-  if (upsertError && noteBooksOverloadedError(upsertError.message, upsertError.code)) {
-    return { error: BOOKS_CIRCUIT_ERROR };
-  }
-
-  const { data: slugRow, error: slugReadError } = await supabase
-    .from("books")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (slugReadError && noteBooksOverloadedError(slugReadError.message, slugReadError.code)) {
-    return { error: BOOKS_CIRCUIT_ERROR };
-  }
-  if (slugRow?.id) {
-    return { bookDbId: slugRow.id };
-  }
-
-  if (upsertError) {
-    if (isIsbnUniqueViolation(upsertError.message) && bookRow.isbn) {
-      const byIsbn = await findBookIdBySlugOrIsbn(supabase, {
-        isbn: bookRow.isbn,
-        slug,
-      });
-      if (byIsbn) return { bookDbId: byIsbn };
-    }
-    if (isUniqueViolation(upsertError.message)) {
-      const recovered = await findBookIdBySlugOrIsbn(supabase, {
-        slug,
-        isbn: bookRow.isbn,
-      });
-      if (recovered) return { bookDbId: recovered };
-    }
-    return { error: upsertError.message };
-  }
-
-  return {
-    error:
-      "Book row could not be saved or read back. Confirm SUPABASE_SERVICE_ROLE_KEY is set, then try again.",
-  };
+  const existing = await findBookIdBySlugOrIsbn(supabase, {
+    slug,
+    isbn: book.isbn,
+  });
+  if (existing) return { bookDbId: existing };
+  return { error: "Book is not in the catalog yet." };
 }
 
 /**
- * Formerly upserted browse/detail hits into public.books. That path flooded
- * PostgREST with POST ?on_conflict=slug. Search, grid, and detail views are
- * read-only against books; only rating submit may insert a row.
+ * Formerly upserted browse/detail hits into public.books. Search, grid,
+ * detail, and rating submit never INSERT/UPSERT public.books.
  */
 export async function cacheBookDetail(
   _externalId: string,
@@ -402,7 +393,7 @@ export async function readHardcoverRowCache(
         markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
         return null;
       }
-      noteBooksOverloadedError(message, error.code);
+      noteBooksRestFailure(message, error.code);
       if (isNonRetryableDataApiError(message, error.code)) {
         console.error("[book-cache] hardcover read skipped:", {
           code: error.code,
@@ -417,6 +408,7 @@ export async function readHardcoverRowCache(
       | null;
 
     if (!row) {
+      if (isBooksRestCircuitOpen()) return null;
       const candidates = isbnLookupCandidates(isbn);
       if (candidates.length === 0) return null;
       const byIsbn = await supabase
@@ -426,10 +418,11 @@ export async function readHardcoverRowCache(
         .limit(1)
         .maybeSingle();
       if (byIsbn.error) {
-        if (isHardcoverColumnMissing(byIsbn.error.message ?? "")) {
+        const isbnMessage = byIsbn.error.message ?? "";
+        if (isHardcoverColumnMissing(isbnMessage)) {
           markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
         }
-        noteBooksOverloadedError(byIsbn.error.message ?? "", byIsbn.error.code);
+        noteBooksRestFailure(isbnMessage, byIsbn.error.code);
         return null;
       }
       row = byIsbn.data as (BookDbRow & { hardcover_cached_at?: string | null }) | null;
@@ -456,7 +449,7 @@ export async function readHardcoverRowCache(
       error instanceof Error
         ? (error as Error & { status?: number }).status
         : undefined;
-    noteBooksOverloadedError(message, undefined, status);
+    noteBooksRestFailure(message, undefined, status);
     if (isHardcoverColumnMissing(message)) {
       markColumnMissing("books", HARDCOVER_CACHED_AT_COLUMN);
     }

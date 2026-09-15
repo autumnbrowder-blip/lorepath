@@ -1,11 +1,9 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import {
-  ensureBookRow,
   findBookIdBySlugOrIsbn,
   isBooksRestCircuitOpen,
   sourceFromBookSlug,
 } from "@/lib/book-cache";
-import { getBookById } from "@/lib/books";
 import { groupRatedBooksByWork } from "@/lib/book-work";
 import {
   normalizeAuthorForDedupe,
@@ -371,8 +369,8 @@ async function ensureProfileExists(
 }
 
 /**
- * Resolve (or create) the `books` row via the service-role client.
- * Never writes books with the user JWT — that hits 42501 RLS on insert.
+ * Attach a rating only to an existing public.books row.
+ * Never INSERT/UPSERT books — that POSTed ?on_conflict=slug from the live app.
  */
 async function ensureBookRecord(
   externalId: string
@@ -392,25 +390,16 @@ async function ensureBookRecord(
     return { error: admin.error, code: "missing_service_role" };
   }
 
-  const supabase = admin.supabase;
-  const existing = await findBookIdBySlugOrIsbn(supabase, {
+  const existing = await findBookIdBySlugOrIsbn(admin.supabase, {
     slug: externalId,
   });
   if (existing) {
     return { bookDbId: existing };
   }
-
-  const book = await getBookById(externalId);
-  if (!book) {
-    return { error: "Book not found.", code: "book_not_found" };
-  }
-
-  const result = await ensureBookRow(supabase, externalId, book);
-  if ("error" in result) {
-    const described = describeSupabaseError({ message: result.error });
-    return { error: described.message, code: described.code };
-  }
-  return result;
+  return {
+    error: "Book is not in the catalog yet.",
+    code: "book_row_missing",
+  };
 }
 
 export const getCommunityRatings = cache(async function getCommunityRatings(
