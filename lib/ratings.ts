@@ -1,5 +1,10 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
-import { ensureBookRow, findBookIdBySlugOrIsbn, sourceFromBookSlug } from "@/lib/book-cache";
+import {
+  ensureBookRow,
+  findBookIdBySlugOrIsbn,
+  isBooksWriteCircuitOpen,
+  sourceFromBookSlug,
+} from "@/lib/book-cache";
 import { getBookById } from "@/lib/books";
 import { groupRatedBooksByWork } from "@/lib/book-work";
 import {
@@ -374,6 +379,14 @@ async function ensureBookRecord(
 ): Promise<
   { bookDbId: string } | { error: string; code: string | null }
 > {
+  if (isBooksWriteCircuitOpen()) {
+    return {
+      error:
+        "Books catalog is temporarily unavailable. Try again in a few minutes.",
+      code: "books_circuit_open",
+    };
+  }
+
   const admin = createServiceRoleClient();
   if ("error" in admin) {
     return { error: admin.error, code: "missing_service_role" };
