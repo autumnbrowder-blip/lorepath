@@ -2,6 +2,9 @@ import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import {
   findBookIdBySlugOrIsbn,
   isBooksRestCircuitOpen,
+  isBooksRestDisabled,
+  noteBooksAuthDeniedError,
+  noteBooksOverloadedError,
   sourceFromBookSlug,
 } from "@/lib/book-cache";
 import { groupRatedBooksByWork } from "@/lib/book-work";
@@ -379,15 +382,40 @@ async function ensureBookRecord(
 > {
   if (isBooksRestCircuitOpen()) {
     return {
-      error:
-        "Books catalog is temporarily unavailable. Try again in a few minutes.",
-      code: "books_circuit_open",
+      error: isBooksRestDisabled()
+        ? "catalog paused"
+        : "Books catalog is temporarily unavailable. Try again in a few minutes.",
+      code: isBooksRestDisabled() ? "catalog_paused" : "books_circuit_open",
     };
   }
 
   const admin = createServiceRoleClient();
   if ("error" in admin) {
-    return { error: admin.error, code: "missing_service_role" };
+    return {
+      error: isBooksRestDisabled() ? "catalog paused" : admin.error,
+      code: isBooksRestDisabled() ? "catalog_paused" : "missing_service_role",
+    };
+  }
+
+  if (isBooksRestDisabled()) {
+    const slug = externalId.trim();
+    if (!slug) {
+      return { error: "catalog paused", code: "catalog_paused" };
+    }
+    const { data, error } = await admin.supabase
+      .from("books")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (error) {
+      noteBooksAuthDeniedError(error.message ?? "", error.code);
+      noteBooksOverloadedError(error.message ?? "", error.code);
+      return { error: "catalog paused", code: "catalog_paused" };
+    }
+    if (data?.id) {
+      return { bookDbId: data.id };
+    }
+    return { error: "catalog paused", code: "catalog_paused" };
   }
 
   const existing = await findBookIdBySlugOrIsbn(admin.supabase, {
@@ -408,7 +436,7 @@ export const getCommunityRatings = cache(async function getCommunityRatings(
 ): Promise<CommunityRatingsSummary> {
   noStore();
 
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || isBooksRestDisabled()) {
     return { averages: null, count: 0 };
   }
 
@@ -473,7 +501,12 @@ export async function getUserRatingForBook(
 ): Promise<ContentRating | null> {
   noStore();
 
-  if (!isSupabaseConfigured() || !userId || !bookExternalId) {
+  if (
+    !isSupabaseConfigured() ||
+    isBooksRestDisabled() ||
+    !userId ||
+    !bookExternalId
+  ) {
     return null;
   }
 
@@ -609,7 +642,7 @@ export function computeUserReadingStats(
 export async function getUserRatedBooks(
   userId: string
 ): Promise<UserRatedBook[]> {
-  if (!userId.trim() || !isSupabaseConfigured()) {
+  if (!userId.trim() || !isSupabaseConfigured() || isBooksRestDisabled()) {
     return [];
   }
 
@@ -790,7 +823,7 @@ export async function getUserRatedIdentities(
 ): Promise<import("@/lib/user-rated-identity").UserRatedIdentity[]> {
   noStore();
 
-  if (!userId.trim() || !isSupabaseConfigured()) {
+  if (!userId.trim() || !isSupabaseConfigured() || isBooksRestDisabled()) {
     return [];
   }
 
@@ -966,7 +999,12 @@ export async function findRatedBooksMatchingQuery(
 
   const empty: RatedBooksForSearch = { books: [], ratedSlugs: [] };
   const userId = options?.userId?.trim() ?? "";
-  if (!isSupabaseConfigured() || !query.trim() || !userId) {
+  if (
+    !isSupabaseConfigured() ||
+    isBooksRestDisabled() ||
+    !query.trim() ||
+    !userId
+  ) {
     return empty;
   }
 

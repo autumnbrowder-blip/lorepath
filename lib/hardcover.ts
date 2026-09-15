@@ -1,6 +1,7 @@
 import { finalizeBookTags } from "@/lib/book-tags";
 import {
   bookIsbnKey,
+  isBooksRestDisabled,
   persistHardcoverCache,
   readHardcoverRowCache,
 } from "@/lib/book-cache";
@@ -603,6 +604,7 @@ async function readMemoryOrRowCache(
 ): Promise<HardcoverCacheRecord | null> {
   const memory = memoryCache.get(key);
   if (cacheFresh(memory)) return memory ?? null;
+  if (isBooksRestDisabled()) return memory ?? null;
 
   try {
     const row = await readHardcoverRowCache(slug, isbn);

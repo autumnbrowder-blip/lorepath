@@ -1,5 +1,6 @@
 import {
   isBooksRestCircuitOpen,
+  isBooksRestDisabled,
   noteBooksAuthDeniedError,
   noteBooksOverloadedError,
 } from "@/lib/book-cache";
@@ -188,6 +189,21 @@ export async function requireAdmin(): Promise<{ user: User }> {
   return { user: auth.user };
 }
 
+function loadRecentRatings(supabase: SupabaseClient) {
+  const query = isBooksRestDisabled()
+    ? supabase
+        .from("ratings")
+        .select(
+          "id, created_at, sexual_content, romance, lgbt, horror, ideology, pacing"
+        )
+    : supabase
+        .from("ratings")
+        .select(
+          "id, created_at, sexual_content, romance, lgbt, horror, ideology, pacing, books(title)"
+        );
+  return query.order("created_at", { ascending: false }).limit(20);
+}
+
 function mapRecentRating(row: {
   id: unknown;
   created_at: unknown;
@@ -197,7 +213,7 @@ function mapRecentRating(row: {
   horror: unknown;
   ideology: unknown;
   pacing: unknown;
-  books: unknown;
+  books?: unknown;
 }): AdminRecentRating {
   const bookRelation = row.books as
     | { title?: string | null }
@@ -271,7 +287,7 @@ async function loadBooksByIds(
 ): Promise<Map<string, BookIdentityRow>> {
   const map = new Map<string, BookIdentityRow>();
   if (bookIds.length === 0) return map;
-  if (isBooksRestCircuitOpen()) return map;
+  if (isBooksRestDisabled() || isBooksRestCircuitOpen()) return map;
 
   for (let i = 0; i < bookIds.length; i += BOOKS_IN_CHUNK) {
     const chunk = bookIds.slice(i, i + BOOKS_IN_CHUNK);
@@ -408,25 +424,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     // Totals: live COUNT(*) from public.ratings (head), not books.rating_count.
     supabase.from("ratings").select("id", { count: "exact", head: true }),
     loadLiveRatingIdentities(supabase),
-    supabase
-      .from("ratings")
-      .select(
-        `
-          id,
-          created_at,
-          sexual_content,
-          romance,
-          lgbt,
-          horror,
-          ideology,
-          pacing,
-          books (
-            title
-          )
-        `
-      )
-      .order("created_at", { ascending: false })
-      .limit(20),
+    loadRecentRatings(supabase),
     // Registered users — newest first (emails joined from auth.admin below).
     supabase
       .from("profiles")

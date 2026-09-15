@@ -43,6 +43,11 @@ let books5xxHits = 0;
 /** After 401/403/42501, never hit public.books again in this process. */
 let booksAuthBlocked = false;
 
+/** Emergency kill switch: no public.books REST (select/insert/upsert). */
+export function isBooksRestDisabled(): boolean {
+  return process.env.DISABLE_BOOKS_REST === "true";
+}
+
 function openBooksRestCircuit(reason: string): void {
   booksRestBlockedUntil = Date.now() + BOOKS_REST_COOLDOWN_MS;
   books5xxHits = 0;
@@ -255,6 +260,7 @@ export async function findBookIdBySlugOrIsbn(
   supabase: SupabaseClient,
   options: { slug?: string | null; isbn?: string | null }
 ): Promise<string | null> {
+  if (isBooksRestDisabled()) return null;
   if (isBooksRestCircuitOpen()) return null;
   const slug = options.slug?.trim() || "";
   if (slug) {
@@ -311,6 +317,10 @@ export async function ensureBookRow(
     return { error: "Book not found." };
   }
 
+  if (isBooksRestDisabled()) {
+    return { error: "catalog paused" };
+  }
+
   if (isBooksRestCircuitOpen()) {
     return { error: BOOKS_CIRCUIT_ERROR };
   }
@@ -331,6 +341,7 @@ export async function cacheBookDetail(
   _externalId: string,
   _book: BookDetail
 ): Promise<boolean> {
+  if (isBooksRestDisabled()) return false;
   return false;
 }
 
@@ -371,6 +382,7 @@ export async function readHardcoverRowCache(
 ): Promise<HardcoverRowCache | null> {
   const trimmed = slug.trim();
   if (!trimmed || !isSupabaseConfigured()) return null;
+  if (isBooksRestDisabled()) return null;
   if (isBooksRestCircuitOpen()) return null;
   if (!isHardcoverEnabled()) return null;
   if (isColumnMarkedMissing("books", HARDCOVER_CACHED_AT_COLUMN)) return null;
@@ -470,5 +482,6 @@ export async function persistHardcoverCache(
   _record: HardcoverRowCache
 ): Promise<void> {
   // Not a rating submit — never PATCH/POST public.books.
+  if (isBooksRestDisabled()) return;
   return;
 }

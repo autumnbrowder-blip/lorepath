@@ -1,3 +1,4 @@
+import { isBooksRestDisabled } from "@/lib/book-cache";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   createClient,
@@ -180,6 +181,8 @@ async function pageViewsClient(): Promise<SupabaseClient | null> {
  */
 export async function recordPageView(rawPath: unknown): Promise<boolean> {
   try {
+    if (isBooksRestDisabled()) return false;
+
     const path = normalizePageViewPath(rawPath);
     if (!path) return false;
 
