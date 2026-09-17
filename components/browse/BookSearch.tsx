@@ -14,8 +14,7 @@ import {
 import { finalizeSearchBooks } from "@/lib/search-finalize";
 import {
   createRatedBookLookup,
-  JUST_RATED_SLUGS_STORAGE_KEY,
-  normalizeExternalBookId,
+  readJustRatedIdentities,
   type UserRatedIdentity,
 } from "@/lib/user-rated-identity";
 import type { BookSummary } from "@/types/book";
@@ -31,18 +30,6 @@ type SearchPagePayload = {
   query?: string;
   warning?: string | null;
 };
-
-function readJustRatedSlugs(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = sessionStorage.getItem(JUST_RATED_SLUGS_STORAGE_KEY);
-    const list = raw ? (JSON.parse(raw) as unknown) : [];
-    if (!Array.isArray(list)) return [];
-    return list.filter((value): value is string => typeof value === "string");
-  } catch {
-    return [];
-  }
-}
 
 function mergeSearchResults(
   existing: BookSummary[],
@@ -104,37 +91,32 @@ export function BookSearch({
   const abortRef = useRef<AbortController | null>(null);
   /** Bumps on each new search/load-more so superseded requests cannot clear loading. */
   const searchRequestIdRef = useRef(0);
-  const [justRatedSlugs, setJustRatedSlugs] = useState<string[]>([]);
+  const [justRatedIdentities, setJustRatedIdentities] = useState<
+    UserRatedIdentity[]
+  >([]);
 
   const inscribedLookup = useMemo(
-    () => createRatedBookLookup(isLoggedIn ? ratedIdentities : []),
-    [isLoggedIn, ratedIdentities]
-  );
-  const justRatedSet = useMemo(
     () =>
-      new Set(
-        (isLoggedIn ? justRatedSlugs : []).map((slug) =>
-          normalizeExternalBookId(slug)
-        )
+      createRatedBookLookup(
+        isLoggedIn ? [...ratedIdentities, ...justRatedIdentities] : []
       ),
-    [isLoggedIn, justRatedSlugs]
+    [isLoggedIn, ratedIdentities, justRatedIdentities]
   );
 
   function isInscribed(book: BookSummary): boolean {
     if (!isLoggedIn) return false;
-    if (inscribedLookup.has(book)) return true;
-    return justRatedSet.has(normalizeExternalBookId(book.id));
+    return inscribedLookup.has(book);
   }
 
   useEffect(() => {
     if (!isLoggedIn) {
-      setJustRatedSlugs([]);
+      setJustRatedIdentities([]);
       return;
     }
-    setJustRatedSlugs(readJustRatedSlugs());
+    setJustRatedIdentities(readJustRatedIdentities());
     function onVisible() {
       if (document.visibilityState === "visible") {
-        setJustRatedSlugs(readJustRatedSlugs());
+        setJustRatedIdentities(readJustRatedIdentities());
       }
     }
     window.addEventListener("focus", onVisible);

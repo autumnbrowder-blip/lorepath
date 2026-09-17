@@ -65,8 +65,8 @@ export function BookCover({
       <div
         className={
           variant === "detail"
-            ? "flex h-full flex-col items-center justify-center gap-3 nav-dragon-gold"
-            : "flex h-full flex-col items-center justify-center gap-2"
+            ? "relative flex h-full min-h-[20rem] w-full flex-col items-center justify-center gap-3 nav-dragon-gold"
+            : "relative flex h-full min-h-[96px] w-full flex-col items-center justify-center gap-2"
         }
       >
         <BookOpen
@@ -90,24 +90,32 @@ export function BookCover({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- hotlink OL/local covers; never next/image
-    <img
-      src={src}
-      alt={
-        isPlaceholder
-          ? `Placeholder cover for ${book.title}`
-          : `Cover of ${book.title}`
+    <div
+      className={
+        variant === "detail"
+          ? "relative h-full min-h-[20rem] w-full"
+          : "relative h-full min-h-[96px] w-full"
       }
-      className={`absolute inset-0 h-full w-full ${className}`}
-      loading="lazy"
-      decoding="async"
-      onError={() => {
-        if (index + 1 < candidates.length) {
-          setIndex((current) => current + 1);
-          return;
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- hotlink OL/local covers; never next/image */}
+      <img
+        src={src}
+        alt={
+          isPlaceholder
+            ? `Placeholder cover for ${book.title}`
+            : `Cover of ${book.title}`
         }
-        setExhausted(true);
-      }}
-    />
+        className={`absolute inset-0 h-full w-full ${className}`}
+        loading="lazy"
+        decoding="async"
+        onError={() => {
+          if (index + 1 < candidates.length) {
+            setIndex((current) => current + 1);
+            return;
+          }
+          setExhausted(true);
+        }}
+      />
+    </div>
   );
 }

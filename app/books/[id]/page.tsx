@@ -457,6 +457,8 @@ export default async function BookDetailPage({
                   <RatingForm
                     key={id}
                     bookId={id}
+                    bookTitle={hydrated.title}
+                    bookAuthors={hydrated.authors}
                     isLoggedIn={!!user}
                     initialRatings={userRating}
                     returnToFirstRating={fromFirstRating}

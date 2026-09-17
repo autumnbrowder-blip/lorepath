@@ -10,7 +10,7 @@ import {
   RATING_CATEGORIES,
 } from "@/lib/rating-categories";
 import type { CommunityRatingsSummary } from "@/lib/ratings";
-import { JUST_RATED_SLUGS_STORAGE_KEY } from "@/lib/user-rated-identity";
+import { rememberJustRatedIdentity } from "@/lib/user-rated-identity";
 import { createClient, fetchWithAuthRetry } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { ContentRating } from "@/types";
@@ -61,6 +61,8 @@ function bannerFromRatingResponse(
 
 type RatingFormProps = {
   bookId: string;
+  bookTitle?: string;
+  bookAuthors?: string[];
   isLoggedIn: boolean;
   /** Previously saved marks for this book+user; null when none exist yet. */
   initialRatings?: ContentRating | null;
@@ -104,6 +106,8 @@ function ratingsEqual(a: ContentRating, b: ContentRating): boolean {
 
 export function RatingForm({
   bookId,
+  bookTitle,
+  bookAuthors,
   isLoggedIn,
   initialRatings = null,
   onRatingsUpdated,
@@ -293,16 +297,11 @@ export function RatingForm({
 
       // Let browse cards show Inscribed immediately after return (same tab).
       try {
-        const prev = sessionStorage.getItem(JUST_RATED_SLUGS_STORAGE_KEY);
-        const list = prev ? (JSON.parse(prev) as unknown) : [];
-        const slugs = Array.isArray(list)
-          ? list.filter((value): value is string => typeof value === "string")
-          : [];
-        if (!slugs.includes(bookId)) slugs.push(bookId);
-        sessionStorage.setItem(
-          JUST_RATED_SLUGS_STORAGE_KEY,
-          JSON.stringify(slugs)
-        );
+        rememberJustRatedIdentity({
+          slug: bookId,
+          title: bookTitle?.trim() ?? "",
+          author: bookAuthors?.find((name) => name.trim())?.trim() || null,
+        });
       } catch {
         // sessionStorage may be unavailable.
       }

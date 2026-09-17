@@ -4,9 +4,10 @@ import type { BookSummary } from "@/types/book";
  * Shared book-cover resolution for Browse cards and detail pages.
  *
  * Order:
- *  1. Google Books thumbnail (zoom=1)
- *  2. Open Library cover by ISBN
- *  3. Local fantasy placeholder
+ *  1. Stored Google thumbnail (zoom=1) or OL /b/id/N-M.jpg
+ *  2. Other remote covers (not Hardcover)
+ *  3. Open Library cover by ISBN last (often 404)
+ *  4. Local fantasy placeholder
  *
  * Never waits on Hardcover. Hardcover CDN URLs are skipped.
  */
@@ -89,10 +90,29 @@ export function openLibraryCoverByIsbn(isbn: string | null | undefined): string 
   return `https://covers.openlibrary.org/b/isbn/${digits}-M.jpg?default=false`;
 }
 
+export function isOpenLibraryCoverIdUrl(url: string): boolean {
+  return /covers\.openlibrary\.org\/b\/id\/\d+/i.test(url);
+}
+
+function isOpenLibraryIsbnCoverUrl(url: string): boolean {
+  return /covers\.openlibrary\.org\/b\/isbn\//i.test(url);
+}
+
 export function openLibraryCoverByOlid(id: string): string | null {
   const olid = openLibraryOlidFromBookId(id);
   if (!olid) return null;
   return `https://covers.openlibrary.org/b/olid/${olid}-M.jpg?default=false`;
+}
+
+/** Google or OL /b/id/N-M.jpg — usable as the first <img> src. */
+function primaryStoredCover(book: CoverBook): string | null {
+  for (const raw of [book.coverUrl, book.coverImage]) {
+    const value = raw?.trim();
+    if (!value || isHardcoverCoverUrl(value)) continue;
+    if (isGoogleCoverUrl(value)) return normalizeGoogleCoverUrl(value);
+    if (isOpenLibraryCoverIdUrl(value)) return value;
+  }
+  return null;
 }
 
 function googleCover(book: CoverBook): string | null {
@@ -116,7 +136,8 @@ function otherRemoteCover(book: CoverBook): string | null {
 }
 
 /**
- * Prefer Google thumbnail, then Open Library, never Hardcover.
+ * Prefer a working stored URL (Google or OL /b/id/), never Hardcover.
+ * Do not prefer /b/isbn/?default=false — those 404 and look like no cover.
  */
 export function preferCoverUrl(
   ...urls: Array<string | null | undefined>
@@ -129,13 +150,16 @@ export function preferCoverUrl(
   const google = cleaned.find((url) => isGoogleCoverUrl(url));
   if (google) return normalizeGoogleCoverUrl(google);
 
-  const olIsbn = cleaned.find((url) =>
-    /covers\.openlibrary\.org\/b\/isbn\//i.test(url)
-  );
-  if (olIsbn) return olIsbn;
+  const olId = cleaned.find((url) => isOpenLibraryCoverIdUrl(url));
+  if (olId) return olId;
 
-  const ol = cleaned.find((url) => isOpenLibraryCoverUrl(url));
-  if (ol) return ol;
+  const olOther = cleaned.find(
+    (url) => isOpenLibraryCoverUrl(url) && !isOpenLibraryIsbnCoverUrl(url)
+  );
+  if (olOther) return olOther;
+
+  const olIsbn = cleaned.find((url) => isOpenLibraryIsbnCoverUrl(url));
+  if (olIsbn) return olIsbn;
 
   return cleaned[0] || null;
 }
@@ -145,9 +169,10 @@ export function preferCoverUrl(
  */
 export function resolveRemoteCoverUrl(book: CoverBook): string | null {
   return (
+    primaryStoredCover(book) ||
     googleCover(book) ||
-    openLibraryCoverByIsbn(book.isbn) ||
     otherRemoteCover(book) ||
+    openLibraryCoverByIsbn(book.isbn) ||
     null
   );
 }
@@ -170,9 +195,15 @@ export function getCoverCandidates(book: CoverBook): string[] {
     ordered.push(value);
   };
 
+  // 1. Stored Google or OL /b/id/14407898-M.jpg — do not strip these.
+  push(primaryStoredCover(book));
   push(googleCover(book));
+  const other = otherRemoteCover(book);
+  if (other && !isOpenLibraryIsbnCoverUrl(other)) {
+    push(other);
+  }
+  // ISBN ?default=false 404s often — never first.
   push(openLibraryCoverByIsbn(book.isbn));
-  push(otherRemoteCover(book));
   push(BOOK_COVER_PLACEHOLDER);
 
   coverCandidateMemo.set(memoKey, ordered);

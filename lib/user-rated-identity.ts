@@ -1,13 +1,76 @@
-import {
-  authorKeysCompatible,
-  getBookAuthorDedupeKey,
-  getBookTitleDedupeKey,
-  getBookWorkDedupeKey,
-} from "@/lib/book-utils";
+import { booksShareTitleAuthorWork, getBookWorkDedupeKey } from "@/lib/book-utils";
 import type { BookSummary } from "@/types/book";
 
 /** Session key written after a successful save so Browse can badge immediately. */
 export const JUST_RATED_SLUGS_STORAGE_KEY = "lorepath-just-rated-slugs";
+
+function identityFromUnknown(value: unknown): UserRatedIdentity | null {
+  if (typeof value === "string") {
+    const slug = value.trim();
+    return slug ? { slug, title: "", author: null } : null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const row = value as { slug?: unknown; title?: unknown; author?: unknown };
+  const slug = typeof row.slug === "string" ? row.slug.trim() : "";
+  if (!slug) return null;
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  const author =
+    typeof row.author === "string" && row.author.trim()
+      ? row.author.trim()
+      : null;
+  return { slug, title, author };
+}
+
+/** Session just-rated works (slug + optional title/author). Survives identity fetch failures. */
+export function readJustRatedIdentities(): UserRatedIdentity[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(JUST_RATED_SLUGS_STORAGE_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(list)) return [];
+    const bySlug = new Map<string, UserRatedIdentity>();
+    for (const value of list) {
+      const row = identityFromUnknown(value);
+      if (!row) continue;
+      const key = normalizeExternalBookId(row.slug);
+      const prev = bySlug.get(key);
+      if (!prev || (row.title && !prev.title)) bySlug.set(key, row);
+    }
+    return Array.from(bySlug.values());
+  } catch {
+    return [];
+  }
+}
+
+export function rememberJustRatedIdentity(row: UserRatedIdentity): void {
+  if (typeof window === "undefined") return;
+  const slug = row.slug.trim();
+  if (!slug) return;
+  const next: UserRatedIdentity = {
+    slug,
+    title: row.title?.trim() ?? "",
+    author: row.author?.trim() || null,
+  };
+  const existing = readJustRatedIdentities();
+  const key = normalizeExternalBookId(slug);
+  const merged = existing.filter(
+    (entry) => normalizeExternalBookId(entry.slug) !== key
+  );
+  merged.push(next);
+  sessionStorage.setItem(JUST_RATED_SLUGS_STORAGE_KEY, JSON.stringify(merged));
+}
+
+function asRatedBook(row: UserRatedIdentity): Pick<
+  BookSummary,
+  "id" | "title" | "authors" | "isbn"
+> {
+  return {
+    id: row.slug,
+    title: row.title,
+    authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
+    isbn: null,
+  };
+}
 
 /**
  * One work the signed-in user has rated.
@@ -163,21 +226,10 @@ export function createRatedBookLookup(
     const byWork = workKeyToSlug.get(ratedBookKey(book));
     if (byWork) return byWork;
 
-    // Same title with compatible author tokens ("buehlman" vs "buehlman c").
-    const title = getBookTitleDedupeKey(book);
-    if (!title) return null;
-    const author = getBookAuthorDedupeKey(book);
+    // Title + primary author ("Fourth Wing" + "Yarros") — not only card id === slug.
     const match = rated.find((row) => {
-      const ratedAsBook = {
-        id: row.slug,
-        title: row.title,
-        authors: row.author?.trim() ? [row.author.trim()] : ["Unknown author"],
-        isbn: null,
-      };
-      return (
-        getBookTitleDedupeKey(ratedAsBook) === title &&
-        authorKeysCompatible(getBookAuthorDedupeKey(ratedAsBook), author)
-      );
+      if (!row.title?.trim()) return false;
+      return booksShareTitleAuthorWork(book, asRatedBook(row));
     });
     return match?.slug ?? null;
   }

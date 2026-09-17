@@ -35,9 +35,11 @@
 
 .lp-book-card-plate {
   position: relative;
+  display: block;
   flex-shrink: 0;
   width: 72px;
   height: 96px;
+  min-height: 96px;
   overflow: hidden;
   background: #0a1610;
   border: 1px solid #c9a227;
