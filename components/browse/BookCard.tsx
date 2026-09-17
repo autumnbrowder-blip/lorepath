@@ -45,7 +45,7 @@ function displayTitle(title: string): string {
 
 /**
  * Browse / search result card — dark forest-green plaque over the library.
- * When hasUserRating is true, shows a small Inscribed overlay on the cover.
+ * When hasUserRating is true, shows a small Inscribed label under the cover.
  */
 export function BookCard({
   book,
@@ -74,21 +74,24 @@ export function BookCard({
 
   return (
     <article className="ornate-plaque lp-book-card">
-      <Link
-        href={tomeHref}
-        prefetch={false}
-        className="lp-book-card-plate no-underline"
-        aria-label={`Open ${title}`}
-      >
-        <BookCover
-          book={book}
-          variant="card"
-          className="object-cover"
-          sizes="72px"
-          priority={priority}
-        />
+      <div className="lp-book-card-cover">
+        <Link
+          href={tomeHref}
+          prefetch={false}
+          className="lp-book-card-plate no-underline"
+          aria-label={`Open ${title}`}
+        >
+          <BookCover
+            book={book}
+            variant="card"
+            className="object-cover"
+            sizes="72px"
+            priority={priority}
+          />
+          <span className="lp-book-card-plate-corners" aria-hidden="true" />
+        </Link>
         {showInscribed ? (
-          <div
+          <p
             className="lp-book-card-inscribed"
             role="status"
             data-testid="tome-inscribed"
@@ -96,10 +99,9 @@ export function BookCard({
           >
             <Feather className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
             <span>Inscribed</span>
-          </div>
+          </p>
         ) : null}
-        <span className="lp-book-card-plate-corners" aria-hidden="true" />
-      </Link>
+      </div>
 
       <div className="lp-book-card-body">
         <h2 className="tome-title lp-book-card-title">
