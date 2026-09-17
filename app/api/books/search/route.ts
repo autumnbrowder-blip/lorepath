@@ -1,7 +1,6 @@
 import { searchBooks } from "@/lib/books";
 import { repairSearchQuery } from "@/lib/book-utils";
 import { isGenreSearchMode } from "@/lib/genre-search";
-import { publicGetCacheHeaders } from "@/lib/public-cache-headers";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -17,17 +16,12 @@ const NO_STORE_HEADERS = {
   Vary: "Accept, Authorization",
 } as const;
 
-const SEARCH_CACHE_HEADERS = publicGetCacheHeaders({
-  authenticated: false,
-  cacheable: true,
-  sMaxAge: 600,
-});
-
 /**
  * Cached NYT first, then Open Library / ISBNdb / Google.
  * Gutendex only for clear public-domain classics. Never calls Hardcover.
  * A source timeout becomes [] — if any books exist, error is null.
- * Successful pages are cached 10 minutes by query+page (memory, file, CDN).
+ * Successful pages are cached 15 minutes by search:${q}:p${page} (memory/file).
+ * HTTP is no-store so a CDN cannot serve one q's body for every q.
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -52,8 +46,6 @@ export async function GET(request: NextRequest) {
       books.length === 0 && result.allSourcesTimedOut
         ? "archives unavailable"
         : null;
-    const cacheable = books.length > 0 && !error;
-
     return NextResponse.json(
       {
         query,
@@ -68,7 +60,7 @@ export async function GET(request: NextRequest) {
       },
       {
         status: 200,
-        headers: cacheable ? SEARCH_CACHE_HEADERS : NO_STORE_HEADERS,
+        headers: NO_STORE_HEADERS,
       }
     );
   } catch (error) {

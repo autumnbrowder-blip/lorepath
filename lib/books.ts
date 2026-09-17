@@ -67,7 +67,6 @@ import {
   searchCacheKey,
   setCachedSearchPage,
   setInFlightSearch,
-  SEARCH_PAGE_429_TTL_MS,
   type CachedSearchPage,
 } from "@/lib/search-cache";
 import {
@@ -650,7 +649,7 @@ export async function searchBooks(
   const existing = getInFlightSearch(cacheKey);
   if (existing) {
     const shared = await existing;
-    return toSearchResult(shared);
+    return toSearchResult(cloneCachedSearchPage(shared));
   }
 
   const pending = fetchSearchPageUncached(
@@ -678,16 +677,9 @@ export async function searchBooks(
       (pageResult.sourceCounts.isbndb ?? 0) >
       0
   ) {
-    // A Google 429/403 must not occupy the 10-min success slot. Cache OL briefly
-    // so we still serve results without hammering Google.
-    if (
-      pageResult.googleError?.status === 429 ||
-      pageResult.googleError?.status === 403
-    ) {
-      setCachedSearchPage(cacheKey, pageResult, SEARCH_PAGE_429_TTL_MS);
-    } else {
-      setCachedSearchPage(cacheKey, pageResult);
-    }
+    // Google 429 / DISABLE_BOOKS_REST still cache under this query key, never
+    // a shared "search" slot.
+    setCachedSearchPage(cacheKey, pageResult);
   }
 
   return toSearchResult(pageResult);

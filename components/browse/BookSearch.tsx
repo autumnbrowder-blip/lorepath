@@ -165,6 +165,7 @@ export function BookSearch({
     const response = await fetch(`/api/books/search?${params.toString()}`, {
       signal: controller.signal,
       credentials: "same-origin",
+      cache: "no-store",
     });
     const data = await response.json();
     const books = Array.isArray(data.books)
@@ -179,7 +180,6 @@ export function BookSearch({
       typeof data.query === "string" ? data.query.trim().toLowerCase() : "";
     const requested = repairSearchQuery(searchQuery).toLowerCase();
     if (
-      books.length === 0 &&
       echoed &&
       echoed !== requested &&
       repairSearchQuery(echoed).toLowerCase() !== requested

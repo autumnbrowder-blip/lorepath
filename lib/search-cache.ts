@@ -5,10 +5,10 @@ import os from "os";
 import path from "path";
 
 /**
- * Short in-memory + JSON-file cache for browse search pages (10 minutes).
- * User-specific Inscribed data is reapplied after a hit — never stored here.
- * Every entry is keyed by exact query + page + mode. Callers always receive
- * cloned book arrays so overlapping requests cannot mutate a shared page.
+ * Short in-memory + JSON-file cache for browse search pages (15 minutes).
+ * Key is always `search:${normalizedQuery}:p${page}` (plus `:genre` in genre
+ * mode). Never a single "search"/"last" slot. Callers always get a cloned
+ * books array so one query cannot mutate another.
  */
 type SearchCacheEntry = {
   expiresAt: number;
@@ -29,10 +29,10 @@ type SearchCacheEntry = {
 
 export type CachedSearchPage = Omit<SearchCacheEntry, "expiresAt">;
 
-/** Ten minutes — GET /api/books/search is keyed on q + page. */
-const TTL_MS = 10 * 60 * 1000;
-/** Brief merged-page TTL when Google 429/403 so we still serve OL, then retry. */
-export const SEARCH_PAGE_429_TTL_MS = 60_000;
+/** Fifteen minutes per query+page key — including Google 429 / DISABLE_BOOKS_REST. */
+const TTL_MS = 15 * 60 * 1000;
+/** @deprecated Same as the 15-minute per-key TTL. */
+export const SEARCH_PAGE_429_TTL_MS = TTL_MS;
 const MAX_ENTRIES = 80;
 
 const cache = new Map<string, SearchCacheEntry>();
@@ -52,6 +52,8 @@ function readSearchFile(key: string): SearchCacheEntry | null {
     if (!parsed || typeof parsed.expiresAt !== "number") return null;
     if (!Array.isArray(parsed.books) || parsed.books.length === 0) return null;
     if (typeof parsed.query !== "string" || !parsed.query.trim()) return null;
+    const keyQuery = queryFromSearchCacheKey(key);
+    if (keyQuery && parsed.query.trim().toLowerCase() !== keyQuery) return null;
     return parsed;
   } catch {
     return null;
@@ -74,14 +76,23 @@ export function searchCacheKey(input: {
   page: number;
   mode?: string;
 }): string {
-  const q = input.query.trim().toLowerCase();
+  const normalizedQuery = input.query.trim().toLowerCase();
   const page = Math.max(1, input.page);
-  const mode = input.mode ?? "text";
-  return `v=browse-q12|q=${q}|page=${page}|mode=${mode}`;
+  const key = `search:${normalizedQuery}:p${page}`;
+  return input.mode === "genre" ? `${key}:genre` : key;
+}
+
+function queryFromSearchCacheKey(key: string): string {
+  const match = key.match(/^search:(.+):p\d+(?::genre)?$/);
+  return match?.[1]?.toLowerCase() ?? "";
 }
 
 function cloneBooks(books: BookSummary[]): BookSummary[] {
-  return books.map((book) => ({ ...book }));
+  return books.map((book) => ({
+    ...book,
+    authors: Array.isArray(book.authors) ? [...book.authors] : book.authors,
+    genres: Array.isArray(book.genres) ? [...book.genres] : book.genres,
+  }));
 }
 
 function clonePage(value: CachedSearchPage): CachedSearchPage {
@@ -136,9 +147,14 @@ export function getCachedSearchPage(
     cache.delete(key);
     return null;
   }
+  const stored = entry.query.trim().toLowerCase();
+  const keyQuery = queryFromSearchCacheKey(key);
+  if (keyQuery && stored !== keyQuery) {
+    cache.delete(key);
+    return null;
+  }
   if (expectedQuery != null) {
     const wanted = expectedQuery.trim().toLowerCase();
-    const stored = entry.query.trim().toLowerCase();
     if (!wanted || stored !== wanted) {
       cache.delete(key);
       return null;
@@ -155,7 +171,7 @@ export function setCachedSearchPage(
   if (value.books.length === 0) return;
   const query = value.query.trim();
   if (!query) return;
-  const keyQuery = key.match(/\|q=([^|]+)\|/)?.[1] ?? "";
+  const keyQuery = queryFromSearchCacheKey(key);
   if (keyQuery && keyQuery !== query.toLowerCase()) return;
 
   const now = Date.now();
