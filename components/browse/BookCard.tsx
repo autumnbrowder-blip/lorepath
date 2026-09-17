@@ -158,7 +158,7 @@ export function BookCard({
           <Link
             href={tomeHref}
             prefetch={false}
-            className="lp-book-card-open match-score-badge match-score-badge--excellent relative inline-flex h-9 w-auto items-center justify-center px-4 no-underline"
+            className="lp-book-card-open match-score-badge match-score-badge--excellent relative inline-flex h-9 w-auto cursor-pointer items-center justify-center px-4 no-underline"
             data-testid="open-the-tome"
           >
             <span className="match-score-badge-label">Open the Tome</span>

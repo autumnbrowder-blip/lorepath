@@ -263,8 +263,14 @@
   text-transform: none;
   text-decoration: none;
   transform: none;
+  cursor: pointer;
   color: #f0d78a;
   -webkit-text-fill-color: #f0d78a;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease,
+    filter 0.15s ease;
 }
 
 .lp-book-card.ornate-plaque a.lp-book-card-open .match-score-badge-label,
@@ -287,34 +293,53 @@
 }
 
 .lp-book-card-open:hover,
-.lp-book-card-open:active,
-.lp-book-card-open:focus,
-.lp-book-card-open:focus-visible,
-.lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:hover,
-.lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:active,
-.lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:focus,
-.lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:focus-visible {
-  transform: none;
-  filter: none;
-  text-decoration: none;
-  background: linear-gradient(
-    155deg,
-    #1f513d 0%,
-    #184033 42%,
-    #123229 100%
-  );
-}
-
-.lp-book-card-open:hover,
 .lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:hover {
-  /* Brighter gold border only — no layout shift, no fill zoom */
-  border-color: rgba(201, 162, 74, 1);
+  cursor: pointer;
+  text-decoration: none;
+  border-color: #e8c96a;
+  box-shadow:
+    inset 0 1px 0 rgba(240, 215, 138, 0.3),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(201, 162, 74, 0.55),
+    0 0 14px rgba(201, 162, 74, 0.4);
 }
 
 .lp-book-card-open:hover .match-score-badge-label,
 .lp-book-card.ornate-plaque a.lp-book-card-open:hover .match-score-badge-label {
-  color: #f0d78a;
-  -webkit-text-fill-color: #f0d78a;
+  color: #f7e4a8;
+  -webkit-text-fill-color: #f7e4a8;
+}
+
+.lp-book-card-open:active,
+.lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:active {
+  text-decoration: none;
+  transform: scale(0.97);
+  border-color: #c9a227;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(201, 162, 74, 0.28);
+}
+
+.lp-book-card-open:focus {
+  outline: none;
+}
+
+.lp-book-card-open:focus-visible,
+.lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:focus-visible {
+  outline: 2px solid #c9a227;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-book-card-open,
+  .lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .lp-book-card-open:active,
+  .lp-book-card.ornate-plaque a.lp-book-card-open.match-score-badge:active {
+    transform: none;
+  }
 }
 
 .lp-book-card-open[aria-disabled="true"],
@@ -323,4 +348,5 @@
   opacity: 0.72;
   filter: none;
   pointer-events: none;
+  cursor: not-allowed;
 }

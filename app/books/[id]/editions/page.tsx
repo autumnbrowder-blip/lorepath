@@ -12,6 +12,7 @@ import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { BookSummary } from "@/types/book";
+import "@/components/browse/BookCard.css";
 
 type EditionsPageProps = {
   params: Promise<{ id: string }>;
@@ -132,7 +133,7 @@ export default async function BookEditionsPage({
                         <Link
                           href={`/books/${encodeURIComponent(edition.id)}?hint=${encodeURIComponent(edition.title)}`}
                           prefetch={false}
-                          className="preference-codex-box--nav relative mt-3 inline-flex min-h-9 w-auto justify-center px-3 py-2"
+                          className="lp-book-card-open preference-codex-box--nav relative mt-3 inline-flex min-h-9 w-auto cursor-pointer justify-center px-3 py-2"
                         >
                           <span className="relative z-[1] nav-dragon-gold">
                             Open the Tome
