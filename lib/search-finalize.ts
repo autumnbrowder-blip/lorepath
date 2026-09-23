@@ -9,6 +9,7 @@ import {
   hasRealAuthor,
   isAuthorQuery,
   isExactTitleMatch,
+  isExactishTitleMatch,
   isMerchandiseOrCompanion,
   isPlaceholderDescription,
   isTitleOnlyStub,
@@ -72,6 +73,7 @@ function repairBookText<T extends BookSummary>(book: T): T {
 
 function isQueryTitleSurvivor(book: BookSummary, query: string): boolean {
   if (isExactTitleMatch(query, book.title)) return true;
+  if (isExactishTitleMatch(query, book.title)) return true;
   if (isAuthorQuery(query)) {
     const q = query.trim().toLowerCase();
     if (
@@ -391,10 +393,10 @@ export function finalizeSearchBooks(
     const protectedHit =
       (ratedIds?.has(book.id) ?? false) || protectedIds.has(book.id);
     if (protectedHit) return true;
+    if (isMerchandiseOrCompanion(book, query)) return false;
     if (query && isQueryTitleSurvivor(book, query)) {
       return !isTitleOnlyStub(book);
     }
-    if (isMerchandiseOrCompanion(book)) return false;
     return hasUsableSearchFields(book);
   });
   const droppedAsUnusable = inputCount - candidates.length;

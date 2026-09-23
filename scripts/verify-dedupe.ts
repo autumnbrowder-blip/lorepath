@@ -18,6 +18,7 @@ import {
   dropBrowseJunk,
   getBookDedupeKey,
   isAuthorQuery,
+  isMerchandiseOrCompanion,
   isPersonNameQuery,
   isSingleSurnameQuery,
   isJunkCatalogAuthor,
@@ -1489,6 +1490,162 @@ const stubVsAuthor = dedupeBooks([
   }),
 ]);
 check("dedupe prefers author+cover over title-only stub", stubVsAuthor[0]?.id, "google-bd-cover");
+
+const powerlessNovel = book({
+  id: "isbndb-powerless",
+  title: "Powerless",
+  authors: ["Lauren Roberts"],
+  coverUrl: "https://covers.example/powerless.jpg",
+  description:
+    "Paedyn Gray poses as a Psychic in Ilya until she saves a prince.",
+  publishedYear: 2023,
+  source: "isbndb",
+});
+const powerlessSummit = book({
+  id: "ol-summit",
+  title: "Summit of the Powerless",
+  authors: ["Peter Sloterdijk"],
+  coverUrl: "https://covers.example/summit.jpg",
+  description: "A political essay that is not the YA novel.",
+  publishedYear: 2023,
+  source: "openlibrary",
+});
+const powerlessPen = book({
+  id: "google-powerless-pen",
+  title: "Powerless Official Dagger Pen and Stationery Set",
+  authors: ["Lauren Roberts"],
+  coverUrl: "https://covers.example/pen.jpg",
+  description: "Insight Editions pen and stationery.",
+  publishedYear: 2024,
+  source: "google",
+});
+
+check(
+  "Powerless Lauren Roberts is not an author query",
+  isAuthorQuery("Powerless Lauren Roberts"),
+  false
+);
+check(
+  "google query uses intitle+inauthor for Powerless Lauren Roberts",
+  googleSearchQuery("Powerless Lauren Roberts"),
+  'intitle:"Powerless" inauthor:"Lauren Roberts"'
+);
+check(
+  "pen merch is dropped unless the query asks for it",
+  isMerchandiseOrCompanion(powerlessPen),
+  true
+);
+check(
+  "pen merch stays when the query is stationery",
+  isMerchandiseOrCompanion(powerlessPen, "Powerless stationery"),
+  false
+);
+check(
+  "dropBrowseJunk removes Insight Editions pen",
+  dropBrowseJunk([powerlessNovel, powerlessPen, powerlessSummit], "Powerless Lauren Roberts")
+    .map((row) => row.id)
+    .includes("google-powerless-pen"),
+  false
+);
+
+const rankedPowerless = rankBrowseSearchResults(
+  [powerlessSummit, powerlessPen, powerlessNovel],
+  "Powerless Lauren Roberts"
+);
+check(
+  "Powerless by Lauren Roberts ranks above Summit of the Powerless",
+  rankedPowerless[0]?.id,
+  "isbndb-powerless"
+);
+
+const rankedPowerlessTitle = rankBrowseSearchResults(
+  [powerlessSummit, powerlessNovel],
+  "Powerless"
+);
+check(
+  "q=Powerless ranks the exact title above Summit",
+  rankedPowerlessTitle[0]?.id,
+  "isbndb-powerless"
+);
+
+const quicksilverHart = book({
+  id: "ol-OL39663865W",
+  title: "Quicksilver",
+  authors: ["Callie Hart"],
+  coverUrl: "https://covers.example/quicksilver.jpg",
+  description: "A 2024 romantasy.",
+  publishedYear: 2024,
+  source: "openlibrary",
+});
+const robertQuicksilver = book({
+  id: "ol-robert-quicksilver",
+  title: "Robert Quicksilver",
+  authors: ["Some Other"],
+  coverUrl: "https://covers.example/robert.jpg",
+  description: "An unrelated title that contains Quicksilver.",
+  publishedYear: 2018,
+  source: "openlibrary",
+});
+const quicksilverCd = book({
+  id: "ol-quicksilver-cd",
+  title: "Quicksilver CD Soundtrack",
+  authors: ["Various Artists"],
+  coverUrl: "https://covers.example/cd.jpg",
+  description: "Original motion picture soundtrack.",
+  publishedYear: 2005,
+  source: "openlibrary",
+});
+
+check(
+  "Quicksilver Callie Hart is not an author query",
+  isAuthorQuery("Quicksilver Callie Hart"),
+  false
+);
+check(
+  "google query uses intitle+inauthor for Quicksilver Callie Hart",
+  googleSearchQuery("Quicksilver Callie Hart"),
+  'intitle:"Quicksilver" inauthor:"Callie Hart"'
+);
+check(
+  "lowercase title+author still splits for Google",
+  googleSearchQuery("quicksilver callie hart"),
+  'intitle:"quicksilver" inauthor:"callie hart"'
+);
+check(
+  "CD merch is dropped for a book query",
+  isMerchandiseOrCompanion(quicksilverCd, "Quicksilver"),
+  true
+);
+check(
+  "dropBrowseJunk removes the Quicksilver CD",
+  dropBrowseJunk(
+    [quicksilverHart, robertQuicksilver, quicksilverCd],
+    "Quicksilver"
+  )
+    .map((row) => row.id)
+    .includes("ol-quicksilver-cd"),
+  false
+);
+
+const rankedQuicksilverAuthor = rankBrowseSearchResults(
+  [robertQuicksilver, quicksilverHart],
+  "Quicksilver Callie Hart"
+);
+check(
+  "Quicksilver + Callie Hart ranks above Robert Quicksilver",
+  rankedQuicksilverAuthor[0]?.id,
+  "ol-OL39663865W"
+);
+
+const rankedQuicksilverTitle = rankBrowseSearchResults(
+  [robertQuicksilver, quicksilverHart],
+  "Quicksilver"
+);
+check(
+  "q=Quicksilver ranks Hart's novel first",
+  rankedQuicksilverTitle[0]?.id,
+  "ol-OL39663865W"
+);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);

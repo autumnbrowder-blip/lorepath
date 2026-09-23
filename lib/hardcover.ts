@@ -724,12 +724,183 @@ export async function enrichFromHardcover(book: BookDetail): Promise<BookDetail>
   }
 }
 
+const SEARCH_PAGE_SIZE = 10;
+const SEARCH_TTL_MS = 15 * 60 * 1000;
+const SEARCH_FETCH_TIMEOUT_MS = 4000;
+const SEARCH_QUERY = `query HardcoverSearch($query: String!, $perPage: Int!, $page: Int!) {
+  search(query: $query, query_type: "Book", per_page: $perPage, page: $page) {
+    results
+  }
+}`;
+
+let hardcoverSearchSkipUntil = 0;
+const hardcoverSearchCache = new Map<
+  string,
+  { expiresAt: number; page: HardcoverPageResult }
+>();
+
+export function hasHardcoverSearchToken(): boolean {
+  return Boolean(hardcoverBearerToken());
+}
+
+export function isHardcoverSearchSkipped(): boolean {
+  return Date.now() < hardcoverSearchSkipUntil;
+}
+
+function hardcoverToSummary(
+  book: HardcoverBook,
+  index: number
+): BookSummary {
+  const isbn =
+    book.isbns.map((value) => value.replace(/\D/g, "")).find((value) => value.length >= 10) ??
+    null;
+  const slug = book.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  return {
+    id: isbn
+      ? `${HARDCOVER_ID_PREFIX}${isbn}`
+      : `${HARDCOVER_ID_PREFIX}${slug || "hit"}-${index}`,
+    title: book.title,
+    authors: book.authors.length > 0 ? book.authors : ["Unknown author"],
+    coverUrl: book.coverUrl,
+    description: book.description,
+    genres: book.genres,
+    publishedYear: book.publishedYear,
+    source: "hardcover",
+    isbn,
+    pageCount: book.pageCount,
+    language: null,
+  };
+}
+
 /**
- * Search must never hit Hardcover. No token read, no network.
+ * One GraphQL search() per user search. Server-only. Never writes public.books.
+ * Cached 15 minutes by normalized query + page. 429 skips Hardcover for 15 minutes.
  */
 export async function searchHardcover(
-  _query?: string,
-  _page = 1
+  query?: string,
+  page = 1
 ): Promise<HardcoverPageResult> {
-  return { books: [], hasMore: false, error: null };
+  const trimmed = (query ?? "").trim().slice(0, 150);
+  if (!trimmed) {
+    return { books: [], hasMore: false, error: { reason: "empty_query" } };
+  }
+
+  const token = hardcoverBearerToken();
+  if (!token) {
+    return { books: [], hasMore: false, error: { reason: "missing_token" } };
+  }
+
+  if (Date.now() < hardcoverSearchSkipUntil) {
+    return {
+      books: [],
+      hasMore: false,
+      error: { reason: "http_error", status: 429, message: "Hardcover skipped after 429." },
+    };
+  }
+
+  const pageNumber = Math.max(1, page);
+  const cacheKey = `${trimmed.toLowerCase()}:p${pageNumber}`;
+  const cached = hardcoverSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return {
+      books: cached.page.books.map((book) => ({ ...book })),
+      hasMore: cached.page.hasMore,
+      error: cached.page.error,
+    };
+  }
+
+  if (!takeHardcoverQuotaSlot()) {
+    return { books: [], hasMore: false, error: { reason: "quota" } };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SEARCH_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(HARDCOVER_ENDPOINT, {
+      method: "POST",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        query: SEARCH_QUERY,
+        variables: {
+          query: trimmed,
+          perPage: SEARCH_PAGE_SIZE,
+          page: pageNumber,
+        },
+      }),
+    });
+
+    if (response.status === 429) {
+      hardcoverSearchSkipUntil = Date.now() + SEARCH_TTL_MS;
+      console.error("[hardcover] search 429 — skipping 15 minutes");
+      return {
+        books: [],
+        hasMore: false,
+        error: { reason: "http_error", status: 429, message: "Hardcover rate limited." },
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        books: [],
+        hasMore: false,
+        error: { reason: "http_error", status: response.status },
+      };
+    }
+
+    const payload: unknown = await response.json();
+    const graphqlMessage = graphqlErrorMessage(payload);
+    if (graphqlMessage) {
+      return {
+        books: [],
+        hasMore: false,
+        error: { reason: "graphql_error", message: graphqlMessage },
+      };
+    }
+
+    const results = (payload as { data?: { search?: { results?: unknown } } })
+      ?.data?.search?.results;
+    const books = readHits(results)
+      .map((hit, index) => {
+        const detail = bookFromGraphqlRecord(hit);
+        return detail ? hardcoverToSummary(detail, index) : null;
+      })
+      .filter((book): book is BookSummary => book !== null);
+
+    const pageResult: HardcoverPageResult = {
+      books,
+      hasMore: books.length >= SEARCH_PAGE_SIZE,
+      error: books.length === 0 ? { reason: "empty_results" } : null,
+    };
+    hardcoverSearchCache.set(cacheKey, {
+      expiresAt: Date.now() + SEARCH_TTL_MS,
+      page: {
+        books: books.map((book) => ({ ...book })),
+        hasMore: pageResult.hasMore,
+        error: pageResult.error,
+      },
+    });
+    return pageResult;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const timedOut =
+      (error instanceof Error && error.name === "AbortError") ||
+      /abort|timeout/i.test(message);
+    return {
+      books: [],
+      hasMore: false,
+      error: { reason: timedOut ? "timeout" : "parse_error", message },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }

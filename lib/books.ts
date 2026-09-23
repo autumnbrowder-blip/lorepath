@@ -71,8 +71,12 @@ import {
 } from "@/lib/search-cache";
 import {
   bookMatchesSearchQuery,
+  bookMatchesTitleAndAuthor,
   dropBrowseJunk,
   getBookDedupeKey,
+  isExactishTitleMatch,
+  isMerchandiseOrCompanion,
+  isPlaceholderDescription,
   isTitleOnlyStub,
   rankBrowseSearchResults,
   rankSearchResults,
@@ -81,7 +85,13 @@ import {
 import {
   googleSearchQuery,
   isPublicDomainClassicQuery,
+  normalizeSearchQuery,
 } from "@/lib/search-query";
+import {
+  hasHardcoverSearchToken,
+  isHardcoverSearchSkipped,
+  searchHardcover,
+} from "@/lib/hardcover";
 import { recoverPopularTitleHits } from "@/lib/search-recovery";
 import { unstable_noStore as noStore } from "next/cache";
 import type {
@@ -104,9 +114,52 @@ function emptyGooglePage(
   return { books: [], hasMore: false, rawCount: 0, error };
 }
 
+function hasQueriedAuthorHit(
+  books: BookSummary[],
+  title: string,
+  author: string
+): boolean {
+  return books.some((book) => bookMatchesTitleAndAuthor(book, title, author));
+}
+
+function openLibraryNeedsHardcover(
+  books: BookSummary[],
+  query: string
+): boolean {
+  if (books.length === 0) return true;
+  const useful = books.filter((book) => !isMerchandiseOrCompanion(book, query));
+  if (useful.length === 0) return true;
+  if (!useful.some((book) => book.coverUrl?.trim())) return true;
+  if (
+    !useful.some(
+      (book) =>
+        Boolean(book.description?.trim()) &&
+        !isPlaceholderDescription(book.description)
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function hasResolvedCatalogHit(books: BookSummary[], query: string): boolean {
+  return books.some(
+    (book) =>
+      isExactishTitleMatch(query, book.title) &&
+      !isMerchandiseOrCompanion(book, query) &&
+      (Boolean(book.coverUrl?.trim()) ||
+        (Boolean(book.description?.trim()) &&
+          !isPlaceholderDescription(book.description)))
+  );
+}
+
 const SEARCH_DEBUG = process.env.SEARCH_DEBUG === "1";
-/** Optional catalogs (Google, Gutendex, ISBNdb). Never block after OL returns. */
+/** Optional catalogs (Google, Gutendex). Never block after OL returns. */
 const OPTIONAL_SEARCH_TIMEOUT_MS = 2000;
+/** ISBNdb serializes at 1 req/s and often needs >2s after Google 429. */
+const ISBNDB_SEARCH_TIMEOUT_MS = 6000;
+/** One Hardcover search() — only on cache miss when OL is thin. */
+const HARDCOVER_SEARCH_TIMEOUT_MS = 4500;
 /** Open Library is required — search.json is often slower than optional catalogs. */
 const OPEN_LIBRARY_SEARCH_TIMEOUT_MS = 12000;
 /** Local books ILIKE removed — catalog search only. NYT is in-process cache. */
@@ -324,7 +377,7 @@ async function fetchSearchPageUncached(
   const pinned = genreMode
     ? []
     : rankBrowseSearchResults(
-        dropBrowseJunk([...localBooks, ...nytBooks]).filter(
+        dropBrowseJunk([...localBooks, ...nytBooks], searchQuery).filter(
           (book) => !isTitleOnlyStub(book)
         ),
         searchQuery
@@ -335,7 +388,6 @@ async function fetchSearchPageUncached(
       : Math.max(0, SEARCH_PAGE_SIZE - pinned.length);
   const needExternal = remainingSlots > 0;
 
-  const includeIsbndb = needExternal && hasIsbndbApiKey();
   const includeGutendex =
     needExternal &&
     (genreMode ||
@@ -343,8 +395,7 @@ async function fetchSearchPageUncached(
   const includeGoogle = needExternal && hasGoogleBooksApiKey();
   const includeOpenLibrary = needExternal;
   // One Google HTTP call per search page. Person names use inauthor;
-  // multi-word titles use intitle; otherwise raw q. searchGoogleBooks
-  // itself skips HTTP on cache hit or open circuit.
+  // title+author uses intitle+inauthor; multi-word titles use intitle.
   const googleQuery = genreMode
     ? searchQuery
     : googleSearchQuery(searchQuery);
@@ -353,7 +404,6 @@ async function fetchSearchPageUncached(
     openLibrarySettled,
     googleSettled,
     gutendexSettled,
-    isbndbSettled,
   ] = await Promise.allSettled([
     includeOpenLibrary
       ? withTimeout(
@@ -376,13 +426,6 @@ async function fetchSearchPageUncached(
           "gutendex search"
         )
       : Promise.resolve(emptyPage()),
-    includeIsbndb
-      ? withTimeout(
-          searchIsbndb(searchQuery, pageNumber, searchOptions),
-          OPTIONAL_SEARCH_TIMEOUT_MS,
-          "isbndb search"
-        )
-      : Promise.resolve(emptyPage()),
   ]);
 
   const openLibraryResult = readSettledPage(
@@ -391,14 +434,10 @@ async function fetchSearchPageUncached(
   );
   const googleResult = readSettledGoogle(googleSettled);
   const gutendexResult = readSettledPage("Gutendex", gutendexSettled);
-  const isbndbResult = includeIsbndb
-    ? readSettledPage("ISBNdb", isbndbSettled)
-    : emptyPage();
 
   const openLibraryBooks = openLibraryResult.books;
   const googleBooks = googleResult.books;
   const gutendexBooks = gutendexResult.books;
-  const isbndbBooks = isbndbResult.books;
   const googleRawCount = googleResult.rawCount ?? 0;
   const googleError = googleResult.error;
 
@@ -425,6 +464,104 @@ async function fetchSearchPageUncached(
     googleError?.status === 403 ||
     /rate limit|quota|api key/i.test(googleError?.message ?? "");
 
+  const googleUsefulCount = googleBooks.filter(
+    (book) => !isMerchandiseOrCompanion(book, searchQuery)
+  ).length;
+  const googleEmptyOrBlocked =
+    !includeGoogle || googleQuotaBlocked || googleUsefulCount === 0;
+
+  // When Google is 429 or empty (including merch-only), call ISBNdb for
+  // the same query. Do not race it under the 2s optional timeout.
+  let includeIsbndb = false;
+  let isbndbSettled: PromiseSettledResult<{
+    books: BookSummary[];
+    hasMore: boolean;
+  }> | null = null;
+  let isbndbResult = emptyPage();
+  if (needExternal && hasIsbndbApiKey() && googleEmptyOrBlocked) {
+    includeIsbndb = true;
+    const [settled] = await Promise.allSettled([
+      withTimeout(
+        searchIsbndb(searchQuery, pageNumber, searchOptions),
+        ISBNDB_SEARCH_TIMEOUT_MS,
+        "isbndb search"
+      ),
+    ]);
+    isbndbSettled = settled;
+    isbndbResult = readSettledPage("ISBNdb", settled);
+  }
+  const isbndbBooks = isbndbResult.books;
+
+  const parsedQuery = genreMode ? null : normalizeSearchQuery(searchQuery);
+  let titleAuthorRetryBooks: BookSummary[] = [];
+  if (
+    parsedQuery?.kind === "title_author" &&
+    parsedQuery.title &&
+    parsedQuery.author &&
+    pageNumber === 1
+  ) {
+    const pool = [
+      ...localBooks,
+      ...nytBooks,
+      ...googleBooks,
+      ...isbndbBooks,
+      ...openLibraryBooks,
+    ];
+    if (!hasQueriedAuthorHit(pool, parsedQuery.title, parsedQuery.author)) {
+      const [titleSettled, authorSettled] = await Promise.allSettled([
+        withTimeout(
+          searchOpenLibrary(parsedQuery.title, 1, searchOptions),
+          OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
+          "openlibrary title retry"
+        ),
+        withTimeout(
+          searchOpenLibrary(parsedQuery.author, 1, searchOptions),
+          OPEN_LIBRARY_SEARCH_TIMEOUT_MS,
+          "openlibrary author retry"
+        ),
+      ]);
+      const titleBooks =
+        titleSettled.status === "fulfilled" ? titleSettled.value.books : [];
+      const authorBooks =
+        authorSettled.status === "fulfilled" ? authorSettled.value.books : [];
+      titleAuthorRetryBooks = [...titleBooks, ...authorBooks].filter((book) =>
+        bookMatchesTitleAndAuthor(book, parsedQuery.title!, parsedQuery.author!)
+      );
+    }
+  }
+
+  let hardcoverBooks: BookSummary[] = [];
+  let hardcoverHasMore = false;
+  const combinedBeforeHardcover = [
+    ...localBooks,
+    ...nytBooks,
+    ...googleBooks,
+    ...isbndbBooks,
+    ...openLibraryBooks,
+    ...titleAuthorRetryBooks,
+  ];
+  const shouldCallHardcover =
+    needExternal &&
+    !genreMode &&
+    hasHardcoverSearchToken() &&
+    !isHardcoverSearchSkipped() &&
+    !hasResolvedCatalogHit(combinedBeforeHardcover, searchQuery) &&
+    (googleQuotaBlocked ||
+      googleEmptyOrBlocked ||
+      openLibraryNeedsHardcover(openLibraryBooks, searchQuery));
+  if (shouldCallHardcover) {
+    const hardcoverSettled = await Promise.allSettled([
+      withTimeout(
+        searchHardcover(searchQuery, pageNumber),
+        HARDCOVER_SEARCH_TIMEOUT_MS,
+        "hardcover search"
+      ),
+    ]);
+    const hardcoverResult = readSettledPage("Hardcover", hardcoverSettled[0]);
+    hardcoverBooks = hardcoverResult.books;
+    hardcoverHasMore = hardcoverResult.hasMore;
+  }
+
   if (SEARCH_DEBUG) {
     console.info("[searchBooks] raw provider counts", {
       query: searchQuery,
@@ -437,6 +574,7 @@ async function fetchSearchPageUncached(
       googleQuery,
       gutendex: gutendexBooks.length,
       isbndb: includeIsbndb ? isbndbBooks.length : "skipped",
+      hardcover: shouldCallHardcover ? hardcoverBooks.length : "skipped",
       local: localBooks.length,
       nyt: nytBooks.length,
       totalRaw:
@@ -445,7 +583,9 @@ async function fetchSearchPageUncached(
         openLibraryBooks.length +
         googleBooks.length +
         gutendexBooks.length +
-        isbndbBooks.length,
+        isbndbBooks.length +
+        titleAuthorRetryBooks.length +
+        hardcoverBooks.length,
       googleBooksApiKeyConfigured: Boolean(
         process.env.GOOGLE_BOOKS_API_KEY?.trim()
       ),
@@ -459,7 +599,9 @@ async function fetchSearchPageUncached(
     ...nytBooks,
     ...googleBooks,
     ...isbndbBooks,
+    ...hardcoverBooks,
     ...openLibraryBooks,
+    ...titleAuthorRetryBooks,
     ...gutendexBooks,
   ];
   if (!genreMode && pageNumber === 1) {
@@ -488,7 +630,9 @@ async function fetchSearchPageUncached(
     });
     books = enrichBooksWithCovers(books);
     afterFinalize = books;
-    books = dropBrowseJunk(books).filter((book) => !isTitleOnlyStub(book));
+    books = dropBrowseJunk(books, genreMode ? undefined : searchQuery).filter(
+      (book) => !isTitleOnlyStub(book)
+    );
 
     if (genreMode) {
       books = preferMatchingGenreTags(books, searchQuery);
@@ -524,7 +668,10 @@ async function fetchSearchPageUncached(
     books = pinned;
   }
   if (books.length === 0 && archiveRows.length > 0) {
-    const kept = dropBrowseJunk(archiveRows).filter(
+    const kept = dropBrowseJunk(
+      archiveRows,
+      genreMode ? undefined : searchQuery
+    ).filter(
       (book) => !isTitleOnlyStub(book)
     );
     const ranked = genreMode
@@ -553,6 +700,7 @@ async function fetchSearchPageUncached(
     (settledFailed(gutendexSettled) || settledTimedOut(gutendexSettled));
   const isbndbFailed =
     includeIsbndb &&
+    isbndbSettled != null &&
     (settledFailed(isbndbSettled) || settledTimedOut(isbndbSettled));
   const allSourcesTimedOut =
     localBooks.length === 0 &&
@@ -565,10 +713,11 @@ async function fetchSearchPageUncached(
   const sourceCounts: Partial<Record<BookSource | "local", number>> = {
     local: localBooks.length,
     nyt: nytBooks.length,
-    openlibrary: openLibraryBooks.length,
+    openlibrary: openLibraryBooks.length + titleAuthorRetryBooks.length,
     google: googleBooks.length,
     gutendex: gutendexBooks.length,
     isbndb: isbndbBooks.length,
+    hardcover: hardcoverBooks.length,
   };
   const sources = SEARCH_SOURCES.filter(
     (source) => (sourceCounts[source] ?? 0) > 0
@@ -579,7 +728,8 @@ async function fetchSearchPageUncached(
     : openLibraryResult.hasMore ||
       googleResult.hasMore ||
       gutendexResult.hasMore ||
-      isbndbResult.hasMore;
+      isbndbResult.hasMore ||
+      hardcoverHasMore;
 
   const warning =
     googleQuotaBlocked && books.length > 0 ? GOOGLE_429_WARNING : null;
@@ -592,7 +742,7 @@ async function fetchSearchPageUncached(
           ? "skip"
           : String(googleHttp);
   console.info(
-    `[search] q=${searchQuery} google=${googleStatus} ol=${openLibraryBooks.length} gutendex=${gutendexBooks.length} out=${books.length} local=${localBooks.length} nyt=${nytBooks.length}`
+    `[search] q=${searchQuery} google=${googleStatus} ol=${openLibraryBooks.length} isbndb=${isbndbBooks.length} hardcover=${hardcoverBooks.length} gutendex=${gutendexBooks.length} out=${books.length} local=${localBooks.length} nyt=${nytBooks.length}`
   );
 
   return {

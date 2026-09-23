@@ -45,7 +45,9 @@ function mergeSearchResults(
     query: query.trim() || undefined,
     debug: false,
   });
-  const cleaned = dropBrowseJunk(merged).filter((book) => !isTitleOnlyStub(book));
+  const cleaned = dropBrowseJunk(merged, query).filter(
+    (book) => !isTitleOnlyStub(book)
+  );
   return query.trim() ? rankBrowseSearchResults(cleaned, query) : cleaned;
 }
 

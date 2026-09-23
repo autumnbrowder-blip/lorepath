@@ -45,8 +45,8 @@ function cleanSpaces(value: string): string {
 function looksLikePersonName(words: string[]): boolean {
   if (words.length < 1 || words.length > 3) return false;
   return words.every((word) =>
-    /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word) ||
-    /^[A-Z]\.$/.test(word)
+    /^[A-Za-z][A-Za-z]+(?:['-][A-Za-z]+)?$/.test(word) ||
+    /^[A-Za-z]\.$/.test(word)
   );
 }
 
@@ -70,9 +70,9 @@ function splitTitleAndAuthor(raw: string): {
     if (titleWords.length === 0) continue;
     if (!looksLikePersonName(authorWords)) continue;
 
-    // Avoid eating a lone given name as the "title" (e.g. "John Smith").
-    // Multi-word titles like "Divine Rivals" are allowed even when Cap Case.
-    if (titleWords.length === 1 && looksLikePersonName(titleWords)) continue;
+    // Single-word titles ("Powerless Lauren Roberts", "Dune Frank Herbert")
+    // are allowed. "John Smith" never reaches here — two words cannot split
+    // into a non-empty title plus a 2-word author.
 
     return {
       title: titleWords.join(" "),
@@ -251,6 +251,14 @@ export function googleAuthorPriorityQuery(input: string): string | null {
 export function googleSearchQuery(input: string): string {
   const raw = cleanSpaces(repairSearchQuery(input));
   if (!raw) return raw;
+  const normalized = normalizeSearchQuery(raw);
+  if (
+    normalized.kind === "title_author" &&
+    normalized.title &&
+    normalized.author
+  ) {
+    return `intitle:"${normalized.title}" inauthor:"${normalized.author}"`;
+  }
   return (
     googleAuthorPriorityQuery(raw) ?? googleTitlePriorityQuery(raw) ?? raw
   );

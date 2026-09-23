@@ -96,6 +96,22 @@ export const KNOWN_WORK_EDITIONS: KnownWorkEditions[] = [
     googlePhrase: 'intitle:"Fourth Wing" inauthor:Yarros',
   },
   {
+    matchTitle: "Powerless",
+    authorHint: "Lauren Roberts",
+    firstPublishYear: 2023,
+    latestEditionYear: 2025,
+    isbns: ["9781665954884", "9781665954891", "9781398529489"],
+    googlePhrase: 'intitle:"Powerless" inauthor:"Lauren Roberts"',
+  },
+  {
+    matchTitle: "Quicksilver",
+    authorHint: "Callie Hart",
+    firstPublishYear: 2024,
+    latestEditionYear: 2024,
+    isbns: ["9781728290171", "9781464226670"],
+    googlePhrase: 'intitle:"Quicksilver" inauthor:"Callie Hart"',
+  },
+  {
     matchTitle: "Divine Rivals",
     authorHint: "Rebecca Ross",
     firstPublishYear: 2023,

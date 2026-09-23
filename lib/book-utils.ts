@@ -254,7 +254,7 @@ export function cleanTitle(title?: string | null): string {
 
 /** Title function/content words — "Fourth Wing" must not become author=. */
 const AUTHOR_QUERY_TITLE_TERMS =
-  /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean|brain|damage|big|little|truths)$/i;
+  /^(the|a|an|and|of|or|to|in|on|at|by|for|from|with|without|into|onto|upon|over|under|between|among|against|across|through|before|after|during|about|above|below|book|books|novel|novels|series|story|stories|tale|tales|problem|body|three|two|four|five|six|seven|eight|nine|ten|hunger|games|game|fire|fires|catching|mockingjay|harry|potter|ring|rings|king|queen|lord|dark|city|house|world|war|star|night|day|last|first|secret|letter|sun|moon|wind|sea|shadow|stone|blood|heart|bone|sky|red|blue|green|black|white|gold|silver|iron|steel|glass|thorn|crow|wolf|dragon|witch|prince|princess|daughter|daughters|thief|dead|river|fool|divine|rivals|ruthless|vows|wing|wings|fourth|iron|flame|empyrean|brain|damage|big|little|truths|powerless|quicksilver)$/i;
 
 function isAuthorNameToken(word: string): boolean {
   return /^[A-Za-z][A-Za-z'-]*$/.test(word) && word.length >= 2;
@@ -262,42 +262,6 @@ function isAuthorNameToken(word: string): boolean {
 
 function isAuthorMiddleInitial(word: string): boolean {
   return /^[A-Za-z]\.?$/.test(word);
-}
-
-/**
- * Detect queries that look like an author name.
- * "liane moriarty", "navessa allen", "sarah a. parker", "Mary Robinette Kowal".
- * Title-shaped queries ("Fourth Wing", "Divine Rivals") stay keyword/title search.
- */
-export function isAuthorQuery(query: string): boolean {
-  const trimmed = query.trim();
-  const words = trimmed.split(/\s+/).filter(Boolean);
-
-  if (/\d/.test(trimmed)) return false;
-  if (!/^[a-zA-Z\s.'-]+$/.test(trimmed)) return false;
-
-  if (
-    words.some(
-      (word) =>
-        !isAuthorMiddleInitial(word) && AUTHOR_QUERY_TITLE_TERMS.test(word)
-    )
-  ) {
-    return false;
-  }
-
-  if (words.length === 2) {
-    return words.every(isAuthorNameToken);
-  }
-
-  if (words.length === 3 && isAuthorMiddleInitial(words[1] ?? "")) {
-    return isAuthorNameToken(words[0] ?? "") && isAuthorNameToken(words[2] ?? "");
-  }
-
-  if (words.length < 3 || words.length > 4) return false;
-
-  // Longer names still prefer Cap Case so "Big Little Truths" stays a title
-  // (title-ish words are rejected above).
-  return words.every((word) => /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word));
 }
 
 /** Single-word classic titles that must not be treated as surnames. */
@@ -318,7 +282,47 @@ const SINGLE_WORD_TITLE_BLOCKLIST = new Set([
   "odyssey",
   "beowulf",
   "inferno",
+  "powerless",
+  "quicksilver",
 ]);
+
+/**
+ * Detect queries that look like an author name.
+ * "liane moriarty", "navessa allen", "sarah a. parker", "Mary Robinette Kowal".
+ * Title-shaped queries ("Fourth Wing", "Divine Rivals") stay keyword/title search.
+ */
+export function isAuthorQuery(query: string): boolean {
+  const trimmed = query.trim();
+  const words = trimmed.split(/\s+/).filter(Boolean);
+
+  if (/\d/.test(trimmed)) return false;
+  if (!/^[a-zA-Z\s.'-]+$/.test(trimmed)) return false;
+
+  if (
+    words.some(
+      (word) =>
+        !isAuthorMiddleInitial(word) &&
+        (AUTHOR_QUERY_TITLE_TERMS.test(word) ||
+          SINGLE_WORD_TITLE_BLOCKLIST.has(word.toLowerCase()))
+    )
+  ) {
+    return false;
+  }
+
+  if (words.length === 2) {
+    return words.every(isAuthorNameToken);
+  }
+
+  if (words.length === 3 && isAuthorMiddleInitial(words[1] ?? "")) {
+    return isAuthorNameToken(words[0] ?? "") && isAuthorNameToken(words[2] ?? "");
+  }
+
+  if (words.length < 3 || words.length > 4) return false;
+
+  // Longer names still prefer Cap Case so "Big Little Truths" stays a title
+  // (title-ish words are rejected above).
+  return words.every((word) => /^[A-Z][a-z]+(?:['-][A-Za-z]+)?$/.test(word));
+}
 
 /**
  * One token that looks like a surname ("moriarty"), not a title word.
@@ -349,6 +353,18 @@ export function isExactTitleMatch(query: string, title: string): boolean {
   return q === t;
 }
 
+/**
+ * Exact title, or title+author query whose title portion is the book
+ * ("Powerless Lauren Roberts" → "Powerless", not "Summit of the Powerless").
+ */
+export function isExactishTitleMatch(query: string, title: string): boolean {
+  if (isExactTitleMatch(query, title)) return true;
+  const q = normalizeTitleForDedupe(query);
+  const t = normalizeTitleForDedupe(title);
+  if (!q || !t) return false;
+  return q.startsWith(`${t} `);
+}
+
 export function formatAuthorSearchQuery(query: string): string {
   return `inauthor:"${query.trim()}"`;
 }
@@ -373,13 +389,22 @@ export function isLowQualityBook(book: BookSummary): boolean {
 
 /**
  * Companion merch / activity books that muddy popular-title searches
- * (e.g. Fourth Wing tarot, crochet, journals, word-search kits).
+ * (e.g. Fourth Wing tarot, Powerless pen + stationery, official kits).
  */
-export function isMerchandiseOrCompanion(book: BookSummary): boolean {
-  const title = book.title.toLowerCase();
-  return /tarot|crochet|knitting|coloring book|\bjournal\b|word[\s-]?search|pencil|activity book|sticker|workbook|puzzle book|boxed?\s+set|collection set|official companion|parody|unofficial|cookbook|recipe|calendar|planner|diary|\bkit\b/i.test(
-    title
-  );
+const MERCH_TITLE_RE =
+  /tarot|crochet|knitting|coloring book|\bjournal\b|word[\s-]?search|pencil|activity book|sticker|workbook|puzzle book|boxed?\s+set|collection set|official companion|parody|unofficial|cookbook|recipe|calendar|planner|diary|\bkit\b|\bpen\b|\bstationery\b|dagger\s+pen|official\s+kit|\bcd\b|soundtrack|audio\s*book|audiobook/i;
+
+/** Keep merch only when the reader is searching for those products. */
+const MERCH_QUERY_RE =
+  /\b(pen|stationery|dagger\s+pen|activity\s+book|official\s+kit|cd|soundtrack|audiobook|audio\s*book)\b/i;
+
+export function isMerchandiseOrCompanion(
+  book: BookSummary,
+  query?: string
+): boolean {
+  if (!MERCH_TITLE_RE.test(book.title)) return false;
+  if (query && MERCH_QUERY_RE.test(query)) return false;
+  return true;
 }
 
 /** Thin or subject-list blurbs that should lose to a real synopsis. */
@@ -1035,10 +1060,16 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   let score = 0;
 
   // Exact title matches always rise to the top (never buried by merch/noise).
-  if (isExactTitleMatch(query, book.title)) {
+  if (isExactishTitleMatch(query, book.title)) {
     score += 250;
     // Prefer the well-known novel edition when many works share the title.
     if (/buehlman/i.test(book.authors.join(" "))) score += 80;
+    if (
+      /^powerless$/i.test(book.title.trim()) &&
+      /lauren\s+roberts/i.test(book.authors.join(" "))
+    ) {
+      score += 80;
+    }
   }
 
   // Also match against the title portion of a title+author query.
@@ -1082,6 +1113,20 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
   }
   if (/^dune$/i.test(book.title.trim()) && queryLooksLikeTitle(query, "dune")) {
     score += 40;
+  }
+  if (
+    /^powerless$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "powerless")
+  ) {
+    score += 45;
+    if (/lauren\s+roberts/i.test(book.authors.join(" "))) score += 40;
+  }
+  if (
+    /^quicksilver$/i.test(book.title.trim()) &&
+    queryLooksLikeTitle(query, "quicksilver")
+  ) {
+    score += 45;
+    if (/callie\s+hart/i.test(book.authors.join(" "))) score += 40;
   }
   if (
     /aristotle and dante discover the secrets of the universe/i.test(
@@ -1192,7 +1237,7 @@ export function scoreBookRelevance(book: BookSummary, query: string): number {
     score -= 20;
   }
 
-  if (isMerchandiseOrCompanion(book)) score -= 80;
+  if (isMerchandiseOrCompanion(book, query)) score -= 80;
   if (isAcademicNoise(book)) score -= 50;
   if (isLowQualityBook(book)) score -= 100;
 
@@ -1222,6 +1267,8 @@ const CANONICAL_TITLE_AUTHORS: Array<{ title: string; authors: string[] }> = [
   { title: "hunger games", authors: ["suzanne collins"] },
   { title: "between two fires", authors: ["christopher buehlman"] },
   { title: "fourth wing", authors: ["rebecca yarros"] },
+  { title: "powerless", authors: ["lauren roberts"] },
+  { title: "quicksilver", authors: ["callie hart"] },
   { title: "tender is the flesh", authors: ["agustina bazterrica"] },
   { title: "big little truths", authors: ["liane moriarty"] },
   { title: "brain damage", authors: ["freida mcfadden"] },
@@ -1262,6 +1309,25 @@ function titleHasWholeQueryToken(title: string, tokens: string[]): boolean {
  * title+author string such as "whistler patchett" where the title is a
  * whole word and every token lands in title or author.
  */
+/** Title is exact/related AND every author token lands on the author line. */
+export function bookMatchesTitleAndAuthor(
+  book: BookSummary,
+  title: string,
+  author: string
+): boolean {
+  const titleOk =
+    isExactishTitleMatch(title, book.title) ||
+    isExactTitleMatch(title, book.title) ||
+    titleRelatesToQuery(book.title, title);
+  if (!titleOk) return false;
+  const authorHay = normalizeForMatch(book.authors.join(" "));
+  const tokens = normalizeForMatch(author)
+    .split(" ")
+    .filter((token) => token.length >= 2);
+  if (tokens.length === 0 || !authorHay) return false;
+  return tokens.every((token) => authorHay.includes(token));
+}
+
 export function browseCardMatchesQuery(
   book: BookSummary,
   query: string
@@ -1288,6 +1354,23 @@ function authorLooksCanonical(book: BookSummary, authors: string[]): boolean {
       (canon) => normalized === canon || normalized.includes(canon)
     );
   });
+}
+
+/** "Quicksilver Callie Hart" prefers Callie Hart over Robert Quicksilver. */
+function queriedAuthorMatchesBook(book: BookSummary, query: string): boolean {
+  const q = normalizeTitleForDedupe(query);
+  const t = normalizeTitleForDedupe(book.title);
+  if (!q || !t) return false;
+  if (q.startsWith(`${t} `)) {
+    const remainder = q.slice(t.length).trim();
+    if (!remainder) return false;
+    const authors = normalizeAuthorForDedupe(book.authors.join(" "));
+    return remainder
+      .split(" ")
+      .filter(Boolean)
+      .every((token) => authors.includes(token));
+  }
+  return isCanonicalAuthorForQuery(book, query);
 }
 
 function isCanonicalAuthorForQuery(book: BookSummary, query: string): boolean {
@@ -1355,7 +1438,7 @@ export function rankBrowseSearchResults(
   const authors: BookSummary[] = [];
 
   for (const book of books) {
-    if (isExactTitleMatch(trimmed, book.title)) {
+    if (isExactishTitleMatch(trimmed, book.title)) {
       exact.push(book);
     } else if (browseCardMatchesQuery(book, trimmed)) {
       related.push(book);
@@ -1365,12 +1448,18 @@ export function rankBrowseSearchResults(
   }
 
   exact.sort((a, b) => {
+    const aQueryAuthor = queriedAuthorMatchesBook(a, trimmed);
+    const bQueryAuthor = queriedAuthorMatchesBook(b, trimmed);
+    if (aQueryAuthor !== bQueryAuthor) return aQueryAuthor ? -1 : 1;
     const aCanon = isCanonicalAuthorForQuery(a, trimmed);
     const bCanon = isCanonicalAuthorForQuery(b, trimmed);
     if (aCanon !== bCanon) return aCanon ? -1 : 1;
     return comparePublishedYearDesc(a, b);
   });
   related.sort((a, b) => {
+    const aQueryAuthor = queriedAuthorMatchesBook(a, trimmed);
+    const bQueryAuthor = queriedAuthorMatchesBook(b, trimmed);
+    if (aQueryAuthor !== bQueryAuthor) return aQueryAuthor ? -1 : 1;
     const aCanon = isCanonicalAuthorForQuery(a, trimmed);
     const bCanon = isCanonicalAuthorForQuery(b, trimmed);
     if (aCanon !== bCanon) return aCanon ? -1 : 1;
@@ -1382,10 +1471,15 @@ export function rankBrowseSearchResults(
 }
 
 /** Page-1 junk: title-only stubs, merch, empty records, or fake authors. */
-export function dropBrowseJunk(books: BookSummary[]): BookSummary[] {
+export function dropBrowseJunk(
+  books: BookSummary[],
+  query?: string
+): BookSummary[] {
   const filtered = books.filter((book) => {
     if (isTitleOnlyStub(book)) return false;
-    if (isMerchandiseOrCompanion(book) || isLowQualityBook(book)) return false;
+    if (isMerchandiseOrCompanion(book, query) || isLowQualityBook(book)) {
+      return false;
+    }
     if (isJunkCatalogAuthor(book.authors)) return false;
     const cover = Boolean(book.coverUrl?.trim());
     const description =
