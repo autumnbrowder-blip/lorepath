@@ -3,6 +3,7 @@ import {
   getUserRatingForBook,
   submitUserRating,
   type CommunityRatingsSummary,
+  type RatingBookCatalogHint,
 } from "@/lib/ratings";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
@@ -47,6 +48,43 @@ function ratingJson(payload: RatingSaveResponse) {
   });
 }
 
+function parseCatalogHint(body: unknown): RatingBookCatalogHint | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const row = body as Record<string, unknown>;
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  const author = typeof row.author === "string" ? row.author.trim() : "";
+  const authors = Array.isArray(row.authors)
+    ? row.authors.filter(
+        (name): name is string => typeof name === "string" && Boolean(name.trim())
+      )
+    : author
+      ? [author]
+      : [];
+  const isbn =
+    typeof row.isbn === "string" && row.isbn.trim() ? row.isbn.trim() : null;
+  const coverUrl =
+    typeof row.coverUrl === "string" && row.coverUrl.trim()
+      ? row.coverUrl.trim()
+      : typeof row.cover_image_url === "string" && row.cover_image_url.trim()
+        ? row.cover_image_url.trim()
+        : null;
+  const publishedYear =
+    typeof row.publishedYear === "number" && Number.isFinite(row.publishedYear)
+      ? row.publishedYear
+      : typeof row.published_year === "number" &&
+          Number.isFinite(row.published_year)
+        ? row.published_year
+        : null;
+  if (!title && !isbn && !coverUrl && authors.length === 0) return undefined;
+  return {
+    title: title || null,
+    authors,
+    isbn,
+    coverUrl,
+    publishedYear,
+  };
+}
+
 function isValidRating(value: unknown): value is ContentRating {
   if (!value || typeof value !== "object") return false;
 
@@ -62,6 +100,16 @@ function failureStatus(code: string | null, message: string): number {
   }
   if (code === "book_not_found" || /book not found/i.test(message)) {
     return 404;
+  }
+  if (
+    code === "book_row_missing" ||
+    code === "book_create_failed" ||
+    code === "catalog_paused" ||
+    /not in the catalog/i.test(message) ||
+    /could not create a catalog row/i.test(message) ||
+    /could not load this book to start a catalog/i.test(message)
+  ) {
+    return 400;
   }
   if (
     code === "no_user" ||
@@ -272,11 +320,14 @@ export async function POST(
     pacing: body.pacing,
   };
 
+  const catalog = parseCatalogHint(body);
+
   async function attempt() {
     return submitUserRating(bookExternalId, ratings, {
       expectedUserId: user!.id,
       accessToken,
       verifiedUserId: user!.id,
+      catalog,
     });
   }
 

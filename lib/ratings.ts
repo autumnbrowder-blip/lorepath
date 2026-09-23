@@ -1,12 +1,11 @@
 import { DEFAULT_AVATAR_KEY } from "@/lib/avatars";
 import {
+  ensureBookRow,
   findBookIdBySlugOrIsbn,
-  isBooksRestCircuitOpen,
   isBooksRestDisabled,
-  noteBooksAuthDeniedError,
-  noteBooksOverloadedError,
   sourceFromBookSlug,
 } from "@/lib/book-cache";
+import { getBookById } from "@/lib/books";
 import { groupRatedBooksByWork } from "@/lib/book-work";
 import {
   normalizeAuthorForDedupe,
@@ -371,63 +370,88 @@ async function ensureProfileExists(
   return { ok: true };
 }
 
+export type RatingBookCatalogHint = {
+  title?: string | null;
+  authors?: string[] | null;
+  isbn?: string | null;
+  coverUrl?: string | null;
+  publishedYear?: number | null;
+};
+
+function catalogHintToDetail(
+  externalId: string,
+  hint: RatingBookCatalogHint | undefined,
+  fetched: BookDetail | null
+): BookDetail | null {
+  const title = hint?.title?.trim() || fetched?.title?.trim() || "";
+  if (!title) return null;
+  const authors = (hint?.authors ?? [])
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return {
+    id: externalId,
+    title,
+    authors:
+      authors.length > 0
+        ? authors
+        : fetched?.authors?.length
+          ? fetched.authors
+          : ["Unknown author"],
+    coverUrl: hint?.coverUrl?.trim() || fetched?.coverUrl || null,
+    description: fetched?.description ?? null,
+    genres: fetched?.genres ?? [],
+    publishedYear: hint?.publishedYear ?? fetched?.publishedYear ?? null,
+    source: sourceFromBookSlug(externalId),
+    isbn: hint?.isbn?.trim() || fetched?.isbn || null,
+    publisher: fetched?.publisher ?? null,
+    pageCount: fetched?.pageCount ?? null,
+    language: fetched?.language ?? null,
+  };
+}
+
 /**
- * Attach a rating only to an existing public.books row.
- * Never INSERT/UPSERT books — that POSTed ?on_conflict=slug from the live app.
+ * Look up public.books by slug/ISBN. If missing, INSERT one row (service-role)
+ * from the rating payload or Open Library. Search/browse never write books.
  */
 async function ensureBookRecord(
-  externalId: string
+  externalId: string,
+  catalogHint?: RatingBookCatalogHint
 ): Promise<
   { bookDbId: string } | { error: string; code: string | null }
 > {
-  if (isBooksRestCircuitOpen()) {
-    return {
-      error: isBooksRestDisabled()
-        ? "catalog paused"
-        : "Books catalog is temporarily unavailable. Try again in a few minutes.",
-      code: isBooksRestDisabled() ? "catalog_paused" : "books_circuit_open",
-    };
-  }
-
   const admin = createServiceRoleClient();
   if ("error" in admin) {
-    return {
-      error: isBooksRestDisabled() ? "catalog paused" : admin.error,
-      code: isBooksRestDisabled() ? "catalog_paused" : "missing_service_role",
-    };
-  }
-
-  if (isBooksRestDisabled()) {
-    const slug = externalId.trim();
-    if (!slug) {
-      return { error: "catalog paused", code: "catalog_paused" };
-    }
-    const { data, error } = await admin.supabase
-      .from("books")
-      .select("id")
-      .eq("slug", slug)
-      .maybeSingle();
-    if (error) {
-      noteBooksAuthDeniedError(error.message ?? "", error.code);
-      noteBooksOverloadedError(error.message ?? "", error.code);
-      return { error: "catalog paused", code: "catalog_paused" };
-    }
-    if (data?.id) {
-      return { bookDbId: data.id };
-    }
-    return { error: "catalog paused", code: "catalog_paused" };
+    return { error: admin.error, code: "missing_service_role" };
   }
 
   const existing = await findBookIdBySlugOrIsbn(admin.supabase, {
     slug: externalId,
+    isbn: catalogHint?.isbn,
+    forRatingSubmit: true,
   });
   if (existing) {
     return { bookDbId: existing };
   }
-  return {
-    error: "Book is not in the catalog yet.",
-    code: "book_row_missing",
-  };
+
+  let fetched: BookDetail | null = null;
+  if (!catalogHint?.title?.trim()) {
+    fetched = await getBookById(externalId);
+  }
+
+  const book = catalogHintToDetail(externalId, catalogHint, fetched);
+  if (!book) {
+    return {
+      error:
+        "Could not load this book to start a catalog row. Open the tome and try again.",
+      code: "book_create_failed",
+    };
+  }
+
+  const result = await ensureBookRow(admin.supabase, externalId, book);
+  if ("error" in result) {
+    return { error: result.error, code: "book_create_failed" };
+  }
+  return result;
 }
 
 export const getCommunityRatings = cache(async function getCommunityRatings(
@@ -1072,6 +1096,8 @@ type SubmitRatingOptions = {
   accessToken?: string | null;
   /** When the route already verified getUser(), skip a second Auth round-trip. */
   verifiedUserId?: string;
+  /** Title/ISBN/cover from the book page — used to INSERT one books row if missing. */
+  catalog?: RatingBookCatalogHint;
 };
 
 export type SubmitRatingSuccess = {
@@ -1196,7 +1222,7 @@ export async function submitUserRating(
     });
   }
 
-  const bookResult = await ensureBookRecord(bookExternalId);
+  const bookResult = await ensureBookRecord(bookExternalId, options?.catalog);
   if ("error" in bookResult) {
     return ratingFail(bookResult.error, {
       code: bookResult.code,

@@ -256,12 +256,23 @@ function noteBooksRestFailure(
   return noteBooksOverloadedError(message, code, status);
 }
 
+function isUniqueViolation(message: string): boolean {
+  return /23505/.test(message) || /duplicate key/i.test(message);
+}
+
 export async function findBookIdBySlugOrIsbn(
   supabase: SupabaseClient,
-  options: { slug?: string | null; isbn?: string | null }
+  options: {
+    slug?: string | null;
+    isbn?: string | null;
+    /** Rating submit may look up (and then insert) while DISABLE_BOOKS_REST=true. */
+    forRatingSubmit?: boolean;
+  }
 ): Promise<string | null> {
-  if (isBooksRestDisabled()) return null;
-  if (isBooksRestCircuitOpen()) return null;
+  if (!options.forRatingSubmit) {
+    if (isBooksRestDisabled()) return null;
+    if (isBooksRestCircuitOpen()) return null;
+  }
   const slug = options.slug?.trim() || "";
   if (slug) {
     const { data, error } = await supabase
@@ -282,7 +293,7 @@ export async function findBookIdBySlugOrIsbn(
   ].filter((value, index, list) => list.indexOf(value) === index);
 
   if (candidates.length === 0) return null;
-  if (isBooksRestCircuitOpen()) return null;
+  if (!options.forRatingSubmit && isBooksRestCircuitOpen()) return null;
 
   const { data, error } = await supabase
     .from("books")
@@ -299,13 +310,10 @@ export async function findBookIdBySlugOrIsbn(
   return data.id;
 }
 
-const BOOKS_CIRCUIT_ERROR =
-  "Books catalog is temporarily unavailable. Try again in a few minutes.";
-
 /**
- * Resolve an existing public.books id. Never INSERT or UPSERT — those POSTs
- * flooded PostgREST (401/42501 and 5xx). Rating submit attaches to a row
- * that already exists.
+ * Resolve a public.books id for rating submit only.
+ * Look up by slug or ISBN; if missing, INSERT one row (service-role).
+ * Never upsert from search/browse/page load. No retry loop.
  */
 export async function ensureBookRow(
   supabase: SupabaseClient,
@@ -314,28 +322,59 @@ export async function ensureBookRow(
 ): Promise<{ bookDbId: string } | { error: string }> {
   const slug = externalId.trim();
   if (!slug || !book.title?.trim()) {
-    return { error: "Book not found." };
+    return { error: "Book details are missing; cannot start a catalog row." };
   }
 
-  if (isBooksRestDisabled()) {
-    return { error: "catalog paused" };
-  }
+  const writeClient = resolveBooksWriteClient() ?? supabase;
 
-  if (isBooksRestCircuitOpen()) {
-    return { error: BOOKS_CIRCUIT_ERROR };
-  }
-
-  const existing = await findBookIdBySlugOrIsbn(supabase, {
+  const existing = await findBookIdBySlugOrIsbn(writeClient, {
     slug,
     isbn: book.isbn,
+    forRatingSubmit: true,
   });
   if (existing) return { bookDbId: existing };
-  return { error: "Book is not in the catalog yet." };
+
+  const bookRow = bookDetailToDbRow(slug, book);
+  const { data, error } = await writeClient
+    .from("books")
+    .insert(bookRow)
+    .select("id")
+    .maybeSingle();
+
+  if (!error && data?.id) {
+    return { bookDbId: data.id };
+  }
+
+  if (error) {
+    noteBooksRestFailure(error.message ?? "", error.code);
+    if (isUniqueViolation(error.message ?? "")) {
+      const recovered = await findBookIdBySlugOrIsbn(writeClient, {
+        slug,
+        isbn: bookRow.isbn,
+        forRatingSubmit: true,
+      });
+      if (recovered) return { bookDbId: recovered };
+    }
+    return {
+      error:
+        error.message?.trim() ||
+        "Could not create a catalog row for this book.",
+    };
+  }
+
+  const reread = await findBookIdBySlugOrIsbn(writeClient, {
+    slug,
+    isbn: book.isbn,
+    forRatingSubmit: true,
+  });
+  if (reread) return { bookDbId: reread };
+
+  return { error: "Could not create a catalog row for this book." };
 }
 
 /**
  * Formerly upserted browse/detail hits into public.books. Search, grid,
- * detail, and rating submit never INSERT/UPSERT public.books.
+ * and detail never INSERT/UPSERT public.books — only rating submit may.
  */
 export async function cacheBookDetail(
   _externalId: string,

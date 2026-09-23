@@ -459,6 +459,9 @@ export default async function BookDetailPage({
                     bookId={id}
                     bookTitle={hydrated.title}
                     bookAuthors={hydrated.authors}
+                    bookIsbn={hydrated.isbn}
+                    bookCoverUrl={hydrated.coverUrl}
+                    bookPublishedYear={hydrated.publishedYear}
                     isLoggedIn={!!user}
                     initialRatings={userRating}
                     returnToFirstRating={fromFirstRating}

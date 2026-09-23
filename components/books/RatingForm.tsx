@@ -63,6 +63,9 @@ type RatingFormProps = {
   bookId: string;
   bookTitle?: string;
   bookAuthors?: string[];
+  bookIsbn?: string | null;
+  bookCoverUrl?: string | null;
+  bookPublishedYear?: number | null;
   isLoggedIn: boolean;
   /** Previously saved marks for this book+user; null when none exist yet. */
   initialRatings?: ContentRating | null;
@@ -108,6 +111,9 @@ export function RatingForm({
   bookId,
   bookTitle,
   bookAuthors,
+  bookIsbn,
+  bookCoverUrl,
+  bookPublishedYear,
   isLoggedIn,
   initialRatings = null,
   onRatingsUpdated,
@@ -257,7 +263,15 @@ export function RatingForm({
         },
         credentials: "include",
         cache: "no-store",
-        body: JSON.stringify(submitted),
+        body: JSON.stringify({
+          ...submitted,
+          title: bookTitle?.trim() || undefined,
+          author: bookAuthors?.find((name) => name.trim())?.trim() || undefined,
+          authors: bookAuthors,
+          isbn: bookIsbn?.trim() || undefined,
+          coverUrl: bookCoverUrl?.trim() || undefined,
+          publishedYear: bookPublishedYear ?? undefined,
+        }),
       });
 
       let data: RatingSavePayload = {};
