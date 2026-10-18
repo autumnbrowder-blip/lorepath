@@ -1,5 +1,3 @@
-import type { Config, Context } from "@netlify/edge-functions";
-
 const blockedUserAgents = [
   // AI training & aggressive crawlers
   "GPTBot",
@@ -34,37 +32,22 @@ const blockedUserAgents = [
   "DataForSeoBot",
 ];
 
-const blockedPaths = [
-  "/*.php",
-  "/wp-*",
-  "/xmlrpc.php",
-  "/autodiscover/*",
-  "/.env",
-  "/.git/*",
-  "/wp-admin/*",
-  "/wp-login.php",
-  "/administrator/*",
-  "/phpmyadmin/*",
-];
-
 function isBlockedUserAgent(ua: string | null): boolean {
   if (!ua) return false;
   const lower = ua.toLowerCase();
   return blockedUserAgents.some((bot) => lower.includes(bot.toLowerCase()));
 }
 
-export default async (request: Request, context: Context) => {
+export default async (request: Request, context: any) => {
   const ua = request.headers.get("user-agent");
 
-  // Block known bots/crawlers by user-agent
   if (isBlockedUserAgent(ua)) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  // Let everything else through
   return context.next();
 };
 
-export const config: Config = {
-  path: "/*", // run on all paths so we can check user-agent
+export const config = {
+  path: "/*",
 };
